@@ -46,10 +46,14 @@ class ACCController extends Controller
         $acc = ACC::findOrFail($id);
         $acc->update([
             'status' => 'rejected',
+            'rejection_reason' => $request->rejection_reason,
             'approved_by' => $request->user()->id,
         ]);
 
-        return response()->json(['message' => 'ACC application rejected', 'acc' => $acc]);
+        return response()->json([
+            'message' => 'ACC application rejected',
+            'acc' => $acc->fresh(),
+        ]);
     }
 
     public function createSpace($id)

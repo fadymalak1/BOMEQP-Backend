@@ -30,6 +30,7 @@ class ACC extends Model
         'approved_at',
         'approved_by',
         'commission_percentage',
+        'rejection_reason',
     ];
 
     protected function casts(): array
