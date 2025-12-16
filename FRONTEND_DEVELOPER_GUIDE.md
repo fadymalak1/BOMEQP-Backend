@@ -2268,21 +2268,43 @@ All requests should include:
 #### 92. Request Authorization from ACC
 **POST** `/training-center/accs/{id}/request-authorization`
 
-**Request Body:**
-```json
-{
-  "documents_json": [
-    {
-      "type": "license",
-      "url": "/documents/license.pdf"
-    },
-    {
-      "type": "insurance",
-      "url": "/documents/insurance.pdf"
-    }
-  ],
-  "additional_info": "Additional information about our training center"
-}
+**Content-Type:** `multipart/form-data`
+
+**Request Body (Form Data):**
+- `documents[0][type]` (string, required): Document type - one of: `license`, `certificate`, `registration`, `other`
+- `documents[0][file]` (file, required): Document file (PDF, DOC, DOCX, JPG, JPEG, PNG) - Max 10MB
+- `documents[1][type]` (string, optional): Second document type
+- `documents[1][file]` (file, optional): Second document file
+- `additional_info` (string, optional): Additional information about the training center
+
+**JavaScript/FormData Example:**
+```javascript
+const formData = new FormData();
+formData.append('documents[0][type]', 'license');
+formData.append('documents[0][file]', fileInput.files[0]); // File object
+formData.append('documents[1][type]', 'certificate');
+formData.append('documents[1][file]', fileInput2.files[0]);
+formData.append('additional_info', 'Additional information');
+
+fetch('/api/training-center/accs/1/request-authorization', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`
+    // Don't set Content-Type - browser will set it with boundary
+  },
+  body: formData
+});
+```
+
+**cURL Example:**
+```bash
+curl -X POST "https://your-domain.com/api/training-center/accs/1/request-authorization" \
+  -H "Authorization: Bearer {token}" \
+  -F "documents[0][type]=license" \
+  -F "documents[0][file]=@/path/to/license.pdf" \
+  -F "documents[1][type]=certificate" \
+  -F "documents[1][file]=@/path/to/certificate.pdf" \
+  -F "additional_info=Additional information"
 ```
 
 **Response (201):**
@@ -2293,9 +2315,30 @@ All requests should include:
     "id": 1,
     "acc_id": 1,
     "status": "pending",
-    "request_date": "2024-01-15T10:30:00.000000Z"
+    "request_date": "2024-01-15T10:30:00.000000Z",
+    "documents_json": [
+      {
+        "type": "license",
+        "url": "/storage/authorization/1/1/abc123.pdf",
+        "original_name": "license.pdf",
+        "mime_type": "application/pdf",
+        "size": 123456
+      }
+    ]
   }
 }
+```
+
+**Error Response (422):**
+```json
+{
+  "message": "Validation failed",
+  "errors": {
+    "documents.0.file": ["The documents.0.file must be a file."],
+    "documents.0.type": ["The selected documents.0.type is invalid."]
+  }
+}
+```
 ```
 
 ---

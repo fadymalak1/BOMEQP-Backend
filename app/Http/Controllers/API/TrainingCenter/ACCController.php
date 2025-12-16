@@ -7,6 +7,8 @@ use App\Models\ACC;
 use App\Models\TrainingCenterAccAuthorization;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ACCController extends Controller
 {
@@ -19,9 +21,9 @@ class ACCController extends Controller
     public function requestAuthorization(Request $request, $id)
     {
         $request->validate([
-            'documents_json' => 'required|array',
-            'documents_json.*.type' => 'required|string',
-            'documents_json.*.url' => 'required|string',
+            'documents' => 'required|array|min:1',
+            'documents.*.type' => 'required|string|in:license,certificate,registration,other',
+            'documents.*.file' => 'required|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:10240', // 10MB max
             'additional_info' => 'nullable|string',
         ]);
 
@@ -43,12 +45,47 @@ class ACCController extends Controller
             return response()->json(['message' => 'Authorization request already exists'], 400);
         }
 
+        // Upload files and create documents array
+        $documents = [];
+        $documentsData = $request->input('documents', []);
+        
+        foreach ($documentsData as $index => $documentData) {
+            $fileKey = "documents.{$index}.file";
+            
+            if ($request->hasFile($fileKey)) {
+                $file = $request->file($fileKey);
+                
+                // Validate file type matches document type if needed
+                $documentType = $documentData['type'] ?? null;
+                
+                // Create directory path: authorization/{training_center_id}/{acc_id}/
+                $directory = 'authorization/' . $trainingCenter->id . '/' . $acc->id;
+                $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
+                
+                // Store file in public storage
+                $path = $file->storeAs($directory, $fileName, 'public');
+                $url = Storage::disk('public')->url($path);
+                
+                $documents[] = [
+                    'type' => $documentType,
+                    'url' => $url,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                ];
+            }
+        }
+
+        if (empty($documents)) {
+            return response()->json(['message' => 'No valid documents uploaded'], 422);
+        }
+
         $authorization = TrainingCenterAccAuthorization::create([
             'training_center_id' => $trainingCenter->id,
             'acc_id' => $acc->id,
             'request_date' => now(),
             'status' => 'pending',
-            'documents_json' => $request->documents_json ?? $request->documents,
+            'documents_json' => $documents,
         ]);
 
         // TODO: Send notification to ACC
