@@ -17,7 +17,7 @@ class ACCMaterialSeeder extends Seeder
             $courses = Course::where('acc_id', $acc->id)->get();
 
             foreach ($courses as $course) {
-                $materialTypes = ['textbook', 'video', 'presentation', 'worksheet', 'exam'];
+                $materialTypes = ['pdf', 'video', 'presentation', 'package'];
 
                 foreach ($materialTypes as $type) {
                     ACCMaterial::create([
