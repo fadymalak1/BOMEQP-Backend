@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('accs', function (Blueprint $table) {
-            $table->decimal('commission_percentage', 5, 2)->nullable()->after('approved_by');
+            $table->decimal('commission_percentage', 5, 2)->nullable();
         });
     }
 
