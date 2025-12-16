@@ -15,7 +15,7 @@ class ACCDocumentSeeder extends Seeder
         $accs = ACC::all();
 
         foreach ($accs as $acc) {
-            $documentTypes = ['license', 'certificate', 'registration', 'tax_document', 'insurance'];
+            $documentTypes = ['license', 'registration', 'certificate', 'other'];
 
             foreach ($documentTypes as $type) {
                 ACCDocument::create([
