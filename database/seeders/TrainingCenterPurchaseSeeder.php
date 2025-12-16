@@ -65,7 +65,7 @@ class TrainingCenterPurchaseSeeder extends Seeder
                     TrainingCenterPurchase::create([
                         'training_center_id' => $center->id,
                         'acc_id' => $batch->acc_id,
-                        'purchase_type' => 'code_batch',
+                        'purchase_type' => 'package',
                         'item_id' => $batch->id,
                         'amount' => $batch->total_amount,
                         'group_commission_percentage' => 10.00,
