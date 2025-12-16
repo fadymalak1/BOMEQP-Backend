@@ -41,8 +41,8 @@ class TrainingClassSeeder extends Seeder
                     ],
                     'max_capacity' => rand(20, 50),
                     'enrolled_count' => rand(5, 25),
-                    'status' => ['scheduled', 'ongoing', 'completed'][rand(0, 2)],
-                    'location' => $center->city,
+                    'status' => ['scheduled', 'in_progress', 'completed', 'cancelled'][rand(0, 3)],
+                    'location' => ['physical', 'online'][rand(0, 1)],
                     'location_details' => $center->address,
                 ]);
             }
