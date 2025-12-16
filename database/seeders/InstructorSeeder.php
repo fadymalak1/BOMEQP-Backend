@@ -47,7 +47,10 @@ class InstructorSeeder extends Seeder
             ];
 
             foreach ($instructors as $instructor) {
-                Instructor::create($instructor);
+                Instructor::firstOrCreate(
+                    ['email' => $instructor['email']],
+                    $instructor
+                );
             }
         }
     }

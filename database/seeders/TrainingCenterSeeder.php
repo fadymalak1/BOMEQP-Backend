@@ -69,7 +69,10 @@ class TrainingCenterSeeder extends Seeder
         ];
 
         foreach ($trainingCenters as $center) {
-            TrainingCenter::create($center);
+            TrainingCenter::firstOrCreate(
+                ['registration_number' => $center['registration_number']],
+                $center
+            );
         }
     }
 }

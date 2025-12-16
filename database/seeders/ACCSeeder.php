@@ -84,7 +84,10 @@ class ACCSeeder extends Seeder
         ];
 
         foreach ($accs as $acc) {
-            ACC::create($acc);
+            ACC::firstOrCreate(
+                ['registration_number' => $acc['registration_number']],
+                $acc
+            );
         }
     }
 }
