@@ -49,7 +49,7 @@ class CertificateSeeder extends Seeder
                     'template_id' => $template ? $template->id : null,
                     'certificate_pdf_url' => 'https://example.com/certificates/' . uniqid() . '.pdf',
                     'verification_code' => strtoupper(uniqid('VERIFY-')),
-                    'status' => 'active',
+                    'status' => 'valid',
                     'code_used_id' => $code->id,
                 ]);
 
