@@ -26,12 +26,15 @@ class AuthController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        // Training centers are active by default, ACCs require approval (pending)
+        $userStatus = $request->role === 'training_center_admin' ? 'active' : 'pending';
+        
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'role' => $request->role,
-            'status' => 'pending',
+            'status' => $userStatus,
         ]);
 
         // Create Training Center record if role is training_center_admin
@@ -45,7 +48,7 @@ class AuthController extends Controller
                 'address' => $request->address ?? '',
                 'phone' => $request->phone ?? '',
                 'email' => $request->email,
-                'status' => 'pending',
+                'status' => 'active', // Training centers are active immediately upon registration
             ]);
         }
 
