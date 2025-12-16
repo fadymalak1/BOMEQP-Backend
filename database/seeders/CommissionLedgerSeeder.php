@@ -26,7 +26,7 @@ class CommissionLedgerSeeder extends Seeder
                 'group_commission_percentage' => 10.00,
                 'acc_commission_amount' => $accCommission,
                 'acc_commission_percentage' => 15.00,
-                'settlement_status' => ['pending', 'settled'][rand(0, 1)],
+                'settlement_status' => ['pending', 'paid'][rand(0, 1)],
                 'settlement_date' => rand(0, 1) ? now()->subDays(rand(1, 30)) : null,
             ]);
         }
