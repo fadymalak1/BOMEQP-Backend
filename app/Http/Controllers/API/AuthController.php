@@ -87,9 +87,10 @@ class AuthController extends Controller
             ]);
         }
 
-        if ($user->status !== 'active') {
-            return response()->json(['message' => 'Account is not active'], 403);
-        }
+        // Status check removed - allow login regardless of status
+        // if ($user->status !== 'active') {
+        //     return response()->json(['message' => 'Account is not active'], 403);
+        // }
 
         $user->update(['last_login' => now()]);
         $token = $user->createToken('auth_token')->plainTextToken;

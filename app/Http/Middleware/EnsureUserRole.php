@@ -25,9 +25,10 @@ class EnsureUserRole
             return response()->json(['message' => 'Unauthorized. Required role: ' . implode(', ', $roles)], 403);
         }
 
-        if ($user->status !== 'active') {
-            return response()->json(['message' => 'Account is not active'], 403);
-        }
+        // Status check removed - allow access regardless of status
+        // if ($user->status !== 'active') {
+        //     return response()->json(['message' => 'Account is not active'], 403);
+        // }
 
         return $next($request);
     }
