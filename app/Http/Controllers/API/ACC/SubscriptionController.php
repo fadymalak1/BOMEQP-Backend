@@ -29,8 +29,8 @@ class SubscriptionController extends Controller
     {
         $request->validate([
             'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|in:credit_card,bank_transfer,wallet',
-            'payment_gateway_transaction_id' => 'nullable|string',
+            'payment_method' => 'required|in:credit_card,wallet',
+            'payment_intent_id' => 'nullable|string', // if using Stripe
         ]);
 
         $user = $request->user();
@@ -52,7 +52,7 @@ class SubscriptionController extends Controller
                 'amount' => $request->amount,
                 'currency' => 'USD',
                 'payment_method' => $request->payment_method,
-                'payment_gateway_transaction_id' => $request->payment_gateway_transaction_id,
+                'payment_gateway_transaction_id' => $request->payment_intent_id ?? $request->payment_gateway_transaction_id,
                 'status' => 'completed',
                 'completed_at' => now(),
             ]);
@@ -84,6 +84,10 @@ class SubscriptionController extends Controller
 
     public function renew(Request $request)
     {
+        $request->validate([
+            'auto_renew' => 'nullable|boolean',
+        ]);
+
         $user = $request->user();
         $acc = ACC::where('email', $user->email)->first();
 
@@ -97,9 +101,17 @@ class SubscriptionController extends Controller
             return response()->json(['message' => 'No active subscription found'], 404);
         }
 
-        // TODO: Implement renewal logic with payment
+        // Update auto_renew if provided
+        if ($request->has('auto_renew')) {
+            $currentSubscription->update(['auto_renew' => $request->auto_renew]);
+        }
 
-        return response()->json(['message' => 'Subscription renewed successfully']);
+        // TODO: Implement renewal logic with payment if auto_renew is true
+
+        return response()->json([
+            'message' => 'Subscription renewed successfully',
+            'subscription' => $currentSubscription->fresh(),
+        ]);
     }
 }
 

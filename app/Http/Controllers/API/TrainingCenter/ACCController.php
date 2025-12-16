@@ -19,9 +19,10 @@ class ACCController extends Controller
     public function requestAuthorization(Request $request, $id)
     {
         $request->validate([
-            'documents' => 'required|array',
-            'documents.*.type' => 'required|string',
-            'documents.*.url' => 'required|string',
+            'documents_json' => 'required|array',
+            'documents_json.*.type' => 'required|string',
+            'documents_json.*.url' => 'required|string',
+            'additional_info' => 'nullable|string',
         ]);
 
         $user = $request->user();
@@ -47,7 +48,7 @@ class ACCController extends Controller
             'acc_id' => $acc->id,
             'request_date' => now(),
             'status' => 'pending',
-            'documents_json' => $request->documents,
+            'documents_json' => $request->documents_json ?? $request->documents,
         ]);
 
         // TODO: Send notification to ACC

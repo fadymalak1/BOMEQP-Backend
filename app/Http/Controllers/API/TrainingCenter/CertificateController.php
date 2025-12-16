@@ -20,6 +20,7 @@ class CertificateController extends Controller
             'code_id' => 'required|exists:certificate_codes,id',
             'trainee_name' => 'required|string|max:255',
             'trainee_id_number' => 'nullable|string',
+            'issue_date' => 'nullable|date',
             'expiry_date' => 'nullable|date',
         ]);
 
@@ -64,7 +65,7 @@ class CertificateController extends Controller
             'instructor_id' => $trainingClass->instructor_id,
             'trainee_name' => $request->trainee_name,
             'trainee_id_number' => $request->trainee_id_number,
-            'issue_date' => now(),
+            'issue_date' => $request->issue_date ?? now(),
             'expiry_date' => $request->expiry_date,
             'template_id' => $template->id,
             'certificate_pdf_url' => '/certificates/' . Str::random(20) . '.pdf', // TODO: Generate actual PDF

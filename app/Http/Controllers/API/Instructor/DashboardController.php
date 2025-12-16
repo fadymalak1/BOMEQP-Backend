@@ -36,11 +36,44 @@ class DashboardController extends Controller
             ->whereYear('completed_at', now()->year)
             ->sum('amount');
 
+        $assignedClassesList = TrainingClass::where('instructor_id', $instructor->id)
+            ->with(['course', 'trainingCenter'])
+            ->orderBy('start_date', 'desc')
+            ->limit(10)
+            ->get()
+            ->map(function($class) {
+                return [
+                    'id' => $class->id,
+                    'course' => $class->course->name ?? '',
+                    'start_date' => $class->start_date,
+                    'end_date' => $class->end_date,
+                    'status' => $class->status,
+                    'enrolled_count' => $class->enrolled_count,
+                    'max_capacity' => $class->max_capacity,
+                ];
+            });
+
+        $totalEarnings = Transaction::where('payee_type', 'instructor')
+            ->where('payee_id', $instructor->id)
+            ->where('status', 'completed')
+            ->sum('amount');
+
+        $pendingEarnings = Transaction::where('payee_type', 'instructor')
+            ->where('payee_id', $instructor->id)
+            ->where('status', 'pending')
+            ->sum('amount');
+
         return response()->json([
-            'assigned_classes' => $assignedClasses,
+            'assigned_classes' => $assignedClassesList,
             'upcoming_classes' => $upcomingClasses,
             'completed_classes' => $completedClasses,
-            'earnings_this_month' => $earningsThisMonth,
+            'earnings' => [
+                'total' => $totalEarnings,
+                'pending' => $pendingEarnings,
+                'paid' => $totalEarnings - $pendingEarnings,
+            ],
+            'available_materials' => [],
+            'notifications' => [],
         ]);
     }
 }

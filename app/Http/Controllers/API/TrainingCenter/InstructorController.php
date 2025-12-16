@@ -32,7 +32,7 @@ class InstructorController extends Controller
             'phone' => 'required|string',
             'id_number' => 'required|string|unique:instructors,id_number',
             'cv_url' => 'nullable|string',
-            'certificates' => 'nullable|array',
+            'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
         ]);
 
@@ -51,7 +51,7 @@ class InstructorController extends Controller
             'phone' => $request->phone,
             'id_number' => $request->id_number,
             'cv_url' => $request->cv_url,
-            'certificates_json' => $request->certificates,
+            'certificates_json' => $request->certificates_json ?? $request->certificates,
             'specializations' => $request->specializations,
             'status' => 'pending',
         ]);
@@ -83,14 +83,20 @@ class InstructorController extends Controller
             'phone' => 'sometimes|string',
             'id_number' => 'sometimes|string|unique:instructors,id_number,' . $id,
             'cv_url' => 'nullable|string',
-            'certificates' => 'nullable|array',
+            'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
         ]);
 
-        $instructor->update($request->only([
+        $updateData = $request->only([
             'first_name', 'last_name', 'email', 'phone', 'id_number',
-            'cv_url', 'certificates', 'specializations'
-        ]));
+            'cv_url', 'specializations'
+        ]);
+        
+        if ($request->has('certificates_json') || $request->has('certificates')) {
+            $updateData['certificates_json'] = $request->certificates_json ?? $request->certificates;
+        }
+        
+        $instructor->update($updateData);
 
         return response()->json(['message' => 'Instructor updated successfully', 'instructor' => $instructor]);
     }
@@ -101,7 +107,7 @@ class InstructorController extends Controller
             'acc_id' => 'required|exists:accs,id',
             'course_ids' => 'required|array',
             'course_ids.*' => 'exists:courses,id',
-            'documents' => 'nullable|array',
+            'documents_json' => 'nullable|array',
         ]);
 
         $user = $request->user();
@@ -119,7 +125,7 @@ class InstructorController extends Controller
             'training_center_id' => $trainingCenter->id,
             'request_date' => now(),
             'status' => 'pending',
-            'documents_json' => $request->documents,
+            'documents_json' => $request->documents_json ?? $request->documents,
         ]);
 
         // TODO: Send notification to ACC
@@ -128,6 +134,23 @@ class InstructorController extends Controller
             'message' => 'Authorization request submitted successfully',
             'authorization' => $authorization,
         ], 201);
+    }
+
+    public function destroy($id)
+    {
+        $instructor = Instructor::findOrFail($id);
+        
+        // Check if instructor belongs to the training center
+        $user = request()->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+        
+        if (!$trainingCenter || $instructor->training_center_id !== $trainingCenter->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $instructor->delete();
+        
+        return response()->json(['message' => 'Instructor deleted successfully']);
     }
 }
 

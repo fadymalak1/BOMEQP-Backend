@@ -35,12 +35,38 @@ class DashboardController extends Controller
             ->whereYear('completed_at', now()->year)
             ->sum('amount');
 
+        $pendingInstructorRequests = \App\Models\InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('status', 'pending')
+            ->count();
+
+        $activeInstructors = \App\Models\InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('status', 'approved')
+            ->count();
+
+        $totalRevenue = Transaction::where('payee_type', 'acc')
+            ->where('payee_id', $acc->id)
+            ->where('status', 'completed')
+            ->sum('amount');
+
+        $certificatesGenerated = \App\Models\Certificate::whereHas('course', function($q) use ($acc) {
+            $q->where('acc_id', $acc->id);
+        })->count();
+
         return response()->json([
             'subscription_status' => $subscription?->payment_status ?? 'pending',
-            'subscription_expires' => $subscription?->subscription_end_date,
-            'pending_requests' => $pendingRequests,
+            'subscription_expires_at' => $subscription?->subscription_end_date,
+            'pending_requests' => [
+                'training_centers' => $pendingRequests,
+                'instructors' => $pendingInstructorRequests,
+            ],
+            'revenue' => [
+                'monthly' => $revenueThisMonth,
+                'total' => $totalRevenue,
+            ],
             'active_training_centers' => $activeTrainingCenters,
-            'revenue_this_month' => $revenueThisMonth,
+            'active_instructors' => $activeInstructors,
+            'certificates_generated' => $certificatesGenerated,
+            'recent_activity' => [],
         ]);
     }
 }

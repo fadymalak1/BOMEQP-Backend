@@ -34,7 +34,7 @@ class ClassController extends Controller
             'instructor_id' => 'required|exists:instructors,id',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
-            'schedule' => 'nullable|array',
+            'schedule_json' => 'nullable|array',
             'max_capacity' => 'required|integer|min:1',
             'location' => 'required|in:physical,online',
             'location_details' => 'nullable|string',
@@ -54,7 +54,7 @@ class ClassController extends Controller
             'instructor_id' => $request->instructor_id,
             'start_date' => $request->start_date,
             'end_date' => $request->end_date,
-            'schedule_json' => $request->schedule,
+            'schedule_json' => $request->schedule_json ?? $request->schedule,
             'max_capacity' => $request->max_capacity,
             'enrolled_count' => 0,
             'status' => 'scheduled',
@@ -89,7 +89,7 @@ class ClassController extends Controller
             'instructor_id' => 'sometimes|exists:instructors,id',
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after:start_date',
-            'schedule' => 'nullable|array',
+            'schedule_json' => 'nullable|array',
             'max_capacity' => 'sometimes|integer|min:1',
             'location' => 'sometimes|in:physical,online',
             'location_details' => 'nullable|string',
@@ -101,8 +101,8 @@ class ClassController extends Controller
             'max_capacity', 'location', 'location_details', 'status'
         ]);
 
-        if ($request->has('schedule')) {
-            $updateData['schedule_json'] = $request->schedule;
+        if ($request->has('schedule_json') || $request->has('schedule')) {
+            $updateData['schedule_json'] = $request->schedule_json ?? $request->schedule;
         }
 
         $class->update($updateData);
@@ -112,7 +112,7 @@ class ClassController extends Controller
 
     public function destroy($id)
     {
-        $user = $request->user();
+        $user = request()->user();
         $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
 
         if (!$trainingCenter) {

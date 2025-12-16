@@ -194,8 +194,8 @@ headers: {
 
 ### Base URL
 ```
-Production: https://your-domain.com/api
-Development: http://localhost:8000/api
+Production: https://aeroenix.com/v1/api
+Development: http://localhost/api
 ```
 
 ### Headers

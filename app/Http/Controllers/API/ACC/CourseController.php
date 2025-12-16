@@ -99,7 +99,7 @@ class CourseController extends Controller
 
     public function destroy($id)
     {
-        $user = $request->user();
+        $user = request()->user();
         $acc = ACC::where('email', $user->email)->first();
 
         if (!$acc) {
