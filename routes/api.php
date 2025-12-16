@@ -22,6 +22,9 @@ Route::post('/auth/reset-password', [App\Http\Controllers\API\AuthController::cl
 Route::get('/auth/verify-email/{token}', [App\Http\Controllers\API\AuthController::class, 'verifyEmail']);
 Route::get('/certificates/verify/{code}', [App\Http\Controllers\API\CertificateController::class, 'verify']);
 
+// Stripe webhook (public, but verified by signature)
+Route::post('/stripe/webhook', [App\Http\Controllers\API\StripeController::class, 'handleWebhook']);
+
 // Protected routes
 Route::middleware(['auth:sanctum'])->group(function () {
     // Auth routes
@@ -29,6 +32,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'profile']);
     Route::put('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'updateProfile']);
     Route::put('/auth/change-password', [App\Http\Controllers\API\AuthController::class, 'changePassword']);
+
+    // Stripe Payment routes (available to all authenticated users)
+    Route::prefix('stripe')->group(function () {
+        Route::get('/config', [App\Http\Controllers\API\StripeController::class, 'getConfig']);
+        Route::post('/payment-intent', [App\Http\Controllers\API\StripeController::class, 'createPaymentIntent']);
+        Route::post('/confirm', [App\Http\Controllers\API\StripeController::class, 'confirmPayment']);
+        Route::post('/refund', [App\Http\Controllers\API\StripeController::class, 'refund']);
+    });
 
     // Group Admin routes
     Route::prefix('admin')->middleware(['role:group_admin'])->group(function () {
@@ -58,6 +69,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/reports/accs', [App\Http\Controllers\API\Admin\ReportController::class, 'accs']);
         Route::get('/reports/training-centers', [App\Http\Controllers\API\Admin\ReportController::class, 'trainingCenters']);
         Route::get('/reports/certificates', [App\Http\Controllers\API\Admin\ReportController::class, 'certificates']);
+
+        // Stripe Settings Management
+        Route::prefix('stripe-settings')->group(function () {
+            Route::get('/', [App\Http\Controllers\API\StripeSettingController::class, 'index']);
+            Route::get('/active', [App\Http\Controllers\API\StripeSettingController::class, 'getActive']);
+            Route::post('/', [App\Http\Controllers\API\StripeSettingController::class, 'store']);
+            Route::put('/{id}', [App\Http\Controllers\API\StripeSettingController::class, 'update']);
+            Route::delete('/{id}', [App\Http\Controllers\API\StripeSettingController::class, 'destroy']);
+        });
     });
 
     // ACC routes

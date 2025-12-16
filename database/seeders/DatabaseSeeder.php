@@ -15,16 +15,37 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Seed admin user
+        // Seed in order to respect dependencies
         $this->call([
             AdminUserSeeder::class,
+            UserSeeder::class,
+            CategorySeeder::class,
+            SubCategorySeeder::class,
+            ACCSeeder::class,
+            ACCSubscriptionSeeder::class,
+            ACCDocumentSeeder::class,
+            TrainingCenterSeeder::class,
+            TrainingCenterWalletSeeder::class,
+            InstructorSeeder::class,
+            CourseSeeder::class,
+            ClassModelSeeder::class,
+            CertificateTemplateSeeder::class,
+            CertificatePricingSeeder::class,
+            TrainingCenterAccAuthorizationSeeder::class,
+            InstructorAccAuthorizationSeeder::class,
+            InstructorCourseAuthorizationSeeder::class,
+            DiscountCodeSeeder::class,
+            CodeBatchSeeder::class,
+            CertificateCodeSeeder::class,
+            CertificateSeeder::class,
+            TransactionSeeder::class,
+            CommissionLedgerSeeder::class,
+            MonthlySettlementSeeder::class,
+            ACCMaterialSeeder::class,
+            TrainingCenterPurchaseSeeder::class,
+            TrainingClassSeeder::class,
+            ClassCompletionSeeder::class,
+            StripeSettingSeeder::class,
         ]);
-
-        // User::factory(10)->create();
-
-        // User::factory()->create([
-        //     'name' => 'Test User',
-        //     'email' => 'test@example.com',
-        // ]);
     }
 }
