@@ -13,8 +13,8 @@ return new class extends Migration
             $table->string('certificate_number')->unique();
             $table->foreignId('course_id')->constrained('courses');
             $table->foreignId('class_id')->nullable()->constrained('classes')->nullOnDelete();
-            $table->foreignId('training_center_id')->constrained('training_centers');
-            $table->foreignId('instructor_id')->nullable()->constrained('instructors')->nullOnDelete();
+            $table->unsignedBigInteger('training_center_id');
+            $table->unsignedBigInteger('instructor_id')->nullable();
             $table->string('trainee_name');
             $table->string('trainee_id_number')->nullable();
             $table->date('issue_date');
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->string('certificate_pdf_url');
             $table->string('verification_code')->unique();
             $table->enum('status', ['valid', 'revoked', 'expired'])->default('valid');
-            $table->foreignId('code_used_id')->nullable()->constrained('certificate_codes')->nullOnDelete();
+            $table->unsignedBigInteger('code_used_id')->nullable();
             $table->timestamps();
         });
     }
