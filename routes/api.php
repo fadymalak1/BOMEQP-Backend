@@ -51,8 +51,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/accs/{id}/create-space', [App\Http\Controllers\API\Admin\ACCController::class, 'createSpace']);
         Route::post('/accs/{id}/generate-credentials', [App\Http\Controllers\API\Admin\ACCController::class, 'generateCredentials']);
         Route::get('/accs', [App\Http\Controllers\API\Admin\ACCController::class, 'index']);
-        Route::get('/accs/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'show']);
         Route::put('/accs/{id}/commission-percentage', [App\Http\Controllers\API\Admin\ACCController::class, 'setCommissionPercentage']);
+        Route::get('/accs/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'show']);
         Route::get('/accs/{id}/transactions', [App\Http\Controllers\API\Admin\ACCController::class, 'transactions']);
 
         // Categories & Courses

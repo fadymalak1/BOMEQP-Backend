@@ -29,6 +29,7 @@ class ACC extends Model
         'registration_paid_at',
         'approved_at',
         'approved_by',
+        'commission_percentage',
     ];
 
     protected function casts(): array
@@ -38,6 +39,7 @@ class ACC extends Model
             'registration_fee_amount' => 'decimal:2',
             'registration_paid_at' => 'datetime',
             'approved_at' => 'datetime',
+            'commission_percentage' => 'decimal:2',
         ];
     }
 

@@ -85,8 +85,14 @@ class ACCController extends Controller
         ]);
 
         $acc = ACC::findOrFail($id);
-        // Implementation for setting commission percentage
-        return response()->json(['message' => 'Commission percentage set successfully']);
+        $acc->update([
+            'commission_percentage' => $request->commission_percentage,
+        ]);
+
+        return response()->json([
+            'message' => 'Commission percentage set successfully',
+            'acc' => $acc->fresh(),
+        ]);
     }
 
     public function transactions($id)
