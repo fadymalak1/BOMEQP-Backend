@@ -18,7 +18,7 @@ class ClassModelSeeder extends Seeder
             for ($i = 1; $i <= 3; $i++) {
                 ClassModel::create([
                     'course_id' => $course->id,
-                    'name' => $course->name . ' - Class ' . $i,
+                    'name' => $course->name . ' - Class ' . $i . ' (Course ID: ' . $course->id . ')',
                     'created_by' => $admin->id,
                     'status' => 'active',
                 ]);

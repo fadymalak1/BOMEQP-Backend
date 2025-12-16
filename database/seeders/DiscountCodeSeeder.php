@@ -19,7 +19,7 @@ class DiscountCodeSeeder extends Seeder
             $discountCodes = [
                 [
                     'acc_id' => $acc->id,
-                    'code' => 'SAVE10',
+                    'code' => 'SAVE10-' . $acc->id,
                     'discount_type' => 'percentage',
                     'discount_percentage' => 10.00,
                     'applicable_course_ids' => array_slice($courses, 0, 3),
@@ -31,7 +31,7 @@ class DiscountCodeSeeder extends Seeder
                 ],
                 [
                     'acc_id' => $acc->id,
-                    'code' => 'WELCOME20',
+                    'code' => 'WELCOME20-' . $acc->id,
                     'discount_type' => 'percentage',
                     'discount_percentage' => 20.00,
                     'applicable_course_ids' => $courses,
