@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -32,6 +33,35 @@ class AuthController extends Controller
             'role' => $request->role,
             'status' => 'pending',
         ]);
+
+        // Create Training Center record if role is training_center_admin
+        if ($request->role === 'training_center_admin') {
+            \App\Models\TrainingCenter::create([
+                'name' => $request->name,
+                'legal_name' => $request->name,
+                'registration_number' => 'TC-' . strtoupper(Str::random(8)),
+                'country' => $request->country ?? 'Unknown',
+                'city' => $request->city ?? 'Unknown',
+                'address' => $request->address ?? '',
+                'phone' => $request->phone ?? '',
+                'email' => $request->email,
+                'status' => 'pending',
+            ]);
+        }
+
+        // Create ACC record if role is acc_admin
+        if ($request->role === 'acc_admin') {
+            \App\Models\ACC::create([
+                'name' => $request->name,
+                'legal_name' => $request->name,
+                'registration_number' => 'ACC-' . strtoupper(Str::random(8)),
+                'country' => $request->country ?? 'Unknown',
+                'address' => $request->address ?? '',
+                'phone' => $request->phone ?? '',
+                'email' => $request->email,
+                'status' => 'pending',
+            ]);
+        }
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
