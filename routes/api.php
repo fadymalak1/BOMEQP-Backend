@@ -1,0 +1,155 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register API routes for your application. These
+| routes are loaded by the RouteServiceProvider and all of them will
+| be assigned to the "api" middleware group. Make something great!
+|
+*/
+
+// Public routes
+Route::post('/auth/register', [App\Http\Controllers\API\AuthController::class, 'register']);
+Route::post('/auth/login', [App\Http\Controllers\API\AuthController::class, 'login']);
+Route::post('/auth/forgot-password', [App\Http\Controllers\API\AuthController::class, 'forgotPassword']);
+Route::post('/auth/reset-password', [App\Http\Controllers\API\AuthController::class, 'resetPassword']);
+Route::get('/auth/verify-email/{token}', [App\Http\Controllers\API\AuthController::class, 'verifyEmail']);
+Route::get('/certificates/verify/{code}', [App\Http\Controllers\API\CertificateController::class, 'verify']);
+
+// Protected routes
+Route::middleware(['auth:sanctum'])->group(function () {
+    // Auth routes
+    Route::post('/auth/logout', [App\Http\Controllers\API\AuthController::class, 'logout']);
+    Route::get('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'profile']);
+    Route::put('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'updateProfile']);
+    Route::put('/auth/change-password', [App\Http\Controllers\API\AuthController::class, 'changePassword']);
+
+    // Group Admin routes
+    Route::prefix('admin')->middleware(['role:group_admin'])->group(function () {
+        // ACC Management
+        Route::get('/accs/applications', [App\Http\Controllers\API\Admin\ACCController::class, 'applications']);
+        Route::get('/accs/applications/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'showApplication']);
+        Route::put('/accs/applications/{id}/approve', [App\Http\Controllers\API\Admin\ACCController::class, 'approve']);
+        Route::put('/accs/applications/{id}/reject', [App\Http\Controllers\API\Admin\ACCController::class, 'reject']);
+        Route::post('/accs/{id}/create-space', [App\Http\Controllers\API\Admin\ACCController::class, 'createSpace']);
+        Route::post('/accs/{id}/generate-credentials', [App\Http\Controllers\API\Admin\ACCController::class, 'generateCredentials']);
+        Route::get('/accs', [App\Http\Controllers\API\Admin\ACCController::class, 'index']);
+        Route::get('/accs/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'show']);
+        Route::put('/accs/{id}/commission-percentage', [App\Http\Controllers\API\Admin\ACCController::class, 'setCommissionPercentage']);
+        Route::get('/accs/{id}/transactions', [App\Http\Controllers\API\Admin\ACCController::class, 'transactions']);
+
+        // Categories & Courses
+        Route::apiResource('categories', App\Http\Controllers\API\Admin\CategoryController::class);
+        Route::apiResource('sub-categories', App\Http\Controllers\API\Admin\SubCategoryController::class);
+        Route::apiResource('classes', App\Http\Controllers\API\Admin\ClassController::class);
+
+        // Financial & Reporting
+        Route::get('/financial/dashboard', [App\Http\Controllers\API\Admin\FinancialController::class, 'dashboard']);
+        Route::get('/financial/transactions', [App\Http\Controllers\API\Admin\FinancialController::class, 'transactions']);
+        Route::get('/financial/settlements', [App\Http\Controllers\API\Admin\FinancialController::class, 'settlements']);
+        Route::post('/financial/settlements/{id}/request-payment', [App\Http\Controllers\API\Admin\FinancialController::class, 'requestPayment']);
+        Route::get('/reports/revenue', [App\Http\Controllers\API\Admin\ReportController::class, 'revenue']);
+        Route::get('/reports/accs', [App\Http\Controllers\API\Admin\ReportController::class, 'accs']);
+        Route::get('/reports/training-centers', [App\Http\Controllers\API\Admin\ReportController::class, 'trainingCenters']);
+        Route::get('/reports/certificates', [App\Http\Controllers\API\Admin\ReportController::class, 'certificates']);
+    });
+
+    // ACC routes
+    Route::prefix('acc')->middleware(['role:acc_admin'])->group(function () {
+        Route::get('/dashboard', [App\Http\Controllers\API\ACC\DashboardController::class, 'index']);
+        Route::get('/subscription', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'show']);
+        Route::post('/subscription/payment', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'payment']);
+        Route::put('/subscription/renew', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'renew']);
+
+        // Training Centers
+        Route::get('/training-centers/requests', [App\Http\Controllers\API\ACC\TrainingCenterController::class, 'requests']);
+        Route::put('/training-centers/requests/{id}/approve', [App\Http\Controllers\API\ACC\TrainingCenterController::class, 'approve']);
+        Route::put('/training-centers/requests/{id}/reject', [App\Http\Controllers\API\ACC\TrainingCenterController::class, 'reject']);
+        Route::put('/training-centers/requests/{id}/return', [App\Http\Controllers\API\ACC\TrainingCenterController::class, 'return']);
+        Route::get('/training-centers', [App\Http\Controllers\API\ACC\TrainingCenterController::class, 'index']);
+
+        // Instructors
+        Route::get('/instructors/requests', [App\Http\Controllers\API\ACC\InstructorController::class, 'requests']);
+        Route::put('/instructors/requests/{id}/approve', [App\Http\Controllers\API\ACC\InstructorController::class, 'approve']);
+        Route::put('/instructors/requests/{id}/reject', [App\Http\Controllers\API\ACC\InstructorController::class, 'reject']);
+        Route::get('/instructors', [App\Http\Controllers\API\ACC\InstructorController::class, 'index']);
+
+        // Courses
+        Route::apiResource('courses', App\Http\Controllers\API\ACC\CourseController::class);
+        Route::post('/courses/{id}/pricing', [App\Http\Controllers\API\ACC\CourseController::class, 'setPricing']);
+        Route::put('/courses/{id}/pricing', [App\Http\Controllers\API\ACC\CourseController::class, 'updatePricing']);
+
+        // Certificate Templates
+        Route::apiResource('certificate-templates', App\Http\Controllers\API\ACC\CertificateTemplateController::class);
+        Route::post('/certificate-templates/{id}/preview', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'preview']);
+
+        // Discount Codes
+        Route::apiResource('discount-codes', App\Http\Controllers\API\ACC\DiscountCodeController::class);
+        Route::post('/discount-codes/validate', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'validate']);
+
+        // Materials
+        Route::apiResource('materials', App\Http\Controllers\API\ACC\MaterialController::class);
+
+        // Certificates & Classes
+        Route::get('/certificates', [App\Http\Controllers\API\ACC\CertificateController::class, 'index']);
+        Route::get('/classes', [App\Http\Controllers\API\ACC\ClassController::class, 'index']);
+
+        // Financial
+        Route::get('/financial/transactions', [App\Http\Controllers\API\ACC\FinancialController::class, 'transactions']);
+        Route::get('/financial/settlements', [App\Http\Controllers\API\ACC\FinancialController::class, 'settlements']);
+    });
+
+    // Training Center routes
+    Route::prefix('training-center')->middleware(['role:training_center_admin'])->group(function () {
+        Route::get('/dashboard', [App\Http\Controllers\API\TrainingCenter\DashboardController::class, 'index']);
+        Route::get('/accs', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'index']);
+        Route::post('/accs/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'requestAuthorization']);
+        Route::get('/authorizations', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'authorizations']);
+
+        // Instructors
+        Route::apiResource('instructors', App\Http\Controllers\API\TrainingCenter\InstructorController::class);
+        Route::post('/instructors/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'requestAuthorization']);
+
+        // Certificate Codes
+        Route::post('/codes/purchase', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'purchase']);
+        Route::get('/codes/inventory', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'inventory']);
+        Route::get('/codes/batches', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'batches']);
+
+        // Wallet
+        Route::post('/wallet/add-funds', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'addFunds']);
+        Route::get('/wallet/balance', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'balance']);
+        Route::get('/wallet/transactions', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'transactions']);
+
+        // Classes
+        Route::apiResource('classes', App\Http\Controllers\API\TrainingCenter\ClassController::class);
+        Route::put('/classes/{id}/complete', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'complete']);
+
+        // Certificates
+        Route::post('/certificates/generate', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'generate']);
+        Route::get('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'index']);
+        Route::get('/certificates/{id}', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'show']);
+
+        // Marketplace
+        Route::get('/marketplace/materials', [App\Http\Controllers\API\TrainingCenter\MarketplaceController::class, 'materials']);
+        Route::get('/marketplace/materials/{id}', [App\Http\Controllers\API\TrainingCenter\MarketplaceController::class, 'showMaterial']);
+        Route::post('/marketplace/purchase', [App\Http\Controllers\API\TrainingCenter\MarketplaceController::class, 'purchase']);
+        Route::get('/library', [App\Http\Controllers\API\TrainingCenter\MarketplaceController::class, 'library']);
+    });
+
+    // Instructor routes
+    Route::prefix('instructor')->middleware(['role:instructor'])->group(function () {
+        Route::get('/dashboard', [App\Http\Controllers\API\Instructor\DashboardController::class, 'index']);
+        Route::get('/classes', [App\Http\Controllers\API\Instructor\ClassController::class, 'index']);
+        Route::get('/classes/{id}', [App\Http\Controllers\API\Instructor\ClassController::class, 'show']);
+        Route::put('/classes/{id}/mark-complete', [App\Http\Controllers\API\Instructor\ClassController::class, 'markComplete']);
+        Route::get('/materials', [App\Http\Controllers\API\Instructor\MaterialController::class, 'index']);
+        Route::get('/earnings', [App\Http\Controllers\API\Instructor\EarningController::class, 'index']);
+    });
+});
+
