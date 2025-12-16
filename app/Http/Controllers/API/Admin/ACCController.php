@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class ACCController extends Controller
@@ -28,6 +29,12 @@ class ACCController extends Controller
             'approved_at' => now(),
             'approved_by' => $request->user()->id,
         ]);
+
+        // Also activate the user account associated with this ACC
+        $user = User::where('email', $acc->email)->first();
+        if ($user && $user->role === 'acc_admin') {
+            $user->update(['status' => 'active']);
+        }
 
         return response()->json(['message' => 'ACC application approved', 'acc' => $acc]);
     }
