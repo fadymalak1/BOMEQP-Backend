@@ -18,7 +18,7 @@ return new class extends Migration
             $table->decimal('group_commission_percentage', 5, 2)->default(0);
             $table->decimal('group_commission_amount', 10, 2)->default(0);
             $table->foreignId('transaction_id')->constrained('transactions');
-            $table->timestamp('purchased_at');
+            $table->timestamp('purchased_at')->useCurrent();
             $table->timestamps();
         });
     }

@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('training_center_id')->constrained('training_centers')->cascadeOnDelete();
             $table->foreignId('acc_id')->constrained('accs')->cascadeOnDelete();
-            $table->timestamp('request_date');
+            $table->timestamp('request_date')->useCurrent();
             $table->enum('status', ['pending', 'approved', 'rejected', 'returned'])->default('pending');
             $table->decimal('group_commission_percentage', 5, 2)->nullable();
             $table->text('rejection_reason')->nullable();

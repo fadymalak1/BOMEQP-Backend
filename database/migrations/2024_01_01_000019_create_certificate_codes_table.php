@@ -21,7 +21,7 @@ return new class extends Migration
             $table->enum('status', ['available', 'used', 'expired', 'revoked'])->default('available');
             $table->timestamp('used_at')->nullable();
             $table->unsignedBigInteger('used_for_certificate_id')->nullable();
-            $table->timestamp('purchased_at');
+            $table->timestamp('purchased_at')->useCurrent();
             $table->timestamps();
         });
     }

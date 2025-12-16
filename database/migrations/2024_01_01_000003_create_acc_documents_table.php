@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('acc_id')->constrained('accs')->cascadeOnDelete();
             $table->enum('document_type', ['license', 'registration', 'certificate', 'other']);
             $table->string('document_url');
-            $table->timestamp('uploaded_at');
+            $table->timestamp('uploaded_at')->useCurrent();
             $table->boolean('verified')->default(false);
             $table->foreignId('verified_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('verified_at')->nullable();

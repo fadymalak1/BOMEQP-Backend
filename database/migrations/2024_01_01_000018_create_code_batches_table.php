@@ -16,7 +16,7 @@ return new class extends Migration
             $table->decimal('total_amount', 10, 2);
             $table->enum('payment_method', ['wallet', 'credit_card']);
             $table->string('transaction_id')->nullable();
-            $table->timestamp('purchase_date');
+            $table->timestamp('purchase_date')->useCurrent();
             $table->timestamps();
         });
     }
