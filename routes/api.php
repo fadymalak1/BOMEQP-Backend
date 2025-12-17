@@ -41,6 +41,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/refund', [App\Http\Controllers\API\StripeController::class, 'refund']);
     });
 
+    // Shared routes for both group_admin and acc_admin
+    Route::prefix('admin')->middleware(['role:group_admin,acc_admin'])->group(function () {
+        // Sub-categories (read access for ACC admins)
+        Route::get('/sub-categories', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'index']);
+        Route::get('/sub-categories/{id}', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'show']);
+    });
+
     // Group Admin routes
     Route::prefix('admin')->middleware(['role:group_admin'])->group(function () {
         // ACC Management
@@ -55,9 +62,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/accs/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'show']);
         Route::get('/accs/{id}/transactions', [App\Http\Controllers\API\Admin\ACCController::class, 'transactions']);
 
-        // Categories & Courses
+        // Categories & Courses (full CRUD only for group_admin)
         Route::apiResource('categories', App\Http\Controllers\API\Admin\CategoryController::class);
-        Route::apiResource('sub-categories', App\Http\Controllers\API\Admin\SubCategoryController::class);
+        Route::post('/sub-categories', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'store']);
+        Route::put('/sub-categories/{id}', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'update']);
+        Route::delete('/sub-categories/{id}', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'destroy']);
         Route::apiResource('classes', App\Http\Controllers\API\Admin\ClassController::class);
 
         // Financial & Reporting

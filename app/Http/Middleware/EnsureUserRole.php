@@ -21,8 +21,15 @@ class EnsureUserRole
 
         $user = auth()->user();
 
-        if (!in_array($user->role, $roles)) {
-            return response()->json(['message' => 'Unauthorized. Required role: ' . implode(', ', $roles)], 403);
+        // Handle comma-separated roles (e.g., "group_admin,acc_admin")
+        $allowedRoles = [];
+        foreach ($roles as $role) {
+            $allowedRoles = array_merge($allowedRoles, explode(',', $role));
+        }
+        $allowedRoles = array_map('trim', $allowedRoles);
+
+        if (!in_array($user->role, $allowedRoles)) {
+            return response()->json(['message' => 'Unauthorized. Required role: ' . implode(' or ', $allowedRoles)], 403);
         }
 
         // Status check removed - allow access regardless of status
