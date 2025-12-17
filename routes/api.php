@@ -91,6 +91,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Instructors Management
         Route::get('/instructors', [App\Http\Controllers\API\Admin\InstructorController::class, 'index']);
         Route::get('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'show']);
+
+        // Courses Management
+        Route::get('/courses', [App\Http\Controllers\API\Admin\CourseController::class, 'index']);
+        Route::get('/courses/{id}', [App\Http\Controllers\API\Admin\CourseController::class, 'show']);
     });
 
     // ACC routes
