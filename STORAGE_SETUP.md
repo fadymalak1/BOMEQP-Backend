@@ -100,8 +100,9 @@ Add to your `.env` file:
 # Base application URL (include subdirectory if applicable)
 APP_URL=https://aeroenix.com/v1/api
 
-# Storage URL (optional - defaults to APP_URL/storage)
-STORAGE_URL=https://aeroenix.com/v1/api/storage
+# Storage URL (optional - defaults to APP_URL/storage/app/public)
+# Note: If symlink is not working, use the direct path with /app/public
+STORAGE_URL=https://aeroenix.com/v1/storage/app/public
 ```
 
 ### Notes
