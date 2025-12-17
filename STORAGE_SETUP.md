@@ -34,19 +34,23 @@ rm -f public/storage
 ln -s ../storage/app/public public/storage
 ```
 
-### Problem 2: Storage URL Missing Subdirectory
+### Problem 2: Storage URL Incorrect Path
 
-**Issue**: Storage URLs are generating as `https://aeroenix.com/api/storage/...` but should be `https://aeroenix.com/v1/api/storage/...`
+**Issue**: Storage URLs are generating as `https://aeroenix.com/v1/api/storage/...` but should be `https://aeroenix.com/v1/storage/...` (without `/api`)
 
-**Solution**: Update your `.env` file:
+**Why**: Storage files are served from the `public/storage` directory, not from API routes. The `/api` path is only for API endpoints.
+
+**Solution**: The code now automatically removes `/api` from the storage URL. However, you can also set a specific `STORAGE_URL` in your `.env` file:
 
 ```env
-# Update APP_URL to include the /v1 subdirectory
+# APP_URL includes /api for API routes
 APP_URL=https://aeroenix.com/v1/api
 
-# OR set a specific STORAGE_URL (recommended)
-STORAGE_URL=https://aeroenix.com/v1/api/storage
+# STORAGE_URL should NOT include /api (storage is served from public directory)
+STORAGE_URL=https://aeroenix.com/v1/storage
 ```
+
+**Note**: If you don't set `STORAGE_URL`, the system will automatically remove `/api` from `APP_URL` to generate the correct storage URL.
 
 After updating `.env`, clear the config cache:
 
