@@ -78,6 +78,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::put('/{id}', [App\Http\Controllers\API\StripeSettingController::class, 'update']);
             Route::delete('/{id}', [App\Http\Controllers\API\StripeSettingController::class, 'destroy']);
         });
+
+        // Instructors Management
+        Route::get('/instructors', [App\Http\Controllers\API\Admin\InstructorController::class, 'index']);
+        Route::get('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'show']);
     });
 
     // ACC routes

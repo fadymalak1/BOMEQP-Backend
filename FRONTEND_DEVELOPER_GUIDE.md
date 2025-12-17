@@ -1254,6 +1254,144 @@ All requests should include:
 
 ---
 
+### Instructor Management
+
+#### 41. Get All Instructors
+**GET** `/admin/instructors`
+
+Get all instructors in the system with optional filters.
+
+**Query Parameters:**
+- `status` (optional) - Filter by status (`pending`, `active`, `suspended`, `inactive`)
+- `training_center_id` (optional) - Filter by training center ID
+- `search` (optional) - Search by name, email, or phone
+- `per_page` (optional) - Number of results per page (default: 15)
+- `page` (optional) - Page number
+
+**Response (200):**
+```json
+{
+  "instructors": [
+    {
+      "id": 1,
+      "first_name": "Jane",
+      "last_name": "Smith",
+      "email": "jane.smith@example.com",
+      "phone": "+1234567890",
+      "id_number": "ID123456",
+      "status": "active",
+      "training_center": {
+        "id": 1,
+        "name": "ABC Training Center",
+        "email": "info@abc.com"
+      },
+      "authorizations": [
+        {
+          "id": 1,
+          "acc_id": 1,
+          "status": "approved",
+          "request_date": "2024-01-15T10:30:00.000000Z"
+        }
+      ],
+      "created_at": "2024-01-10T10:30:00.000000Z"
+    }
+  ],
+  "pagination": {
+    "current_page": 1,
+    "last_page": 5,
+    "per_page": 15,
+    "total": 75
+  }
+}
+```
+
+---
+
+#### 42. Get Instructor Details
+**GET** `/admin/instructors/{id}`
+
+Get detailed information about a specific instructor including all relationships.
+
+**Response (200):**
+```json
+{
+  "instructor": {
+    "id": 1,
+    "first_name": "Jane",
+    "last_name": "Smith",
+    "email": "jane.smith@example.com",
+    "phone": "+1234567890",
+    "id_number": "ID123456",
+    "cv_url": "/documents/cv.pdf",
+    "certificates_json": [
+      {
+        "name": "Fire Safety Instructor",
+        "issuer": "ABC Body",
+        "expiry": "2025-12-31"
+      }
+    ],
+    "specializations": ["Fire Safety", "First Aid"],
+    "status": "active",
+    "training_center": {
+      "id": 1,
+      "name": "ABC Training Center",
+      "email": "info@abc.com"
+    },
+    "authorizations": [
+      {
+        "id": 1,
+        "acc": {
+          "id": 1,
+          "name": "ABC Accreditation Body"
+        },
+        "status": "approved",
+        "request_date": "2024-01-15T10:30:00.000000Z"
+      }
+    ],
+    "course_authorizations": [
+      {
+        "id": 1,
+        "course": {
+          "id": 1,
+          "name": "Fire Safety Fundamentals"
+        },
+        "status": "approved"
+      }
+    ],
+    "training_classes": [
+      {
+        "id": 1,
+        "course": {
+          "id": 1,
+          "name": "Fire Safety Fundamentals"
+        },
+        "status": "in_progress",
+        "start_date": "2024-02-01T09:00:00.000000Z"
+      }
+    ],
+    "certificates": [
+      {
+        "id": 1,
+        "certificate_number": "CERT-2024-001",
+        "trainee_name": "John Doe",
+        "issue_date": "2024-01-20T10:30:00.000000Z"
+      }
+    ],
+    "created_at": "2024-01-10T10:30:00.000000Z",
+    "updated_at": "2024-01-15T10:30:00.000000Z"
+  }
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "message": "No query results for model [App\\Models\\Instructor] 1"
+}
+```
+
+---
+
 ## ACC Admin Endpoints
 *Requires role: `acc_admin`*
 
@@ -2280,19 +2418,42 @@ All requests should include:
 **JavaScript/FormData Example:**
 ```javascript
 const formData = new FormData();
+
+// Method 1: Using array notation (Recommended)
 formData.append('documents[0][type]', 'license');
 formData.append('documents[0][file]', fileInput.files[0]); // File object
 formData.append('documents[1][type]', 'certificate');
 formData.append('documents[1][file]', fileInput2.files[0]);
 formData.append('additional_info', 'Additional information');
 
+// Method 2: Alternative using loop (if you have multiple files)
+const files = [
+  { type: 'license', file: fileInput.files[0] },
+  { type: 'certificate', file: fileInput2.files[0] }
+];
+files.forEach((item, index) => {
+  formData.append(`documents[${index}][type]`, item.type);
+  formData.append(`documents[${index}][file]`, item.file);
+});
+
 fetch('/api/training-center/accs/1/request-authorization', {
   method: 'POST',
   headers: {
     'Authorization': `Bearer ${token}`
-    // Don't set Content-Type - browser will set it with boundary
+    // IMPORTANT: Don't set Content-Type header - browser will automatically set it with boundary for multipart/form-data
   },
   body: formData
+})
+.then(response => response.json())
+.then(data => {
+  if (response.ok) {
+    console.log('Success:', data);
+  } else {
+    console.error('Error:', data);
+  }
+})
+.catch(error => {
+  console.error('Network error:', error);
 });
 ```
 
@@ -2332,13 +2493,34 @@ curl -X POST "https://your-domain.com/api/training-center/accs/1/request-authori
 **Error Response (422):**
 ```json
 {
-  "message": "Validation failed",
-  "errors": {
-    "documents.0.file": ["The documents.0.file must be a file."],
-    "documents.0.type": ["The selected documents.0.type is invalid."]
-  }
+  "message": "No valid documents uploaded. Please ensure files are uploaded correctly.",
+  "hint": "Use FormData with structure: documents[0][type]=license&documents[0][file]=<file>"
 }
 ```
+
+**Common Errors:**
+
+1. **400 Bad Request - "Authorization request already exists"**
+   - This ACC authorization request has already been submitted
+   - Check existing authorizations first
+
+2. **422 Validation Error - "No valid documents uploaded"**
+   - Files were not properly included in the request
+   - Ensure files are attached using FormData, not JSON
+   - Verify file format is one of: PDF, DOC, DOCX, JPG, JPEG, PNG
+   - File size must be less than 10MB
+
+3. **500 Server Error**
+   - Check server logs for details
+   - Ensure storage directory has write permissions
+   - Verify storage link is created: `php artisan storage:link`
+
+**Troubleshooting Tips:**
+- Always use `FormData` for file uploads, never JSON
+- Don't manually set `Content-Type` header - let the browser set it
+- Verify files exist and are valid before uploading
+- Check that file extensions match allowed types
+- Ensure authentication token is valid and included
 ```
 
 ---
