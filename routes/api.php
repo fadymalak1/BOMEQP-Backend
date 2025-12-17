@@ -163,6 +163,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/wallet/balance', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'balance']);
         Route::get('/wallet/transactions', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'transactions']);
 
+        // Courses (from approved ACCs)
+        Route::get('/courses', [App\Http\Controllers\API\TrainingCenter\CourseController::class, 'index']);
+        Route::get('/courses/{id}', [App\Http\Controllers\API\TrainingCenter\CourseController::class, 'show']);
+
         // Classes
         Route::apiResource('classes', App\Http\Controllers\API\TrainingCenter\ClassController::class);
         Route::put('/classes/{id}/complete', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'complete']);

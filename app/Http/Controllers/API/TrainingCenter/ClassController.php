@@ -47,6 +47,16 @@ class ClassController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
+        // Verify the course belongs to an approved ACC
+        $approvedAccIds = \App\Models\TrainingCenterAccAuthorization::where('training_center_id', $trainingCenter->id)
+            ->where('status', 'approved')
+            ->pluck('acc_id');
+
+        $course = \App\Models\Course::findOrFail($request->course_id);
+        if (!$approvedAccIds->contains($course->acc_id)) {
+            return response()->json(['message' => 'Course not available. ACC authorization required.'], 403);
+        }
+
         $class = TrainingClass::create([
             'training_center_id' => $trainingCenter->id,
             'course_id' => $request->course_id,
