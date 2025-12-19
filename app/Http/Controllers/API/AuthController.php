@@ -4,9 +4,12 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Mail\ResetPasswordMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -147,14 +150,101 @@ class AuthController extends Controller
 
     public function forgotPassword(Request $request)
     {
-        // Implementation for forgot password
-        return response()->json(['message' => 'Password reset link sent to your email']);
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'We could not find a user with that email address.'
+            ], 404);
+        }
+
+        // Generate reset token
+        $token = Str::random(64);
+        
+        // Store token in password_reset_tokens table
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $request->email],
+            [
+                'email' => $request->email,
+                'token' => Hash::make($token),
+                'created_at' => now()
+            ]
+        );
+
+        try {
+            // Send reset password email
+            Mail::to($user->email)->send(new ResetPasswordMail($token, $user->email));
+            
+            return response()->json([
+                'message' => 'Password reset link sent to your email'
+            ], 200);
+        } catch (\Exception $e) {
+            // Log the error but don't expose it to the user
+            \Log::error('Password reset email failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'message' => 'Unable to send password reset email. Please try again later.'
+            ], 500);
+        }
     }
 
     public function resetPassword(Request $request)
     {
-        // Implementation for reset password
-        return response()->json(['message' => 'Password reset successfully']);
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email|exists:users,email',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        // Get password reset record
+        $passwordReset = DB::table('password_reset_tokens')
+            ->where('email', $request->email)
+            ->first();
+
+        if (!$passwordReset) {
+            return response()->json([
+                'message' => 'Invalid or expired reset token'
+            ], 400);
+        }
+
+        // Check if token is valid (60 minutes expiry)
+        $tokenAge = now()->diffInMinutes($passwordReset->created_at);
+        if ($tokenAge > 60) {
+            // Delete expired token
+            DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+            return response()->json([
+                'message' => 'Reset token has expired. Please request a new one.'
+            ], 400);
+        }
+
+        // Verify token
+        if (!Hash::check($request->token, $passwordReset->token)) {
+            return response()->json([
+                'message' => 'Invalid reset token'
+            ], 400);
+        }
+
+        // Update user password
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        // Delete the used token
+        DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+
+        return response()->json([
+            'message' => 'Password reset successfully'
+        ], 200);
     }
 
     public function verifyEmail($token)
