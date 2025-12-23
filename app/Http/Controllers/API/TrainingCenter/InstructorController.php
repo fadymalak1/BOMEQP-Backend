@@ -202,21 +202,25 @@ class InstructorController extends Controller
             ], 400);
         }
 
+        // Check wallet balance before starting transaction
+        if ($request->payment_method === 'wallet') {
+            $wallet = TrainingCenterWallet::firstOrCreate(
+                ['training_center_id' => $trainingCenter->id],
+                ['balance' => 0, 'currency' => 'USD']
+            );
+
+            if ($wallet->balance < $authorization->authorization_price) {
+                return response()->json([
+                    'message' => 'Insufficient wallet balance'
+                ], 400);
+            }
+        }
+
         DB::beginTransaction();
         try {
             // Process payment
             if ($request->payment_method === 'wallet') {
-                $wallet = TrainingCenterWallet::firstOrCreate(
-                    ['training_center_id' => $trainingCenter->id],
-                    ['balance' => 0, 'currency' => 'USD']
-                );
-
-                if ($wallet->balance < $authorization->authorization_price) {
-                    return response()->json([
-                        'message' => 'Insufficient wallet balance'
-                    ], 400);
-                }
-
+                $wallet = TrainingCenterWallet::findOrFail($wallet->id);
                 $wallet->decrement('balance', $authorization->authorization_price);
                 $wallet->update(['last_updated' => now()]);
             }
@@ -247,8 +251,8 @@ class InstructorController extends Controller
             ]);
 
             // Calculate and create commission ledger entries
-            $acc = $authorization->acc;
-            $groupCommissionPercentage = $acc->commission_percentage ?? 0;
+            // Use commission_percentage from authorization (set by Group Admin)
+            $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
             $accCommissionPercentage = 100 - $groupCommissionPercentage;
 
             $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;

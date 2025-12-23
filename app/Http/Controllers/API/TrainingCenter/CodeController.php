@@ -73,19 +73,23 @@ class CodeController extends Controller
         $groupCommissionAmount = ($totalAmount * $groupCommissionPercentage) / 100;
         $accCommissionAmount = ($totalAmount * $accCommissionPercentage) / 100;
 
+        // Check wallet balance before starting transaction
+        if ($request->payment_method === 'wallet') {
+            $wallet = TrainingCenterWallet::firstOrCreate(
+                ['training_center_id' => $trainingCenter->id],
+                ['balance' => 0, 'currency' => 'USD']
+            );
+
+            if ($wallet->balance < $totalAmount) {
+                return response()->json(['message' => 'Insufficient wallet balance'], 400);
+            }
+        }
+
         DB::beginTransaction();
         try {
             // Process payment
             if ($request->payment_method === 'wallet') {
-                $wallet = TrainingCenterWallet::firstOrCreate(
-                    ['training_center_id' => $trainingCenter->id],
-                    ['balance' => 0, 'currency' => 'USD']
-                );
-
-                if ($wallet->balance < $totalAmount) {
-                    return response()->json(['message' => 'Insufficient wallet balance'], 400);
-                }
-
+                $wallet = TrainingCenterWallet::findOrFail($wallet->id);
                 $wallet->decrement('balance', $totalAmount);
                 $wallet->update(['last_updated' => now()]);
             }
