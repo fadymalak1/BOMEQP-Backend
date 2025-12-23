@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
+use App\Models\Category;
 use App\Models\User;
 use Illuminate\Http\Request;
 
@@ -104,6 +105,96 @@ class ACCController extends Controller
         $acc = ACC::findOrFail($id);
         // Implementation for getting transactions
         return response()->json(['transactions' => []]);
+    }
+
+    /**
+     * Assign category to ACC
+     */
+    public function assignCategory(Request $request, $id)
+    {
+        $request->validate([
+            'category_id' => 'required|exists:categories,id',
+        ]);
+
+        $acc = ACC::findOrFail($id);
+        $category = Category::findOrFail($request->category_id);
+
+        // Check if already assigned
+        if ($acc->categories()->where('category_id', $request->category_id)->exists()) {
+            return response()->json([
+                'message' => 'Category is already assigned to this ACC'
+            ], 400);
+        }
+
+        $acc->categories()->attach($request->category_id);
+
+        return response()->json([
+            'message' => 'Category assigned successfully',
+            'acc' => $acc->fresh()->load('categories')
+        ], 200);
+    }
+
+    /**
+     * Remove category from ACC
+     */
+    public function removeCategory(Request $request, $id)
+    {
+        $request->validate([
+            'category_id' => 'required|exists:categories,id',
+        ]);
+
+        $acc = ACC::findOrFail($id);
+        $acc->categories()->detach($request->category_id);
+
+        return response()->json([
+            'message' => 'Category removed successfully',
+            'acc' => $acc->fresh()->load('categories')
+        ], 200);
+    }
+
+    /**
+     * Update ACC data
+     */
+    public function update(Request $request, $id)
+    {
+        $acc = ACC::findOrFail($id);
+
+        $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'legal_name' => 'sometimes|string|max:255',
+            'registration_number' => 'sometimes|string|max:255|unique:accs,registration_number,' . $id,
+            'country' => 'sometimes|string|max:255',
+            'address' => 'sometimes|string',
+            'phone' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|max:255|unique:accs,email,' . $id,
+            'website' => 'nullable|string|max:255',
+            'logo_url' => 'nullable|string|max:255',
+            'status' => 'sometimes|in:pending,active,suspended,expired,rejected',
+            'registration_fee_paid' => 'sometimes|boolean',
+            'registration_fee_amount' => 'nullable|numeric|min:0',
+            'commission_percentage' => 'nullable|numeric|min:0|max:100',
+        ]);
+
+        $acc->update($request->only([
+            'name',
+            'legal_name',
+            'registration_number',
+            'country',
+            'address',
+            'phone',
+            'email',
+            'website',
+            'logo_url',
+            'status',
+            'registration_fee_paid',
+            'registration_fee_amount',
+            'commission_percentage',
+        ]));
+
+        return response()->json([
+            'message' => 'ACC updated successfully',
+            'acc' => $acc->fresh()
+        ], 200);
     }
 }
 

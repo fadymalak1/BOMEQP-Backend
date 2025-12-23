@@ -118,6 +118,13 @@ The following migrations include database-specific code for enum modifications:
    - Adds 'rejected' status to accs.status enum
    - Uses driver detection to apply correct SQL for MySQL vs PostgreSQL
 
+## Application Code Notes
+
+### Password Reset (Fixed)
+The password reset functionality in `AuthController` has been updated for cross-database compatibility:
+- Uses `Carbon::parse()` to ensure timestamp handling works correctly with both MySQL and PostgreSQL
+- All `DB::table()` queries are database-agnostic
+
 ## Recommendations
 
 1. **Always use Laravel's Schema Builder** instead of raw SQL when possible

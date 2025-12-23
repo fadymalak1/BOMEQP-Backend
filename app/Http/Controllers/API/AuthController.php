@@ -211,8 +211,9 @@ class AuthController extends Controller
             ], 400);
         }
 
-        // Check if token is valid (60 minutes expiry)
-        $tokenAge = now()->diffInMinutes($passwordReset->created_at);
+
+        $createdAt = \Carbon\Carbon::parse($passwordReset->created_at);
+        $tokenAge = now()->diffInMinutes($createdAt);
         if ($tokenAge > 60) {
             // Delete expired token
             DB::table('password_reset_tokens')->where('email', $request->email)->delete();

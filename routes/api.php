@@ -67,6 +67,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/sub-categories', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'store']);
         Route::put('/sub-categories/{id}', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'update']);
         Route::delete('/sub-categories/{id}', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'destroy']);
+        
+        // Assign category to ACC
+        Route::post('/accs/{id}/assign-category', [App\Http\Controllers\API\Admin\ACCController::class, 'assignCategory']);
+        Route::delete('/accs/{id}/remove-category', [App\Http\Controllers\API\Admin\ACCController::class, 'removeCategory']);
+        
+        // Update ACC data
+        Route::put('/accs/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'update']);
+        
+        // Training Centers Management
+        Route::get('/training-centers', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'index']);
+        Route::get('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'show']);
+        Route::put('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'update']);
         Route::apiResource('classes', App\Http\Controllers\API\Admin\ClassController::class);
 
         // Financial & Reporting
@@ -91,6 +103,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Instructors Management
         Route::get('/instructors', [App\Http\Controllers\API\Admin\InstructorController::class, 'index']);
         Route::get('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'show']);
+        Route::put('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'update']);
 
         // Courses Management
         Route::get('/courses', [App\Http\Controllers\API\Admin\CourseController::class, 'index']);
@@ -140,6 +153,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Financial
         Route::get('/financial/transactions', [App\Http\Controllers\API\ACC\FinancialController::class, 'transactions']);
         Route::get('/financial/settlements', [App\Http\Controllers\API\ACC\FinancialController::class, 'settlements']);
+
+        // Categories Management (ACC can create their own categories)
+        Route::get('/categories', [App\Http\Controllers\API\ACC\CategoryController::class, 'index']);
+        Route::get('/categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'show']);
+        Route::post('/categories', [App\Http\Controllers\API\ACC\CategoryController::class, 'store']);
+        Route::put('/categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'update']);
+        Route::delete('/categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'destroy']);
+        
+        // Sub Categories Management
+        Route::post('/sub-categories', [App\Http\Controllers\API\ACC\CategoryController::class, 'storeSubCategory']);
+        Route::put('/sub-categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'updateSubCategory']);
+        Route::delete('/sub-categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'destroySubCategory']);
     });
 
     // Training Center routes

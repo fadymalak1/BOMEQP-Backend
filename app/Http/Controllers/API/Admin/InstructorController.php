@@ -62,5 +62,42 @@ class InstructorController extends Controller
 
         return response()->json(['instructor' => $instructor]);
     }
+
+    /**
+     * Update instructor data
+     */
+    public function update(Request $request, $id)
+    {
+        $instructor = Instructor::findOrFail($id);
+
+        $request->validate([
+            'first_name' => 'sometimes|string|max:255',
+            'last_name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|max:255|unique:instructors,email,' . $id,
+            'phone' => 'sometimes|string|max:255',
+            'id_number' => 'sometimes|string|max:255|unique:instructors,id_number,' . $id,
+            'cv_url' => 'nullable|string|max:255',
+            'certificates_json' => 'nullable|array',
+            'specializations' => 'nullable|array',
+            'status' => 'sometimes|in:pending,active,suspended,inactive',
+        ]);
+
+        $instructor->update($request->only([
+            'first_name',
+            'last_name',
+            'email',
+            'phone',
+            'id_number',
+            'cv_url',
+            'certificates_json',
+            'specializations',
+            'status',
+        ]));
+
+        return response()->json([
+            'message' => 'Instructor updated successfully',
+            'instructor' => $instructor->fresh()->load(['trainingCenter', 'authorizations', 'courseAuthorizations'])
+        ], 200);
+    }
 }
 

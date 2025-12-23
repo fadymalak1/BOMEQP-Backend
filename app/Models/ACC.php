@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ACC extends Model
@@ -88,6 +89,11 @@ class ACC extends Model
     public function materials(): HasMany
     {
         return $this->hasMany(ACCMaterial::class, 'acc_id');
+    }
+
+    public function categories(): BelongsToMany
+    {
+        return $this->belongsToMany(Category::class, 'acc_category', 'acc_id', 'category_id');
     }
 }
 
