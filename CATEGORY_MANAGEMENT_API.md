@@ -103,7 +103,90 @@ This document describes the new APIs for category management and admin editing c
 
 ## Admin ACC Category Assignment
 
-### 3. Assign Category to ACC
+### 3. View Categories Assigned to ACC
+
+**Endpoint:** `GET /api/admin/accs/{id}/categories`  
+**Authentication:** Required (Group Admin)  
+**Description:** Admin can view all categories assigned to a specific ACC.
+
+**URL Parameters:**
+- `id`: ACC ID (integer)
+
+**Response:** `200 OK`
+```json
+{
+  "acc": {
+    "id": 1,
+    "name": "Aviation Training ACC",
+    "email": "contact@aviationacc.com"
+  },
+  "categories": [
+    {
+      "id": 1,
+      "name": "Aviation Safety",
+      "name_ar": "سلامة الطيران",
+      "description": "Category for aviation safety courses",
+      "icon_url": "https://example.com/icons/aviation.png",
+      "status": "active",
+      "created_by": 1,
+      "created_at": "2025-12-19T10:00:00.000000Z",
+      "updated_at": "2025-12-19T10:00:00.000000Z",
+      "sub_categories": [
+        {
+          "id": 1,
+          "category_id": 1,
+          "name": "Aircraft Maintenance",
+          "name_ar": "صيانة الطائرات",
+          "status": "active"
+        }
+      ],
+      "created_by": {
+        "id": 1,
+        "name": "Admin User",
+        "email": "admin@example.com"
+      },
+      "pivot": {
+        "acc_id": 1,
+        "category_id": 1,
+        "created_at": "2025-12-19T10:00:00.000000Z",
+        "updated_at": "2025-12-19T10:00:00.000000Z"
+      }
+    },
+    {
+      "id": 2,
+      "name": "Aviation Management",
+      "name_ar": "إدارة الطيران",
+      "description": "Category for aviation management courses",
+      "status": "active",
+      "created_by": 1,
+      "sub_categories": [],
+      "created_by": {
+        "id": 1,
+        "name": "Admin User",
+        "email": "admin@example.com"
+      },
+      "pivot": {
+        "acc_id": 1,
+        "category_id": 2,
+        "created_at": "2025-12-19T11:00:00.000000Z",
+        "updated_at": "2025-12-19T11:00:00.000000Z"
+      }
+    }
+  ],
+  "total": 2
+}
+```
+
+**Note:** This endpoint returns:
+- ACC basic information
+- All categories assigned to the ACC (with subcategories)
+- Creator information for each category
+- Pivot table information showing when the category was assigned
+- Total count of assigned categories
+
+---
+
+### 4. Assign Category to ACC
 
 **Endpoint:** `POST /api/admin/accs/{id}/assign-category`  
 **Authentication:** Required (Group Admin)  
@@ -152,7 +235,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 4. Remove Category from ACC
+### 5. Remove Category from ACC
 
 **Endpoint:** `DELETE /api/admin/accs/{id}/remove-category`  
 **Authentication:** Required (Group Admin)  
@@ -187,7 +270,7 @@ This document describes the new APIs for category management and admin editing c
 
 ## ACC Category Management
 
-### 5. ACC List Categories
+### 6. ACC List Categories
 
 **Endpoint:** `GET /api/acc/categories`  
 **Authentication:** Required (ACC Admin)  
@@ -235,7 +318,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 6. ACC Get Category
+### 7. ACC Get Category
 
 **Endpoint:** `GET /api/acc/categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -268,7 +351,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 7. ACC Create Category
+### 8. ACC Create Category
 
 **Endpoint:** `POST /api/acc/categories`  
 **Authentication:** Required (ACC Admin)  
@@ -311,7 +394,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 8. ACC Update Category
+### 9. ACC Update Category
 
 **Endpoint:** `PUT /api/acc/categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -357,7 +440,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 9. ACC Delete Category
+### 10. ACC Delete Category
 
 **Endpoint:** `DELETE /api/acc/categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -382,7 +465,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 10. ACC List Sub Categories
+### 11. ACC List Sub Categories
 
 **Endpoint:** `GET /api/acc/sub-categories`  
 **Authentication:** Required (ACC Admin)  
@@ -422,7 +505,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 11. ACC Get Sub Category
+### 12. ACC Get Sub Category
 
 **Endpoint:** `GET /api/acc/sub-categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -459,7 +542,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 12. ACC Create Sub Category
+### 13. ACC Create Sub Category
 
 **Endpoint:** `POST /api/acc/sub-categories`  
 **Authentication:** Required (ACC Admin)  
@@ -509,7 +592,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 13. ACC Update Sub Category
+### 14. ACC Update Sub Category
 
 **Endpoint:** `PUT /api/acc/sub-categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -559,7 +642,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 14. ACC Delete Sub Category
+### 15. ACC Delete Sub Category
 
 **Endpoint:** `DELETE /api/acc/sub-categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -830,6 +913,7 @@ This document describes the new APIs for category management and admin editing c
 ### Admin Endpoints
 - ✅ Create Category: `POST /api/admin/categories`
 - ✅ Create Sub Category: `POST /api/admin/sub-categories`
+- ✅ View Categories Assigned to ACC: `GET /api/admin/accs/{id}/categories`
 - ✅ Assign Category to ACC: `POST /api/admin/accs/{id}/assign-category`
 - ✅ Remove Category from ACC: `DELETE /api/admin/accs/{id}/remove-category`
 - ✅ Update ACC: `PUT /api/admin/accs/{id}`

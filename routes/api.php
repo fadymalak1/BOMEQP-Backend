@@ -69,6 +69,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/sub-categories/{id}', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'destroy']);
         
         // Assign category to ACC
+        Route::get('/accs/{id}/categories', [App\Http\Controllers\API\Admin\ACCController::class, 'getAssignedCategories']);
         Route::post('/accs/{id}/assign-category', [App\Http\Controllers\API\Admin\ACCController::class, 'assignCategory']);
         Route::delete('/accs/{id}/remove-category', [App\Http\Controllers\API\Admin\ACCController::class, 'removeCategory']);
         

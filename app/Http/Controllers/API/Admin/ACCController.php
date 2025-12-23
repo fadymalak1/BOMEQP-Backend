@@ -79,8 +79,31 @@ class ACCController extends Controller
 
     public function show($id)
     {
-        $acc = ACC::with('subscriptions', 'documents')->findOrFail($id);
+        $acc = ACC::with('subscriptions', 'documents', 'categories')->findOrFail($id);
         return response()->json(['acc' => $acc]);
+    }
+
+    /**
+     * Get categories assigned to ACC
+     */
+    public function getAssignedCategories($id)
+    {
+        $acc = ACC::findOrFail($id);
+        
+        $categories = $acc->categories()
+            ->with(['subCategories', 'createdBy:id,name,email'])
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'acc' => [
+                'id' => $acc->id,
+                'name' => $acc->name,
+                'email' => $acc->email,
+            ],
+            'categories' => $categories,
+            'total' => $categories->count()
+        ], 200);
     }
 
     public function setCommissionPercentage(Request $request, $id)
