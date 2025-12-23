@@ -24,6 +24,7 @@ class CodeController extends Controller
             'quantity' => 'required|integer|min:1',
             'discount_code' => 'nullable|string',
             'payment_method' => 'required|in:wallet,credit_card',
+            'payment_intent_id' => 'nullable|string', // For Stripe credit card payments
         ]);
 
         $user = $request->user();
@@ -31,6 +32,39 @@ class CodeController extends Controller
 
         if (!$trainingCenter) {
             return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        // Verify ACC exists and is active
+        $acc = \App\Models\ACC::find($request->acc_id);
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        if ($acc->status !== 'active') {
+            return response()->json(['message' => 'ACC is not active'], 403);
+        }
+
+        // Verify Training Center has authorization from ACC
+        $authorization = \App\Models\TrainingCenterAccAuthorization::where('training_center_id', $trainingCenter->id)
+            ->where('acc_id', $request->acc_id)
+            ->where('status', 'approved')
+            ->first();
+
+        if (!$authorization) {
+            return response()->json([
+                'message' => 'Training Center does not have authorization from this ACC'
+            ], 403);
+        }
+
+        // Verify course exists and belongs to ACC
+        $course = \App\Models\Course::where('id', $request->course_id)
+            ->where('acc_id', $request->acc_id)
+            ->first();
+
+        if (!$course) {
+            return response()->json([
+                'message' => 'Course not found or does not belong to this ACC'
+            ], 404);
         }
 
         // Get pricing
@@ -52,26 +86,71 @@ class CodeController extends Controller
         $totalAmount = $unitPrice * $request->quantity;
         $discountAmount = 0;
         $discountCodeId = null;
+        $finalAmount = $totalAmount;
 
-        // Apply discount if provided
+        // Validate and apply discount if provided
         if ($request->discount_code) {
-            $discountCode = DiscountCode::where('code', $request->discount_code)->first();
-            if ($discountCode && $discountCode->status === 'active') {
-                // Validate discount code (simplified - should use the validate endpoint logic)
-                $discountAmount = ($totalAmount * $discountCode->discount_percentage) / 100;
-                $totalAmount -= $discountAmount;
-                $discountCodeId = $discountCode->id;
+            $discountCode = DiscountCode::where('code', $request->discount_code)
+                ->where('acc_id', $request->acc_id)
+                ->first();
+
+            if (!$discountCode) {
+                return response()->json([
+                    'message' => 'Invalid discount code'
+                ], 422);
             }
+
+            // Validate discount code status
+            if ($discountCode->status !== 'active') {
+                return response()->json([
+                    'message' => 'Discount code is not active'
+                ], 422);
+            }
+
+            // Validate discount code dates
+            if ($discountCode->start_date && $discountCode->start_date > now()) {
+                return response()->json([
+                    'message' => 'Discount code has not started yet'
+                ], 422);
+            }
+
+            if ($discountCode->end_date && $discountCode->end_date < now()) {
+                return response()->json([
+                    'message' => 'Discount code has expired'
+                ], 422);
+            }
+
+            // Validate if discount applies to this course
+            if ($discountCode->applicable_course_ids && 
+                !in_array($request->course_id, $discountCode->applicable_course_ids)) {
+                return response()->json([
+                    'message' => 'Discount code does not apply to this course'
+                ], 422);
+            }
+
+            // Validate quantity limit for quantity-based discounts
+            if ($discountCode->discount_type === 'quantity_based') {
+                $remainingQuantity = $discountCode->total_quantity - ($discountCode->used_quantity ?? 0);
+                if ($remainingQuantity < $request->quantity) {
+                    return response()->json([
+                        'message' => 'Discount code quantity limit exceeded'
+                    ], 422);
+                }
+            }
+
+            // Apply discount
+            $discountAmount = ($totalAmount * $discountCode->discount_percentage) / 100;
+            $finalAmount = $totalAmount - $discountAmount;
+            $discountCodeId = $discountCode->id;
         }
 
-        // Get ACC to retrieve commission percentage (before transaction)
-        $acc = \App\Models\ACC::findOrFail($request->acc_id);
+        // Get ACC commission percentage
         $groupCommissionPercentage = $acc->commission_percentage ?? 0;
         $accCommissionPercentage = 100 - $groupCommissionPercentage;
 
-        // Calculate commission amounts
-        $groupCommissionAmount = ($totalAmount * $groupCommissionPercentage) / 100;
-        $accCommissionAmount = ($totalAmount * $accCommissionPercentage) / 100;
+        // Calculate commission amounts based on final amount after discount
+        $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
+        $accCommissionAmount = ($finalAmount * $accCommissionPercentage) / 100;
 
         // Check wallet balance before starting transaction
         if ($request->payment_method === 'wallet') {
@@ -80,9 +159,19 @@ class CodeController extends Controller
                 ['balance' => 0, 'currency' => 'USD']
             );
 
-            if ($wallet->balance < $totalAmount) {
-                return response()->json(['message' => 'Insufficient wallet balance'], 400);
+            if ($wallet->balance < $finalAmount) {
+                return response()->json([
+                    'message' => 'Insufficient wallet balance'
+                ], 402); // Payment Required
             }
+        } elseif ($request->payment_method === 'credit_card') {
+            // Validate payment_intent_id for credit card payments
+            if (!$request->payment_intent_id) {
+                return response()->json([
+                    'message' => 'payment_intent_id is required for credit card payments'
+                ], 400);
+            }
+            // TODO: Verify payment_intent_id with Stripe
         }
 
         DB::beginTransaction();
@@ -90,7 +179,7 @@ class CodeController extends Controller
             // Process payment
             if ($request->payment_method === 'wallet') {
                 $wallet = TrainingCenterWallet::findOrFail($wallet->id);
-                $wallet->decrement('balance', $totalAmount);
+                $wallet->decrement('balance', $finalAmount);
                 $wallet->update(['last_updated' => now()]);
             }
 
@@ -101,9 +190,10 @@ class CodeController extends Controller
                 'payer_id' => $trainingCenter->id,
                 'payee_type' => 'acc',
                 'payee_id' => $request->acc_id,
-                'amount' => $totalAmount,
+                'amount' => $finalAmount,
                 'currency' => 'USD',
                 'payment_method' => $request->payment_method,
+                'payment_gateway_transaction_id' => $request->payment_intent_id,
                 'status' => 'completed',
                 'completed_at' => now(),
                 'reference_type' => 'code_batch',
@@ -115,7 +205,7 @@ class CodeController extends Controller
                 'training_center_id' => $trainingCenter->id,
                 'acc_id' => $request->acc_id,
                 'quantity' => $request->quantity,
-                'total_amount' => $totalAmount,
+                'total_amount' => $finalAmount,
                 'payment_method' => $request->payment_method,
                 'transaction_id' => $transaction->id,
                 'purchase_date' => now(),
@@ -167,13 +257,35 @@ class CodeController extends Controller
 
             DB::commit();
 
+            // Format response to match requirements
             return response()->json([
                 'message' => 'Codes purchased successfully',
-                'batch' => $batch->load('certificateCodes'),
-            ], 201);
+                'batch' => [
+                    'id' => $batch->id,
+                    'training_center_id' => $batch->training_center_id,
+                    'acc_id' => $batch->acc_id,
+                    'course_id' => (int)$request->course_id,
+                    'quantity' => $batch->quantity,
+                    'total_amount' => number_format($totalAmount, 2, '.', ''),
+                    'discount_amount' => number_format($discountAmount, 2, '.', ''),
+                    'final_amount' => number_format($finalAmount, 2, '.', ''),
+                    'payment_method' => $batch->payment_method,
+                    'payment_status' => 'completed',
+                    'created_at' => $batch->created_at->toIso8601String(),
+                ],
+                'codes' => array_map(function($code) {
+                    return [
+                        'id' => $code->id,
+                        'code' => $code->code,
+                        'status' => $code->status,
+                    ];
+                }, $codes),
+            ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Purchase failed: ' . $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Purchase failed: ' . $e->getMessage()
+            ], 500);
         }
     }
 
