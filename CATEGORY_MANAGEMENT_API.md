@@ -187,7 +187,88 @@ This document describes the new APIs for category management and admin editing c
 
 ## ACC Category Management
 
-### 5. ACC Create Category
+### 5. ACC List Categories
+
+**Endpoint:** `GET /api/acc/categories`  
+**Authentication:** Required (ACC Admin)  
+**Description:** ACC can view only categories assigned to them (by admin) or categories they created themselves.
+
+**Query Parameters:**
+- `status`: Filter by status (optional, enum: `active`, `inactive`)
+
+**Response:** `200 OK`
+```json
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "Aviation Safety",
+      "name_ar": "سلامة الطيران",
+      "description": "Category assigned by admin",
+      "status": "active",
+      "created_by": 1,
+      "sub_categories": [
+        {
+          "id": 1,
+          "name": "Aircraft Maintenance",
+          "category_id": 1
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Custom Category",
+      "name_ar": "فئة مخصصة",
+      "description": "Category created by ACC",
+      "status": "active",
+      "created_by": 10,
+      "sub_categories": []
+    }
+  ]
+}
+```
+
+**Note:** Only shows:
+- Categories assigned to the ACC (via admin assignment)
+- Categories created by the ACC's user
+- Subcategories that belong to accessible categories or were created by the ACC
+
+---
+
+### 6. ACC Get Category
+
+**Endpoint:** `GET /api/acc/categories/{id}`  
+**Authentication:** Required (ACC Admin)  
+**Description:** ACC can view a specific category only if it's assigned to them or created by them.
+
+**URL Parameters:**
+- `id`: Category ID (integer)
+
+**Response:** `200 OK`
+```json
+{
+  "category": {
+    "id": 1,
+    "name": "Aviation Safety",
+    "name_ar": "سلامة الطيران",
+    "description": "Category description",
+    "status": "active",
+    "created_by": 1,
+    "sub_categories": [...]
+  }
+}
+```
+
+**Error Response:** `404 Not Found` (if category not assigned or not created by ACC)
+```json
+{
+  "message": "Category not found or not accessible"
+}
+```
+
+---
+
+### 7. ACC Create Category
 
 **Endpoint:** `POST /api/acc/categories`  
 **Authentication:** Required (ACC Admin)  
@@ -230,7 +311,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 6. ACC Update Category
+### 8. ACC Update Category
 
 **Endpoint:** `PUT /api/acc/categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -276,7 +357,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 7. ACC Delete Category
+### 9. ACC Delete Category
 
 **Endpoint:** `DELETE /api/acc/categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -301,7 +382,84 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 8. ACC Create Sub Category
+### 10. ACC List Sub Categories
+
+**Endpoint:** `GET /api/acc/sub-categories`  
+**Authentication:** Required (ACC Admin)  
+**Description:** ACC can view subcategories that belong to categories assigned to them or created by them.
+
+**Query Parameters:**
+- `category_id`: Filter by category ID (optional)
+- `status`: Filter by status (optional, enum: `active`, `inactive`)
+
+**Response:** `200 OK`
+```json
+{
+  "sub_categories": [
+    {
+      "id": 1,
+      "category_id": 1,
+      "name": "Aircraft Maintenance",
+      "name_ar": "صيانة الطائرات",
+      "description": "Sub category description",
+      "status": "active",
+      "created_by": 1,
+      "category": {
+        "id": 1,
+        "name": "Aviation Safety"
+      }
+    }
+  ]
+}
+```
+
+**Error Response:** `403 Forbidden` (if filtering by inaccessible category)
+```json
+{
+  "message": "Category not accessible"
+}
+```
+
+---
+
+### 11. ACC Get Sub Category
+
+**Endpoint:** `GET /api/acc/sub-categories/{id}`  
+**Authentication:** Required (ACC Admin)  
+**Description:** ACC can view a specific subcategory only if its parent category is assigned to them or created by them.
+
+**URL Parameters:**
+- `id`: Sub Category ID (integer)
+
+**Response:** `200 OK`
+```json
+{
+  "sub_category": {
+    "id": 1,
+    "category_id": 1,
+    "name": "Aircraft Maintenance",
+    "name_ar": "صيانة الطائرات",
+    "description": "Sub category description",
+    "status": "active",
+    "created_by": 1,
+    "category": {
+      "id": 1,
+      "name": "Aviation Safety"
+    }
+  }
+}
+```
+
+**Error Response:** `404 Not Found` (if subcategory's category not accessible)
+```json
+{
+  "message": "Sub category not found or not accessible"
+}
+```
+
+---
+
+### 12. ACC Create Sub Category
 
 **Endpoint:** `POST /api/acc/sub-categories`  
 **Authentication:** Required (ACC Admin)  
@@ -335,10 +493,10 @@ This document describes the new APIs for category management and admin editing c
 }
 ```
 
-**Error Response:** `403 Forbidden` (if category not created by this ACC)
+**Error Response:** `403 Forbidden` (if category not assigned or not created by this ACC)
 ```json
 {
-  "message": "You can only create sub categories for categories you created"
+  "message": "You can only create sub categories for categories assigned to you or created by you"
 }
 ```
 
@@ -351,7 +509,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 9. ACC Update Sub Category
+### 13. ACC Update Sub Category
 
 **Endpoint:** `PUT /api/acc/sub-categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -381,12 +539,16 @@ This document describes the new APIs for category management and admin editing c
 }
 ```
 
-**Error Response:** `403 Forbidden` (if sub category not created by this ACC)
+**Error Response:** `403 Forbidden` (if sub category not accessible)
 ```json
 {
-  "message": "You can only update sub categories you created"
+  "message": "You can only update sub categories you created or sub categories in accessible categories"
 }
 ```
+
+**Note:** ACC can update subcategories if:
+- The subcategory was created by the ACC, OR
+- The subcategory belongs to a category assigned to the ACC or created by the ACC
 
 **Validation Rules:**
 - `category_id`: sometimes, exists:categories,id
@@ -397,7 +559,7 @@ This document describes the new APIs for category management and admin editing c
 
 ---
 
-### 10. ACC Delete Sub Category
+### 14. ACC Delete Sub Category
 
 **Endpoint:** `DELETE /api/acc/sub-categories/{id}`  
 **Authentication:** Required (ACC Admin)  
@@ -677,20 +839,27 @@ This document describes the new APIs for category management and admin editing c
 - ✅ Update Instructor: `PUT /api/admin/instructors/{id}`
 
 ### ACC Endpoints
-- ✅ List Categories: `GET /api/acc/categories`
-- ✅ Get Category: `GET /api/acc/categories/{id}`
+- ✅ List Categories: `GET /api/acc/categories` (filtered: assigned + created)
+- ✅ Get Category: `GET /api/acc/categories/{id}` (only if assigned or created)
 - ✅ Create Category: `POST /api/acc/categories`
-- ✅ Update Category: `PUT /api/acc/categories/{id}`
-- ✅ Delete Category: `DELETE /api/acc/categories/{id}`
-- ✅ Create Sub Category: `POST /api/acc/sub-categories`
-- ✅ Update Sub Category: `PUT /api/acc/sub-categories/{id}`
-- ✅ Delete Sub Category: `DELETE /api/acc/sub-categories/{id}`
+- ✅ Update Category: `PUT /api/acc/categories/{id}` (only if created by ACC)
+- ✅ Delete Category: `DELETE /api/acc/categories/{id}` (only if created by ACC)
+- ✅ List Sub Categories: `GET /api/acc/sub-categories` (filtered: accessible categories)
+- ✅ Get Sub Category: `GET /api/acc/sub-categories/{id}` (only if accessible)
+- ✅ Create Sub Category: `POST /api/acc/sub-categories` (for assigned or created categories)
+- ✅ Update Sub Category: `PUT /api/acc/sub-categories/{id}` (if accessible)
+- ✅ Delete Sub Category: `DELETE /api/acc/sub-categories/{id}` (only if created by ACC)
 
 ---
 
 ## Notes
 
-1. **ACC Category Ownership**: ACCs can only manage (update/delete) categories and sub categories they created. They can view all categories in the system.
+1. **ACC Category Visibility**: ACCs can only see:
+   - Categories assigned to them by admin (via `POST /api/admin/accs/{id}/assign-category`)
+   - Categories they created themselves
+   - Subcategories that belong to accessible categories or were created by the ACC
+
+2. **ACC Category Management**: ACCs can only manage (update/delete) categories and sub categories they created. They can view categories assigned to them but cannot modify them.
 
 2. **Category Assignment**: Only Group Admins can assign categories to ACCs. This creates a many-to-many relationship between ACCs and Categories.
 

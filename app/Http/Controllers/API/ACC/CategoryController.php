@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\ACC;
 
 use App\Http\Controllers\Controller;
+use App\Models\ACC;
 use App\Models\Category;
 use App\Models\SubCategory;
 use Illuminate\Http\Request;
@@ -10,11 +11,34 @@ use Illuminate\Http\Request;
 class CategoryController extends Controller
 {
     /**
-     * Get all categories (including ACC's own categories)
+     * Get categories assigned to ACC or created by ACC
      */
     public function index(Request $request)
     {
-        $query = Category::with('subCategories');
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        // Get category IDs assigned to this ACC
+        $assignedCategoryIds = $acc->categories()->pluck('categories.id')->toArray();
+        $createdCategoryIds = Category::where('created_by', $user->id)->pluck('id')->toArray();
+        $accessibleCategoryIds = array_unique(array_merge($assignedCategoryIds, $createdCategoryIds));
+
+        // Query categories: assigned to ACC OR created by ACC's user
+        $query = Category::with(['subCategories' => function($q) use ($accessibleCategoryIds, $user) {
+            // Only load subcategories that belong to accessible categories OR created by ACC
+            $q->where(function($subQ) use ($accessibleCategoryIds, $user) {
+                $subQ->whereIn('category_id', $accessibleCategoryIds)
+                     ->orWhere('created_by', $user->id);
+            });
+        }])
+        ->where(function($q) use ($assignedCategoryIds, $user) {
+            $q->whereIn('id', $assignedCategoryIds)
+              ->orWhere('created_by', $user->id);
+        });
 
         // Filter by status if provided
         if ($request->has('status')) {
@@ -26,11 +50,35 @@ class CategoryController extends Controller
     }
 
     /**
-     * Get a specific category
+     * Get a specific category (only if assigned to ACC or created by ACC)
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $category = Category::with('subCategories')->findOrFail($id);
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $category = Category::with(['subCategories' => function($q) use ($acc, $user) {
+            // Only load subcategories that are accessible
+            $q->where(function($subQ) use ($acc, $user) {
+                $subQ->whereIn('category_id', $acc->categories()->pluck('categories.id'))
+                     ->orWhere('created_by', $user->id);
+            });
+        }])->findOrFail($id);
+
+        // Check if category is accessible: assigned to ACC OR created by ACC's user
+        $isAssigned = $acc->categories()->where('categories.id', $id)->exists();
+        $isCreatedByAcc = $category->created_by === $user->id;
+
+        if (!$isAssigned && !$isCreatedByAcc) {
+            return response()->json([
+                'message' => 'Category not found or not accessible'
+            ], 404);
+        }
+
         return response()->json(['category' => $category]);
     }
 
@@ -121,11 +169,21 @@ class CategoryController extends Controller
             'status' => 'required|in:active,inactive',
         ]);
 
-        // Check if category was created by this ACC's user
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        // Check if category is accessible: assigned to ACC OR created by ACC's user
         $category = Category::findOrFail($request->category_id);
-        if ($category->created_by !== $request->user()->id) {
+        $isAssigned = $acc->categories()->where('categories.id', $request->category_id)->exists();
+        $isCreatedByAcc = $category->created_by === $user->id;
+
+        if (!$isAssigned && !$isCreatedByAcc) {
             return response()->json([
-                'message' => 'You can only create sub categories for categories you created'
+                'message' => 'You can only create sub categories for categories assigned to you or created by you'
             ], 403);
         }
 
@@ -142,16 +200,95 @@ class CategoryController extends Controller
     }
 
     /**
-     * Update a sub category (only if created by this ACC)
+     * List sub categories (only for accessible categories)
+     */
+    public function indexSubCategories(Request $request)
+    {
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        // Get category IDs assigned to this ACC or created by ACC
+        $assignedCategoryIds = $acc->categories()->pluck('categories.id')->toArray();
+        $createdCategoryIds = Category::where('created_by', $user->id)->pluck('id')->toArray();
+        $accessibleCategoryIds = array_unique(array_merge($assignedCategoryIds, $createdCategoryIds));
+
+        $query = SubCategory::with('category')
+            ->whereIn('category_id', $accessibleCategoryIds);
+
+        if ($request->has('category_id')) {
+            // Verify the category is accessible
+            if (!in_array($request->category_id, $accessibleCategoryIds)) {
+                return response()->json([
+                    'message' => 'Category not accessible'
+                ], 403);
+            }
+            $query->where('category_id', $request->category_id);
+        }
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $subCategories = $query->orderBy('name')->get();
+        return response()->json(['sub_categories' => $subCategories]);
+    }
+
+    /**
+     * Get a specific sub category (only if accessible)
+     */
+    public function showSubCategory(Request $request, $id)
+    {
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $subCategory = SubCategory::with('category')->findOrFail($id);
+
+        // Check if subcategory's category is accessible
+        $category = $subCategory->category;
+        $isAssigned = $acc->categories()->where('categories.id', $category->id)->exists();
+        $isCreatedByAcc = $category->created_by === $user->id;
+
+        if (!$isAssigned && !$isCreatedByAcc) {
+            return response()->json([
+                'message' => 'Sub category not found or not accessible'
+            ], 404);
+        }
+
+        return response()->json(['sub_category' => $subCategory]);
+    }
+
+    /**
+     * Update a sub category (only if created by this ACC or belongs to assigned category)
      */
     public function updateSubCategory(Request $request, $id)
     {
-        $subCategory = SubCategory::findOrFail($id);
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
 
-        // Check if sub category was created by this ACC's user
-        if ($subCategory->created_by !== $request->user()->id) {
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $subCategory = SubCategory::with('category')->findOrFail($id);
+        $category = $subCategory->category;
+
+        // Check if subcategory is accessible: belongs to assigned category OR created by ACC
+        $isCategoryAssigned = $acc->categories()->where('categories.id', $category->id)->exists();
+        $isCategoryCreatedByAcc = $category->created_by === $user->id;
+        $isSubCategoryCreatedByAcc = $subCategory->created_by === $user->id;
+
+        // Can update if: created by ACC OR (belongs to assigned/created category AND created by ACC)
+        if (!$isSubCategoryCreatedByAcc && !($isCategoryAssigned || $isCategoryCreatedByAcc)) {
             return response()->json([
-                'message' => 'You can only update sub categories you created'
+                'message' => 'You can only update sub categories you created or sub categories in accessible categories'
             ], 403);
         }
 
@@ -163,12 +300,15 @@ class CategoryController extends Controller
             'status' => 'sometimes|in:active,inactive',
         ]);
 
-        // If changing category_id, verify the new category belongs to this ACC
+        // If changing category_id, verify the new category is accessible
         if ($request->has('category_id') && $request->category_id != $subCategory->category_id) {
-            $category = Category::findOrFail($request->category_id);
-            if ($category->created_by !== $request->user()->id) {
+            $newCategory = Category::findOrFail($request->category_id);
+            $isNewCategoryAssigned = $acc->categories()->where('categories.id', $request->category_id)->exists();
+            $isNewCategoryCreatedByAcc = $newCategory->created_by === $user->id;
+
+            if (!$isNewCategoryAssigned && !$isNewCategoryCreatedByAcc) {
                 return response()->json([
-                    'message' => 'You can only assign sub categories to categories you created'
+                    'message' => 'You can only assign sub categories to categories assigned to you or created by you'
                 ], 403);
             }
         }
@@ -177,7 +317,7 @@ class CategoryController extends Controller
 
         return response()->json([
             'message' => 'Sub category updated successfully',
-            'sub_category' => $subCategory
+            'sub_category' => $subCategory->fresh()->load('category')
         ], 200);
     }
 
@@ -186,10 +326,17 @@ class CategoryController extends Controller
      */
     public function destroySubCategory(Request $request, $id)
     {
-        $subCategory = SubCategory::findOrFail($id);
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $subCategory = SubCategory::with('category')->findOrFail($id);
 
         // Check if sub category was created by this ACC's user
-        if ($subCategory->created_by !== $request->user()->id) {
+        if ($subCategory->created_by !== $user->id) {
             return response()->json([
                 'message' => 'You can only delete sub categories you created'
             ], 403);

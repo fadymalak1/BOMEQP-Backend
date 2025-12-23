@@ -162,6 +162,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'destroy']);
         
         // Sub Categories Management
+        Route::get('/sub-categories', [App\Http\Controllers\API\ACC\CategoryController::class, 'indexSubCategories']);
+        Route::get('/sub-categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'showSubCategory']);
         Route::post('/sub-categories', [App\Http\Controllers\API\ACC\CategoryController::class, 'storeSubCategory']);
         Route::put('/sub-categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'updateSubCategory']);
         Route::delete('/sub-categories/{id}', [App\Http\Controllers\API\ACC\CategoryController::class, 'destroySubCategory']);
