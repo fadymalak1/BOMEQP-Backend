@@ -301,9 +301,8 @@ class InstructorController extends Controller
 
         $query = InstructorAccAuthorization::where('training_center_id', $trainingCenter->id)
             ->with([
-                'instructor:id,first_name,last_name,email',
-                'acc:id,name',
-                'trainingCenter:id,name'
+                'instructor:id,first_name,last_name',
+                'acc:id,name'
             ]);
 
         // Filter by status if provided
