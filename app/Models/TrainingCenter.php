@@ -72,5 +72,10 @@ class TrainingCenter extends Model
     {
         return $this->hasMany(TrainingCenterPurchase::class, 'training_center_id');
     }
+
+    public function trainees(): HasMany
+    {
+        return $this->hasMany(Trainee::class, 'training_center_id');
+    }
 }
 

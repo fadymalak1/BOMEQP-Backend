@@ -181,6 +181,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::apiResource('instructors', App\Http\Controllers\API\TrainingCenter\InstructorController::class);
         Route::post('/instructors/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'requestAuthorization']);
 
+        // Trainees
+        Route::apiResource('trainees', App\Http\Controllers\API\TrainingCenter\TraineeController::class);
+
         // Certificate Codes
         Route::post('/codes/purchase', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'purchase']);
         Route::get('/codes/inventory', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'inventory']);

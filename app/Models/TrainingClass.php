@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class TrainingClass extends Model
@@ -60,6 +61,13 @@ class TrainingClass extends Model
     public function completion(): HasOne
     {
         return $this->hasOne(ClassCompletion::class, 'training_class_id');
+    }
+
+    public function trainees(): BelongsToMany
+    {
+        return $this->belongsToMany(Trainee::class, 'trainee_training_class', 'training_class_id', 'trainee_id')
+            ->withPivot('status', 'enrolled_at', 'completed_at')
+            ->withTimestamps();
     }
 }
 
