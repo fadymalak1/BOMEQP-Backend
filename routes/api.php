@@ -182,10 +182,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/authorizations', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'authorizations']);
 
         // Instructors
-        Route::apiResource('instructors', App\Http\Controllers\API\TrainingCenter\InstructorController::class);
-        Route::post('/instructors/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'requestAuthorization']);
-        Route::post('/instructors/authorizations/{id}/pay', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'payAuthorization']);
+        // Specific routes must come before apiResource to avoid route conflicts
         Route::get('/instructors/authorizations', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'authorizations']);
+        Route::post('/instructors/authorizations/{id}/pay', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'payAuthorization']);
+        Route::post('/instructors/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'requestAuthorization']);
+        Route::apiResource('instructors', App\Http\Controllers\API\TrainingCenter\InstructorController::class);
 
         // Trainees
         Route::apiResource('trainees', App\Http\Controllers\API\TrainingCenter\TraineeController::class);

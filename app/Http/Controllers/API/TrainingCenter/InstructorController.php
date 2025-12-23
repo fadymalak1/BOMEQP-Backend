@@ -288,6 +288,7 @@ class InstructorController extends Controller
 
     /**
      * Get authorization requests with payment status
+     * GET /api/training-center/instructors/authorizations
      */
     public function authorizations(Request $request)
     {
@@ -299,14 +300,26 @@ class InstructorController extends Controller
         }
 
         $query = InstructorAccAuthorization::where('training_center_id', $trainingCenter->id)
-            ->with(['instructor', 'acc']);
+            ->with([
+                'instructor:id,first_name,last_name,email',
+                'acc:id,name',
+                'trainingCenter:id,name'
+            ]);
 
+        // Filter by status if provided
         if ($request->has('status')) {
-            $query->where('status', $request->status);
+            $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
+            if (in_array($request->status, $validStatuses)) {
+                $query->where('status', $request->status);
+            }
         }
 
+        // Filter by payment_status if provided
         if ($request->has('payment_status')) {
-            $query->where('payment_status', $request->payment_status);
+            $validPaymentStatuses = ['pending', 'paid', 'failed'];
+            if (in_array($request->payment_status, $validPaymentStatuses)) {
+                $query->where('payment_status', $request->payment_status);
+            }
         }
 
         $authorizations = $query->orderBy('request_date', 'desc')->get();
