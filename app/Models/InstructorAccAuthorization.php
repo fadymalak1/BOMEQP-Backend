@@ -18,11 +18,18 @@ class InstructorAccAuthorization extends Model
         'training_center_id',
         'request_date',
         'status',
+        'group_admin_status',
         'commission_percentage',
+        'authorization_price',
+        'payment_status',
+        'payment_date',
+        'payment_transaction_id',
         'rejection_reason',
         'return_comment',
         'reviewed_by',
         'reviewed_at',
+        'group_commission_set_by',
+        'group_commission_set_at',
         'documents_json',
     ];
 
@@ -31,7 +38,10 @@ class InstructorAccAuthorization extends Model
         return [
             'request_date' => 'datetime',
             'reviewed_at' => 'datetime',
+            'group_commission_set_at' => 'datetime',
+            'payment_date' => 'datetime',
             'commission_percentage' => 'decimal:2',
+            'authorization_price' => 'decimal:2',
             'documents_json' => 'array',
         ];
     }

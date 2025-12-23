@@ -64,6 +64,15 @@ class CodeController extends Controller
             }
         }
 
+        // Get ACC to retrieve commission percentage (before transaction)
+        $acc = \App\Models\ACC::findOrFail($request->acc_id);
+        $groupCommissionPercentage = $acc->commission_percentage ?? 0;
+        $accCommissionPercentage = 100 - $groupCommissionPercentage;
+
+        // Calculate commission amounts
+        $groupCommissionAmount = ($totalAmount * $groupCommissionPercentage) / 100;
+        $accCommissionAmount = ($totalAmount * $accCommissionPercentage) / 100;
+
         DB::beginTransaction();
         try {
             // Process payment
@@ -93,6 +102,8 @@ class CodeController extends Controller
                 'payment_method' => $request->payment_method,
                 'status' => 'completed',
                 'completed_at' => now(),
+                'reference_type' => 'code_batch',
+                'reference_id' => null, // Will be updated after batch creation
             ]);
 
             // Create batch
@@ -123,6 +134,21 @@ class CodeController extends Controller
                 ]);
                 $codes[] = $code;
             }
+
+            // Update transaction with batch reference
+            $transaction->update(['reference_id' => $batch->id]);
+
+            // Create commission ledger entries for distribution
+            \App\Models\CommissionLedger::create([
+                'transaction_id' => $transaction->id,
+                'acc_id' => $request->acc_id,
+                'training_center_id' => $trainingCenter->id,
+                'group_commission_amount' => $groupCommissionAmount,
+                'group_commission_percentage' => $groupCommissionPercentage,
+                'acc_commission_amount' => $accCommissionAmount,
+                'acc_commission_percentage' => $accCommissionPercentage,
+                'settlement_status' => 'pending',
+            ]);
 
             // Update discount code usage
             if ($discountCodeId) {

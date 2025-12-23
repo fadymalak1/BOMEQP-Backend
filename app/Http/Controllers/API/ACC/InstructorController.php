@@ -29,6 +29,10 @@ class InstructorController extends Controller
 
     public function approve(Request $request, $id)
     {
+        $request->validate([
+            'authorization_price' => 'required|numeric|min:0',
+        ]);
+
         $user = $request->user();
         $acc = ACC::where('email', $user->email)->first();
 
@@ -41,14 +45,19 @@ class InstructorController extends Controller
 
         $authorization->update([
             'status' => 'approved',
+            'authorization_price' => $request->authorization_price,
             'reviewed_by' => $user->id,
             'reviewed_at' => now(),
+            'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
         ]);
 
-        // TODO: Notify Group admin to set commission percentage
-        // TODO: Send notification to instructor
+        // TODO: Send notification to Group Admin to set commission percentage
+        // TODO: Send notification to Training Center about payment requirement
 
-        return response()->json(['message' => 'Instructor approved successfully']);
+        return response()->json([
+            'message' => 'Instructor approved successfully. Waiting for Group Admin to set commission percentage.',
+            'authorization' => $authorization->fresh()
+        ]);
     }
 
     public function reject(Request $request, $id)

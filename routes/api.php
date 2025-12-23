@@ -105,6 +105,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/instructors', [App\Http\Controllers\API\Admin\InstructorController::class, 'index']);
         Route::get('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'show']);
         Route::put('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'update']);
+        
+        // Instructor Authorization Commission Management
+        Route::get('/instructor-authorizations/pending-commission', [App\Http\Controllers\API\Admin\InstructorController::class, 'pendingCommissionRequests']);
+        Route::put('/instructor-authorizations/{id}/set-commission', [App\Http\Controllers\API\Admin\InstructorController::class, 'setInstructorCommission']);
 
         // Courses Management
         Route::get('/courses', [App\Http\Controllers\API\Admin\CourseController::class, 'index']);
@@ -180,6 +184,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Instructors
         Route::apiResource('instructors', App\Http\Controllers\API\TrainingCenter\InstructorController::class);
         Route::post('/instructors/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'requestAuthorization']);
+        Route::post('/instructors/authorizations/{id}/pay', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'payAuthorization']);
+        Route::get('/instructors/authorizations', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'authorizations']);
 
         // Trainees
         Route::apiResource('trainees', App\Http\Controllers\API\TrainingCenter\TraineeController::class);

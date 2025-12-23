@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Instructor;
+use App\Models\InstructorAccAuthorization;
 use Illuminate\Http\Request;
 
 class InstructorController extends Controller
@@ -97,6 +98,58 @@ class InstructorController extends Controller
         return response()->json([
             'message' => 'Instructor updated successfully',
             'instructor' => $instructor->fresh()->load(['trainingCenter', 'authorizations', 'courseAuthorizations'])
+        ], 200);
+    }
+
+    /**
+     * Set commission percentage for instructor authorization
+     * This is called after ACC Admin approves and sets authorization price
+     */
+    public function setInstructorCommission(Request $request, $id)
+    {
+        $request->validate([
+            'commission_percentage' => 'required|numeric|min:0|max:100',
+        ]);
+
+        $authorization = InstructorAccAuthorization::findOrFail($id);
+
+        // Verify authorization is approved by ACC and waiting for commission
+        if ($authorization->status !== 'approved' || $authorization->group_admin_status !== 'pending') {
+            return response()->json([
+                'message' => 'Authorization must be approved by ACC Admin first and waiting for commission setting'
+            ], 400);
+        }
+
+        $authorization->update([
+            'commission_percentage' => $request->commission_percentage,
+            'group_admin_status' => 'commission_set',
+            'group_commission_set_by' => $request->user()->id,
+            'group_commission_set_at' => now(),
+        ]);
+
+        // TODO: Send notification to Training Center to complete payment
+
+        return response()->json([
+            'message' => 'Commission percentage set successfully. Training Center can now complete payment.',
+            'authorization' => $authorization->fresh()->load(['instructor', 'acc', 'trainingCenter'])
+        ], 200);
+    }
+
+    /**
+     * Get instructor authorization requests waiting for commission setting
+     */
+    public function pendingCommissionRequests(Request $request)
+    {
+        $authorizations = InstructorAccAuthorization::where('status', 'approved')
+            ->where('group_admin_status', 'pending')
+            ->whereNotNull('authorization_price')
+            ->with(['instructor', 'acc', 'trainingCenter'])
+            ->orderBy('reviewed_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'authorizations' => $authorizations,
+            'total' => $authorizations->count()
         ], 200);
     }
 }

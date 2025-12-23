@@ -5,8 +5,11 @@ namespace App\Http\Controllers\API\TrainingCenter;
 use App\Http\Controllers\Controller;
 use App\Models\Instructor;
 use App\Models\InstructorAccAuthorization;
+use App\Models\TrainingCenterWallet;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class InstructorController extends Controller
 {
@@ -151,6 +154,160 @@ class InstructorController extends Controller
         $instructor->delete();
         
         return response()->json(['message' => 'Instructor deleted successfully']);
+    }
+
+    /**
+     * Pay for instructor authorization
+     * Called after Group Admin sets commission percentage
+     */
+    public function payAuthorization(Request $request, $id)
+    {
+        $request->validate([
+            'payment_method' => 'required|in:wallet,credit_card',
+            'payment_intent_id' => 'nullable|string', // For Stripe
+        ]);
+
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $authorization = InstructorAccAuthorization::where('training_center_id', $trainingCenter->id)
+            ->findOrFail($id);
+
+        // Verify authorization is ready for payment
+        if ($authorization->status !== 'approved') {
+            return response()->json([
+                'message' => 'Authorization must be approved by ACC Admin first'
+            ], 400);
+        }
+
+        if ($authorization->group_admin_status !== 'commission_set') {
+            return response()->json([
+                'message' => 'Group Admin must set commission percentage first'
+            ], 400);
+        }
+
+        if ($authorization->payment_status === 'paid') {
+            return response()->json([
+                'message' => 'Authorization already paid'
+            ], 400);
+        }
+
+        if (!$authorization->authorization_price || $authorization->authorization_price <= 0) {
+            return response()->json([
+                'message' => 'Authorization price not set'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Process payment
+            if ($request->payment_method === 'wallet') {
+                $wallet = TrainingCenterWallet::firstOrCreate(
+                    ['training_center_id' => $trainingCenter->id],
+                    ['balance' => 0, 'currency' => 'USD']
+                );
+
+                if ($wallet->balance < $authorization->authorization_price) {
+                    return response()->json([
+                        'message' => 'Insufficient wallet balance'
+                    ], 400);
+                }
+
+                $wallet->decrement('balance', $authorization->authorization_price);
+                $wallet->update(['last_updated' => now()]);
+            }
+
+            // Create transaction
+            $transaction = Transaction::create([
+                'transaction_type' => 'commission',
+                'payer_type' => 'training_center',
+                'payer_id' => $trainingCenter->id,
+                'payee_type' => 'acc',
+                'payee_id' => $authorization->acc_id,
+                'amount' => $authorization->authorization_price,
+                'currency' => 'USD',
+                'payment_method' => $request->payment_method,
+                'payment_gateway_transaction_id' => $request->payment_intent_id,
+                'status' => 'completed',
+                'completed_at' => now(),
+                'reference_type' => 'instructor_authorization',
+                'reference_id' => $authorization->id,
+            ]);
+
+            // Update authorization payment status
+            $authorization->update([
+                'payment_status' => 'paid',
+                'payment_date' => now(),
+                'payment_transaction_id' => $transaction->id,
+                'group_admin_status' => 'completed',
+            ]);
+
+            // Calculate and create commission ledger entries
+            $acc = $authorization->acc;
+            $groupCommissionPercentage = $acc->commission_percentage ?? 0;
+            $accCommissionPercentage = 100 - $groupCommissionPercentage;
+
+            $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
+            $accCommissionAmount = ($authorization->authorization_price * $accCommissionPercentage) / 100;
+
+            \App\Models\CommissionLedger::create([
+                'transaction_id' => $transaction->id,
+                'acc_id' => $authorization->acc_id,
+                'training_center_id' => $trainingCenter->id,
+                'instructor_id' => $authorization->instructor_id,
+                'group_commission_amount' => $groupCommissionAmount,
+                'group_commission_percentage' => $groupCommissionPercentage,
+                'acc_commission_amount' => $accCommissionAmount,
+                'acc_commission_percentage' => $accCommissionPercentage,
+                'settlement_status' => 'pending',
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Payment successful. Instructor is now officially authorized.',
+                'authorization' => $authorization->fresh()->load(['instructor', 'acc', 'trainingCenter']),
+                'transaction' => $transaction
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Payment failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get authorization requests with payment status
+     */
+    public function authorizations(Request $request)
+    {
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $query = InstructorAccAuthorization::where('training_center_id', $trainingCenter->id)
+            ->with(['instructor', 'acc']);
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('payment_status')) {
+            $query->where('payment_status', $request->payment_status);
+        }
+
+        $authorizations = $query->orderBy('request_date', 'desc')->get();
+
+        return response()->json(['authorizations' => $authorizations]);
     }
 }
 
