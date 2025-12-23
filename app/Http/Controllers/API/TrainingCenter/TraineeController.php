@@ -39,8 +39,6 @@ class TraineeController extends Controller
         return $baseUrl . '/app/public/' . $cleanPath;
     }
 
-class TraineeController extends Controller
-{
     /**
      * Get all trainees for the training center
      */
