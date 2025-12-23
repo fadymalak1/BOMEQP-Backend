@@ -13,6 +13,35 @@ use Illuminate\Support\Str;
 class TraineeController extends Controller
 {
     /**
+     * Generate storage URL for a file path
+     * Ensures the URL includes /app/public in the path to match server structure
+     */
+    private function getStorageUrl($path)
+    {
+        $baseUrl = Storage::disk('public')->url('');
+        
+        // If base URL already includes /app/public, use standard Storage URL
+        if (strpos($baseUrl, '/app/public') !== false) {
+            return Storage::disk('public')->url($path);
+        }
+        
+        // Otherwise, ensure /app/public is included in the path
+        // Remove trailing slash from base URL
+        $baseUrl = rtrim($baseUrl, '/');
+        
+        // Ensure path doesn't start with /app/public (to avoid duplication)
+        $cleanPath = ltrim($path, '/');
+        if (strpos($cleanPath, 'app/public/') === 0) {
+            $cleanPath = substr($cleanPath, 11); // Remove 'app/public/' prefix
+        }
+        
+        // Construct URL: baseUrl/app/public/path
+        return $baseUrl . '/app/public/' . $cleanPath;
+    }
+
+class TraineeController extends Controller
+{
+    /**
      * Get all trainees for the training center
      */
     public function index(Request $request)
@@ -126,8 +155,8 @@ class TraineeController extends Controller
             }
 
             // Generate URLs for stored files
-            $idImageUrl = $idImagePath ? Storage::url($idImagePath) : null;
-            $cardImageUrl = $cardImagePath ? Storage::url($cardImagePath) : null;
+            $idImageUrl = $idImagePath ? $this->getStorageUrl($idImagePath) : null;
+            $cardImageUrl = $cardImagePath ? $this->getStorageUrl($cardImagePath) : null;
 
             // Create trainee
             $trainee = Trainee::create([
@@ -224,7 +253,11 @@ class TraineeController extends Controller
         if ($request->hasFile('id_image')) {
             // Delete old file
             if ($trainee->id_image_url) {
-                $oldPath = str_replace(Storage::url(''), '', $trainee->id_image_url);
+                // Extract path from URL - remove the storage URL base
+                $storageUrl = Storage::disk('public')->url('');
+                $oldPath = str_replace($storageUrl, '', $trainee->id_image_url);
+                // Remove leading slash if present
+                $oldPath = ltrim($oldPath, '/');
                 Storage::disk('public')->delete($oldPath);
             }
 
@@ -235,13 +268,17 @@ class TraineeController extends Controller
                 $idImageName,
                 'public'
             );
-            $updateData['id_image_url'] = Storage::url($idImagePath);
+            $updateData['id_image_url'] = $this->getStorageUrl($idImagePath);
         }
 
         if ($request->hasFile('card_image')) {
             // Delete old file
             if ($trainee->card_image_url) {
-                $oldPath = str_replace(Storage::url(''), '', $trainee->card_image_url);
+                // Extract path from URL - remove the storage URL base
+                $storageUrl = Storage::disk('public')->url('');
+                $oldPath = str_replace($storageUrl, '', $trainee->card_image_url);
+                // Remove leading slash if present
+                $oldPath = ltrim($oldPath, '/');
                 Storage::disk('public')->delete($oldPath);
             }
 
@@ -252,7 +289,7 @@ class TraineeController extends Controller
                 $cardImageName,
                 'public'
             );
-            $updateData['card_image_url'] = Storage::url($cardImagePath);
+            $updateData['card_image_url'] = $this->getStorageUrl($cardImagePath);
         }
 
         $trainee->update($updateData);
@@ -330,12 +367,20 @@ class TraineeController extends Controller
 
         // Delete associated files
         if ($trainee->id_image_url) {
-            $idImagePath = str_replace(Storage::url(''), '', $trainee->id_image_url);
+            // Extract path from URL - remove the storage URL base
+            $storageUrl = Storage::disk('public')->url('');
+            $idImagePath = str_replace($storageUrl, '', $trainee->id_image_url);
+            // Remove leading slash if present
+            $idImagePath = ltrim($idImagePath, '/');
             Storage::disk('public')->delete($idImagePath);
         }
 
         if ($trainee->card_image_url) {
-            $cardImagePath = str_replace(Storage::url(''), '', $trainee->card_image_url);
+            // Extract path from URL - remove the storage URL base
+            $storageUrl = Storage::disk('public')->url('');
+            $cardImagePath = str_replace($storageUrl, '', $trainee->card_image_url);
+            // Remove leading slash if present
+            $cardImagePath = ltrim($cardImagePath, '/');
             Storage::disk('public')->delete($cardImagePath);
         }
 
