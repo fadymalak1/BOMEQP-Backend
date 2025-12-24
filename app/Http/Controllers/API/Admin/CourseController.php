@@ -56,10 +56,14 @@ class CourseController extends Controller
                 ->latest('effective_from')
                 ->first();
 
-            // Add pricing information to course
+            // Get ACC to retrieve commission percentage (set by Group Admin)
+            $acc = $course->acc;
+
+            // Add pricing information to course (commission comes from ACC, set by Group Admin)
             $course->current_price = $currentPricing ? [
                 'base_price' => $currentPricing->base_price,
                 'currency' => $currentPricing->currency ?? 'USD',
+                'group_commission_percentage' => $acc->commission_percentage ?? 0, // From ACC, set by Group Admin
                 'effective_from' => $currentPricing->effective_from,
                 'effective_to' => $currentPricing->effective_to,
             ] : null;

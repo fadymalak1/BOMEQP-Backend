@@ -47,9 +47,6 @@ Content-Type: application/json
   "pricing": {
     "base_price": 500.00,
     "currency": "USD",
-    "group_commission_percentage": 15.0,
-    "training_center_commission_percentage": 10.0,
-    "instructor_commission_percentage": 5.0,
     "effective_from": "2024-01-01",
     "effective_to": "2024-12-31"
   }
@@ -88,11 +85,10 @@ Content-Type: application/json
 If `pricing` is included, all pricing fields are required:
 - `pricing.base_price` (numeric, min:0) - Base price per certificate code
 - `pricing.currency` (string, size:3) - Currency code (e.g., "USD", "EUR")
-- `pricing.group_commission_percentage` (numeric, min:0, max:100) - Commission percentage for Group Admin
-- `pricing.training_center_commission_percentage` (numeric, min:0, max:100) - Commission percentage for Training Center
-- `pricing.instructor_commission_percentage` (numeric, min:0, max:100) - Commission percentage for Instructor
 - `pricing.effective_from` (date) - When pricing becomes effective (format: YYYY-MM-DD)
 - `pricing.effective_to` (date, nullable) - When pricing expires (format: YYYY-MM-DD). If null, pricing has no expiration
+
+**Important Note:** Commission percentage is NOT set by ACC. It is automatically taken from the ACC's `commission_percentage` field, which is set by Group Admin when approving the ACC. When Training Centers purchase codes, the commission is automatically calculated using the ACC's commission percentage.
 
 ### Response (201 Created)
 
@@ -117,8 +113,6 @@ If `pricing` is included, all pricing fields are required:
       "base_price": "500.00",
       "currency": "USD",
       "group_commission_percentage": "15.00",
-      "training_center_commission_percentage": "10.00",
-      "instructor_commission_percentage": "5.00",
       "effective_from": "2024-01-01",
       "effective_to": "2024-12-31"
     },
@@ -223,8 +217,6 @@ Get all courses for the authenticated ACC with full details and current pricing.
         "base_price": "500.00",
         "currency": "USD",
         "group_commission_percentage": "15.00",
-        "training_center_commission_percentage": "10.00",
-        "instructor_commission_percentage": "5.00",
         "effective_from": "2024-01-01",
         "effective_to": "2024-12-31"
       },
@@ -317,9 +309,6 @@ Update course details and/or pricing in a single request. All fields are optiona
   "pricing": {
     "base_price": 550.00,
     "currency": "USD",
-    "group_commission_percentage": 15.0,
-    "training_center_commission_percentage": 10.0,
-    "instructor_commission_percentage": 5.0,
     "effective_from": "2024-01-01",
     "effective_to": "2024-12-31"
   }
@@ -335,9 +324,6 @@ Update course details and/or pricing in a single request. All fields are optiona
   "pricing": {
     "base_price": 550.00,
     "currency": "USD",
-    "group_commission_percentage": 15.0,
-    "training_center_commission_percentage": 10.0,
-    "instructor_commission_percentage": 5.0,
     "effective_from": "2024-01-01",
     "effective_to": "2024-12-31"
   }
@@ -371,8 +357,6 @@ All fields are optional. When updating:
       "base_price": "550.00",
       "currency": "USD",
       "group_commission_percentage": "15.00",
-      "training_center_commission_percentage": "10.00",
-      "instructor_commission_percentage": "5.00",
       "effective_from": "2024-01-01",
       "effective_to": "2024-12-31"
     },
@@ -393,6 +377,7 @@ All fields are optional. When updating:
 **Note:** 
 - If `pricing` is provided, it will update the existing active pricing or create a new one if none exists
 - The response message will indicate if pricing was updated: "Course updated successfully and pricing updated" or just "Course updated successfully"
+- **Commission percentage is NOT included in pricing** - It is automatically taken from ACC's `commission_percentage` field (set by Group Admin)
 
 ---
 
@@ -442,9 +427,12 @@ Delete a course. This will also delete associated pricing records.
    - The most recent pricing (by `effective_from`) is used if multiple match
 
 4. **Commission Percentages:**
-   - All commission percentages should sum to a reasonable total (typically 100% or less)
-   - Group Admin commission is the percentage of revenue that goes to the platform
-   - Training Center and Instructor commissions are percentages of the remaining amount
+   - **Commission is NOT set by ACC** - It is automatically taken from the ACC's `commission_percentage` field
+   - The `commission_percentage` is set by Group Admin when approving the ACC
+   - When Training Centers purchase certificate codes, the commission is automatically calculated:
+     - Group Admin receives: `amount * (ACC.commission_percentage / 100)`
+     - ACC receives: `amount * ((100 - ACC.commission_percentage) / 100)`
+   - ACC only sets the `base_price` for the course, not commission percentages
 
 ---
 
@@ -463,9 +451,6 @@ POST /api/acc/courses
   "pricing": {
     "base_price": 400.00,
     "currency": "USD",
-    "group_commission_percentage": 15.0,
-    "training_center_commission_percentage": 10.0,
-    "instructor_commission_percentage": 5.0,
     "effective_from": "2024-01-01",
     "effective_to": null
   }
@@ -487,9 +472,6 @@ PUT /api/acc/courses/1
   "pricing": {
     "base_price": 450.00,
     "currency": "USD",
-    "group_commission_percentage": 15.0,
-    "training_center_commission_percentage": 10.0,
-    "instructor_commission_percentage": 5.0,
     "effective_from": "2024-01-01",
     "effective_to": "2024-12-31"
   }
@@ -505,9 +487,6 @@ PUT /api/acc/courses/1
   "pricing": {
     "base_price": 500.00,
     "currency": "USD",
-    "group_commission_percentage": 15.0,
-    "training_center_commission_percentage": 10.0,
-    "instructor_commission_percentage": 5.0,
     "effective_from": "2024-01-01",
     "effective_to": null
   }

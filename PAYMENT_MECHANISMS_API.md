@@ -456,13 +456,66 @@ Training Centers purchase certificate codes from ACCs. Payments are automaticall
 
 ---
 
+### Create Payment Intent (Stripe)
+
+**Endpoint:** `POST /api/training-center/codes/payment-intent`  
+**Authentication:** Required (Training Center Admin)  
+**Description:** Create a Stripe payment intent for code purchase. This endpoint calculates the total amount (including discounts) and returns a Stripe client secret for frontend payment processing.
+
+**Request Body:**
+```json
+{
+  "acc_id": 3,
+  "course_id": 5,
+  "quantity": 10,
+  "discount_code": "SAVE20"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "client_secret": "pi_xxx_secret_xxx",
+  "payment_intent_id": "pi_xxx",
+  "amount": 3600.00,
+  "currency": "USD",
+  "total_amount": "4000.00",
+  "discount_amount": "400.00",
+  "final_amount": "3600.00",
+  "unit_price": "400.00",
+  "quantity": 10
+}
+```
+
+**Frontend Flow:**
+1. Call this endpoint to get `client_secret` and `payment_intent_id`
+2. Use Stripe.js to open payment modal:
+   ```javascript
+   const stripe = Stripe('YOUR_PUBLISHABLE_KEY');
+   const { error } = await stripe.confirmCardPayment(client_secret, {
+     payment_method: {
+       card: cardElement,
+     }
+   });
+   ```
+3. After successful payment, call `/codes/purchase` with `payment_intent_id`
+
+**Error Responses:**
+- `400` - Stripe not configured
+- `403` - Training Center not authorized for ACC
+- `404` - ACC, course, or pricing not found
+- `422` - Invalid discount code or validation errors
+
+---
+
 ### Purchase Certificate Codes
 
 **Endpoint:** `POST /api/training-center/codes/purchase`  
 **Authentication:** Required (Training Center Admin)  
-**Description:** Purchase certificate codes with automatic commission distribution.
+**Description:** Purchase certificate codes with automatic commission distribution. Supports both wallet and Stripe credit card payments.
 
-**Request Body:**
+**Request Body (Wallet Payment):**
 ```json
 {
   "acc_id": 3,
@@ -472,6 +525,23 @@ Training Centers purchase certificate codes from ACCs. Payments are automaticall
   "payment_method": "wallet"
 }
 ```
+
+**Request Body (Stripe Credit Card Payment):**
+```json
+{
+  "acc_id": 3,
+  "course_id": 5,
+  "quantity": 10,
+  "discount_code": "SAVE20",
+  "payment_method": "credit_card",
+  "payment_intent_id": "pi_xxx"
+}
+```
+
+**Note:** For credit card payments, you must:
+1. First call `/codes/payment-intent` to create payment intent
+2. Complete payment using Stripe.js on frontend
+3. Then call this endpoint with the `payment_intent_id`
 
 **Response:** `201 Created`
 ```json
@@ -510,6 +580,13 @@ Training Centers purchase certificate codes from ACCs. Payments are automaticall
 - `quantity`: required, integer, min:1
 - `discount_code`: nullable, string
 - `payment_method`: required, enum: `wallet`, `credit_card`
+- `payment_intent_id`: required when `payment_method` is `credit_card`, must be valid Stripe payment intent ID
+
+**Payment Intent Verification:**
+When using `credit_card` payment method, the system:
+1. Verifies payment intent exists and is succeeded
+2. Verifies payment amount matches calculated amount
+3. Verifies metadata matches purchase details (training_center_id, acc_id, course_id, quantity)
 
 **Notes:**
 - Commission percentage is retrieved from ACC's `commission_percentage` field (set by Group Admin)

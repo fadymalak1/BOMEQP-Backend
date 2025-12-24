@@ -1704,9 +1704,6 @@ Create a new course. You can optionally include pricing information to set the c
   "pricing": {
     "base_price": 500.00,
     "currency": "USD",
-    "group_commission_percentage": 15.0,
-    "training_center_commission_percentage": 10.0,
-    "instructor_commission_percentage": 5.0,
     "effective_from": "2024-01-01",
     "effective_to": "2024-12-31"
   }
@@ -1785,17 +1782,17 @@ Create a new course. You can optionally include pricing information to set the c
 If you include `pricing`, all pricing fields are required:
 - `pricing.base_price` (numeric) - Base price per certificate code
 - `pricing.currency` (string) - Currency code (3 characters, e.g., "USD")
-- `pricing.group_commission_percentage` (numeric) - Commission for Group Admin (0-100)
-- `pricing.training_center_commission_percentage` (numeric) - Commission for Training Center (0-100)
-- `pricing.instructor_commission_percentage` (numeric) - Commission for Instructor (0-100)
 - `pricing.effective_from` (date) - When pricing becomes effective
 - `pricing.effective_to` (date, nullable) - When pricing expires (null for no expiration)
+
+**Important:** Commission percentage is NOT set by ACC. It is automatically taken from the ACC's `commission_percentage` field, which is set by Group Admin when approving the ACC. When Training Centers purchase codes, the commission is automatically calculated using the ACC's commission percentage.
 
 **Notes:**
 - You can create a course without pricing and add it later using the update endpoint
 - If pricing is provided, it will be created immediately and set as the active pricing
 - The response includes all course details with current pricing (if set) and relationships
 - `current_price` will be `null` if no pricing was provided or created
+- The `group_commission_percentage` in the response comes from ACC's `commission_percentage` field (set by Group Admin)
 
 ---
 
@@ -1831,8 +1828,6 @@ Get all courses for the authenticated ACC with full details and current pricing.
         "base_price": "500.00",
         "currency": "USD",
         "group_commission_percentage": "15.00",
-        "training_center_commission_percentage": "10.00",
-        "instructor_commission_percentage": "5.00",
         "effective_from": "2024-01-01",
         "effective_to": "2024-12-31"
       },
@@ -1854,11 +1849,11 @@ Get all courses for the authenticated ACC with full details and current pricing.
 **Note:** The `current_price` field will be `null` if no active pricing is set for the course. It contains:
 - `base_price`: The current price per certificate code
 - `currency`: Currency code (default: USD)
-- `group_commission_percentage`: Commission percentage for Group Admin
-- `training_center_commission_percentage`: Commission percentage for Training Center
-- `instructor_commission_percentage`: Commission percentage for Instructor
+- `group_commission_percentage`: Commission percentage for Group Admin (automatically taken from ACC's commission_percentage, set by Group Admin when approving ACC)
 - `effective_from`: When the pricing becomes effective
 - `effective_to`: When the pricing expires (null if no expiration)
+
+**Important:** Commission percentage is NOT set by ACC. It is automatically taken from the ACC's `commission_percentage` field, which is set by Group Admin when approving the ACC.
 
 **Example Requests:**
 ```javascript
@@ -1936,6 +1931,7 @@ Update course details and/or pricing in a single request. All fields are optiona
 - You can update course details only, pricing only, or both together
 - If `pricing` is provided, it will update the existing active pricing or create a new one if none exists
 - All pricing fields are required when `pricing` object is included
+- **Commission percentage is NOT included in pricing** - It is automatically taken from ACC's `commission_percentage` field (set by Group Admin)
 
 **Response (200):**
 ```json
@@ -2891,19 +2887,113 @@ curl -X POST "https://your-domain.com/api/training-center/accs/1/request-authori
 
 ### Certificate Codes
 
+#### 99. Create Payment Intent for Code Purchase (Stripe)
+**POST** `/training-center/codes/payment-intent`
+
+Create a Stripe payment intent for purchasing certificate codes. This endpoint calculates the total amount (including discounts) and returns a Stripe client secret for frontend payment processing.
+
+**Request Body:**
+```json
+{
+  "acc_id": 3,
+  "course_id": 5,
+  "quantity": 10,
+  "discount_code": "SAVE20"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "client_secret": "pi_xxx_secret_xxx",
+  "payment_intent_id": "pi_xxx",
+  "amount": 3600.00,
+  "currency": "USD",
+  "total_amount": "4000.00",
+  "discount_amount": "400.00",
+  "final_amount": "3600.00",
+  "unit_price": "400.00",
+  "quantity": 10
+}
+```
+
+**Frontend Implementation Example:**
+```javascript
+// Step 1: Create payment intent
+const response = await fetch('/api/training-center/codes/payment-intent', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    acc_id: 3,
+    course_id: 5,
+    quantity: 10,
+    discount_code: 'SAVE20'
+  })
+});
+
+const { client_secret, payment_intent_id } = await response.json();
+
+// Step 2: Initialize Stripe
+const stripe = Stripe('YOUR_PUBLISHABLE_KEY'); // Get from /api/stripe/config
+
+// Step 3: Confirm payment with Stripe
+const { error, paymentIntent } = await stripe.confirmCardPayment(client_secret, {
+  payment_method: {
+    card: cardElement, // Stripe card element
+  }
+});
+
+if (error) {
+  // Handle error
+  console.error(error);
+} else if (paymentIntent.status === 'succeeded') {
+  // Step 4: Complete purchase
+  await purchaseCodes(acc_id, course_id, quantity, payment_intent_id);
+}
+```
+
+**Error Responses:**
+- `400` - Stripe not configured
+- `403` - Training Center not authorized for ACC
+- `404` - ACC, course, or pricing not found
+- `422` - Invalid discount code or validation errors
+
+---
+
 #### 100. Purchase Certificate Codes
 **POST** `/training-center/codes/purchase`
 
-**Request Body:**
+**Request Body (Wallet Payment):**
 ```json
 {
   "acc_id": 1,
   "course_id": 1,
   "quantity": 10,
   "discount_code": "SAVE20", // optional
-  "payment_method": "wallet" // or "credit_card"
+  "payment_method": "wallet"
 }
 ```
+
+**Request Body (Stripe Credit Card Payment):**
+```json
+{
+  "acc_id": 1,
+  "course_id": 1,
+  "quantity": 10,
+  "discount_code": "SAVE20", // optional
+  "payment_method": "credit_card",
+  "payment_intent_id": "pi_xxx" // Required for credit card - obtained from /codes/payment-intent
+}
+```
+
+**Important:** For credit card payments:
+1. First call `/codes/payment-intent` to create payment intent and get `client_secret`
+2. Use Stripe.js to complete payment on frontend
+3. Then call this endpoint with the `payment_intent_id` from step 1
 
 **Response (201):**
 ```json

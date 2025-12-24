@@ -59,13 +59,11 @@ class CourseController extends Controller
                 ->latest('effective_from')
                 ->first();
 
-            // Add pricing information to course
+            // Add pricing information to course (commission comes from ACC, set by Group Admin)
             $course->current_price = $currentPricing ? [
                 'base_price' => $currentPricing->base_price,
                 'currency' => $currentPricing->currency ?? 'USD',
-                'group_commission_percentage' => $currentPricing->group_commission_percentage,
-                'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage,
-                'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage,
+                'group_commission_percentage' => $acc->commission_percentage ?? 0, // From ACC, set by Group Admin
                 'effective_from' => $currentPricing->effective_from,
                 'effective_to' => $currentPricing->effective_to,
             ] : null;
@@ -88,13 +86,10 @@ class CourseController extends Controller
             'duration_hours' => 'required|integer|min:1',
             'level' => 'required|in:beginner,intermediate,advanced',
             'status' => 'required|in:active,inactive,archived',
-            // Pricing fields (optional)
+            // Pricing fields (optional) - Commission is set by Group Admin when approving ACC
             'pricing' => 'nullable|array',
             'pricing.base_price' => 'required_with:pricing|numeric|min:0',
             'pricing.currency' => 'required_with:pricing|string|size:3',
-            'pricing.group_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.training_center_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.instructor_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
             'pricing.effective_from' => 'required_with:pricing|date',
             'pricing.effective_to' => 'nullable|date|after:pricing.effective_from',
         ]);
@@ -119,7 +114,7 @@ class CourseController extends Controller
             'status' => $request->status,
         ]);
 
-        // Create pricing if provided
+        // Create pricing if provided (commission is set by Group Admin when approving ACC)
         if ($request->has('pricing') && $request->pricing) {
             $pricingData = $request->pricing;
             CertificatePricing::create([
@@ -127,9 +122,6 @@ class CourseController extends Controller
                 'course_id' => $course->id,
                 'base_price' => $pricingData['base_price'],
                 'currency' => $pricingData['currency'],
-                'group_commission_percentage' => $pricingData['group_commission_percentage'],
-                'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
-                'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
                 'effective_from' => $pricingData['effective_from'],
                 'effective_to' => $pricingData['effective_to'] ?? null,
             ]);
@@ -148,13 +140,11 @@ class CourseController extends Controller
             ->latest('effective_from')
             ->first();
 
-        // Add pricing information to course
+        // Add pricing information to course (commission comes from ACC, set by Group Admin)
         $course->current_price = $currentPricing ? [
             'base_price' => $currentPricing->base_price,
             'currency' => $currentPricing->currency ?? 'USD',
-            'group_commission_percentage' => $currentPricing->group_commission_percentage,
-            'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage,
-            'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage,
+            'group_commission_percentage' => $acc->commission_percentage ?? 0, // From ACC, set by Group Admin
             'effective_from' => $currentPricing->effective_from,
             'effective_to' => $currentPricing->effective_to,
         ] : null;
@@ -197,13 +187,10 @@ class CourseController extends Controller
             'duration_hours' => 'sometimes|integer|min:1',
             'level' => 'sometimes|in:beginner,intermediate,advanced',
             'status' => 'sometimes|in:active,inactive,archived',
-            // Pricing fields (optional)
+            // Pricing fields (optional) - Commission is set by Group Admin when approving ACC
             'pricing' => 'sometimes|array',
             'pricing.base_price' => 'required_with:pricing|numeric|min:0',
             'pricing.currency' => 'required_with:pricing|string|size:3',
-            'pricing.group_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.training_center_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.instructor_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
             'pricing.effective_from' => 'required_with:pricing|date',
             'pricing.effective_to' => 'nullable|date|after:pricing.effective_from',
         ]);
@@ -229,26 +216,20 @@ class CourseController extends Controller
                 ->first();
 
             if ($existingPricing) {
-                // Update existing pricing
+                // Update existing pricing (commission is set by Group Admin when approving ACC)
                 $existingPricing->update([
                     'base_price' => $pricingData['base_price'],
                     'currency' => $pricingData['currency'],
-                    'group_commission_percentage' => $pricingData['group_commission_percentage'],
-                    'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
-                    'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
                     'effective_from' => $pricingData['effective_from'],
                     'effective_to' => $pricingData['effective_to'] ?? null,
                 ]);
             } else {
-                // Create new pricing
+                // Create new pricing (commission is set by Group Admin when approving ACC)
                 CertificatePricing::create([
                     'acc_id' => $acc->id,
                     'course_id' => $course->id,
                     'base_price' => $pricingData['base_price'],
                     'currency' => $pricingData['currency'],
-                    'group_commission_percentage' => $pricingData['group_commission_percentage'],
-                    'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
-                    'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
                     'effective_from' => $pricingData['effective_from'],
                     'effective_to' => $pricingData['effective_to'] ?? null,
                 ]);
@@ -268,13 +249,11 @@ class CourseController extends Controller
             ->latest('effective_from')
             ->first();
 
-        // Add pricing information to course
+        // Add pricing information to course (commission comes from ACC, set by Group Admin)
         $course->current_price = $currentPricing ? [
             'base_price' => $currentPricing->base_price,
             'currency' => $currentPricing->currency ?? 'USD',
-            'group_commission_percentage' => $currentPricing->group_commission_percentage,
-            'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage,
-            'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage,
+            'group_commission_percentage' => $acc->commission_percentage ?? 0, // From ACC, set by Group Admin
             'effective_from' => $currentPricing->effective_from,
             'effective_to' => $currentPricing->effective_to,
         ] : null;
