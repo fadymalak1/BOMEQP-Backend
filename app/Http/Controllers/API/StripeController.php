@@ -51,11 +51,11 @@ class StripeController extends Controller
             'currency' => 'required|string|size:3',
             'transaction_type' => 'required|string',
             'payer_type' => 'required|string',
-            'payer_id' => 'required|integer',
+            'payer_id' => 'required|numeric',
             'payee_type' => 'required|string',
-            'payee_id' => 'required|integer',
+            'payee_id' => 'required|numeric',
             'description' => 'nullable|string',
-            'reference_id' => 'nullable|integer',
+            'reference_id' => 'nullable|numeric',
             'reference_type' => 'nullable|string',
         ]);
 
@@ -67,16 +67,20 @@ class StripeController extends Controller
             ], 422);
         }
 
+        // Convert numeric strings to integers for IDs
+        $payerId = (int)$request->payer_id;
+        $payeeId = (int)$request->payee_id;
+
         $metadata = [
             'transaction_type' => $request->transaction_type,
             'payer_type' => $request->payer_type,
-            'payer_id' => $request->payer_id,
+            'payer_id' => (string)$payerId,
             'payee_type' => $request->payee_type,
-            'payee_id' => $request->payee_id,
+            'payee_id' => (string)$payeeId,
         ];
 
         if ($request->reference_id) {
-            $metadata['reference_id'] = $request->reference_id;
+            $metadata['reference_id'] = (string)((int)$request->reference_id);
             $metadata['reference_type'] = $request->reference_type;
         }
 
@@ -98,16 +102,16 @@ class StripeController extends Controller
         $transaction = Transaction::create([
             'transaction_type' => $request->transaction_type,
             'payer_type' => $request->payer_type,
-            'payer_id' => $request->payer_id,
+            'payer_id' => $payerId,
             'payee_type' => $request->payee_type,
-            'payee_id' => $request->payee_id,
+            'payee_id' => $payeeId,
             'amount' => $request->amount,
             'currency' => $request->currency,
             'payment_method' => 'credit_card',
             'payment_gateway_transaction_id' => $result['payment_intent_id'],
             'status' => 'pending',
             'description' => $request->description,
-            'reference_id' => $request->reference_id,
+            'reference_id' => $request->reference_id ? (int)$request->reference_id : null,
             'reference_type' => $request->reference_type,
         ]);
 
