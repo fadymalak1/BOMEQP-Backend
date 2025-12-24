@@ -30,10 +30,10 @@ class CodeController extends Controller
     public function createPaymentIntent(Request $request)
     {
         $request->validate([
-            'acc_id' => 'required|exists:accs,id',
-            'course_id' => 'required|exists:courses,id',
+            'acc_id' => 'required|integer|exists:accs,id',
+            'course_id' => 'required|integer|exists:courses,id',
             'quantity' => 'required|integer|min:1',
-            'discount_code' => 'nullable|string',
+            'discount_code' => 'nullable|string|max:255',
         ]);
 
         $user = $request->user();
@@ -201,12 +201,12 @@ class CodeController extends Controller
     public function purchase(Request $request)
     {
         $request->validate([
-            'acc_id' => 'required|exists:accs,id',
-            'course_id' => 'required|exists:courses,id',
+            'acc_id' => 'required|integer|exists:accs,id',
+            'course_id' => 'required|integer|exists:courses,id',
             'quantity' => 'required|integer|min:1',
-            'discount_code' => 'nullable|string',
+            'discount_code' => 'nullable|string|max:255',
             'payment_method' => 'required|in:wallet,credit_card',
-            'payment_intent_id' => 'nullable|string', // For Stripe credit card payments
+            'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string|max:255',
         ]);
 
         $user = $request->user();
