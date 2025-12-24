@@ -90,8 +90,6 @@ After creating the webhook endpoint:
 2. Under **"Signing secret"**, click **"Reveal"**
 3. Copy the webhook secret (starts with `whsec_`)
 4. Add it to your `.env` file:
-   ```env
-   STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxx
    ```
 
 ---
