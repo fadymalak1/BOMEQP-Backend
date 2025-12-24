@@ -1,0 +1,54 @@
+[33m9d4f674[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m stripe payment3
+[33m83ebff1[m stripe payment3
+[33m5729f84[m[33m ([m[1;31morigin/main[m[33m)[m stripe payment2
+[33m6eff5bd[m stripe payment
+[33m9348979[m payment and remove commission for course
+[33mf059b84[m fix discount code
+[33mb2e915f[m courses update and get with price
+[33m6ae06af[m fix price in courses list for acc
+[33m94b780c[m fix price in courses list
+[33m52d4ecc[m fix discount code exist
+[33mefa4782[m payment flow7
+[33mcf09a32[m payment flow6
+[33m8da85a7[m payment flow3
+[33mf696617[m payment flow2
+[33m048ebe6[m payment flow
+[33mbbea7e4[m tc can add trainee3
+[33me48267e[m tc can add trainee2
+[33m39a0641[m tc can add trainee
+[33m4349e83[m fix categories3
+[33m070ad5a[m fix categories2
+[33mb2b8cb4[m fix categories
+[33m3222508[m fix forget password
+[33m4b432f7[m fix appear courses for tc
+[33m0f9f244[m fix uploading file3
+[33maaa5fed[m fix uploading file2
+[33mcc834a7[m fix uploading file
+[33ma39806c[m allow admin to view courses
+[33m4d5f03d[m allow acc to view subadmin
+[33m2566355[m admin now can access instructors
+[33m76bc126[m fix storage link
+[33m744a6db[m fix upload file
+[33m0a0e362[m fix status for tc
+[33m68a7fc0[m postgresql fix codes
+[33me099c05[m fix reject acc
+[33mb7c989e[m fix commission
+[33m75c5d6d[m fix not active account1
+[33m7c28fc2[m fix not active account
+[33m130ac9b[m complete other apis
+[33m1b742a9[m Add Postman collection for all APIs with 124+ endpoints organized by user roles
+[33m4f19a63[m Add comprehensive Frontend Developer Guide with all APIs and user roles documentation
+[33mc7c518d[m fix db seed8
+[33mf8c4fe9[m fix db seed7
+[33m6cd10e5[m fix db seed6
+[33mba46dd2[m fix db seed5
+[33m47b6a30[m fix db seed4
+[33m0bf651f[m fix db seed3
+[33m1fdcee1[m fix db seed2
+[33m572fc40[m fix db seed
+[33m0edc5f4[m complete apis and seeders
+[33m31bde35[m Add Stripe integration, seeders, and API updates
+[33m89e40b5[m complete apis
+[33m9c97607[m fix issue2
+[33mb824c41[m fix issue
+[33m9e40477[m Initial commit
