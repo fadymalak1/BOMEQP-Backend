@@ -9,13 +9,6 @@ This guide explains how to set up and handle Stripe webhooks in the BOMEQP syste
 
 ### Option 1: Using .env File (Quick Setup)
 
-Add to your `.env` file:
-```env
-STRIPE_KEY=sk_test_51Shy6rC7FGiektWulVzleEMln1wKRnnMhGGQAMCNw37e8ahfwrrNSCGs346Jn1VpwosGHpjnF9TZsqLSRpg9ZnMJ00XCkr4o3a
-STRIPE_PUBLISHABLE_KEY=pk_test_51Shy6rC7FGiektWuqBF4ghuxewx0U5vDobkFO0gxz4UhTZJ9cZ2LsZuwYxeMoKlZNRicIHRBmaw4yYEZPHniwx4J00nG2h5nfQ
-STRIPE_WEBHOOK_SECRET=whsec_u8Q40GmEzXwMGwQwvdkXxtI2Y2j8Vbev
-STRIPE_CURRENCY=USD
-```
 
 The system will automatically use these values if no StripeSetting record exists in the database.
 
