@@ -1721,9 +1721,13 @@ Get detailed information about a specific instructor including all relationships
 #### 63. List Courses
 **GET** `/acc/courses`
 
-**Query Parameters:**
-- `sub_category_id` - Filter by sub category
-- `status` - Filter by status
+Get all courses for the authenticated ACC with full details and current pricing.
+
+**Query Parameters (All Optional):**
+- `sub_category_id` (integer) - Filter by sub category ID
+- `status` (string) - Filter by status: `active`, `inactive`, or `archived`
+- `level` (string) - Filter by level: `beginner`, `intermediate`, or `advanced`
+- `search` (string) - Search in course name, Arabic name, code, or description
 
 **Response (200):**
 ```json
@@ -1731,12 +1735,66 @@ Get detailed information about a specific instructor including all relationships
   "courses": [
     {
       "id": 1,
+      "sub_category_id": 1,
+      "acc_id": 1,
       "name": "Advanced Safety Training",
+      "name_ar": "تدريب السلامة المتقدم",
       "code": "AST-101",
-      "status": "active"
+      "description": "Comprehensive advanced safety training course covering all aspects of workplace safety",
+      "duration_hours": 40,
+      "level": "intermediate",
+      "status": "active",
+      "created_at": "2024-01-15T10:30:00.000000Z",
+      "updated_at": "2024-01-15T10:30:00.000000Z",
+      "current_price": {
+        "base_price": "500.00",
+        "currency": "USD",
+        "group_commission_percentage": "15.00",
+        "training_center_commission_percentage": "10.00",
+        "instructor_commission_percentage": "5.00",
+        "effective_from": "2024-01-01",
+        "effective_to": "2024-12-31"
+      },
+      "sub_category": {
+        "id": 1,
+        "name": "Fire Safety",
+        "name_ar": "سلامة الحريق",
+        "category": {
+          "id": 1,
+          "name": "Safety Training",
+          "name_ar": "تدريب السلامة"
+        }
+      }
     }
   ]
 }
+```
+
+**Note:** The `current_price` field will be `null` if no active pricing is set for the course. It contains:
+- `base_price`: The current price per certificate code
+- `currency`: Currency code (default: USD)
+- `group_commission_percentage`: Commission percentage for Group Admin
+- `training_center_commission_percentage`: Commission percentage for Training Center
+- `instructor_commission_percentage`: Commission percentage for Instructor
+- `effective_from`: When the pricing becomes effective
+- `effective_to`: When the pricing expires (null if no expiration)
+
+**Example Requests:**
+```javascript
+// Get all courses
+GET /acc/courses
+
+// Filter by status
+GET /acc/courses?status=active
+
+// Filter by sub category
+GET /acc/courses?sub_category_id=1
+
+// Search courses
+GET /acc/courses?search=safety
+
+// Combined filters
+GET /acc/courses?status=active&level=intermediate&sub_category_id=1
 ```
 
 ---

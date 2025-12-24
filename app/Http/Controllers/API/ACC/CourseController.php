@@ -19,11 +19,61 @@ class CourseController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $courses = Course::where('acc_id', $acc->id)
-            ->with(['subCategory.category'])
-            ->get();
+        $query = Course::where('acc_id', $acc->id)
+            ->with(['subCategory.category']);
 
-        return response()->json(['courses' => $courses]);
+        // Optional filters
+        if ($request->has('sub_category_id')) {
+            $query->where('sub_category_id', $request->sub_category_id);
+        }
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('level')) {
+            $query->where('level', $request->level);
+        }
+
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('name_ar', 'like', "%{$search}%")
+                  ->orWhere('code', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $courses = $query->orderBy('created_at', 'desc')->get();
+
+        // Add current pricing to each course
+        $coursesWithDetails = $courses->map(function ($course) use ($acc) {
+            // Get the current active pricing for this course
+            $currentPricing = CertificatePricing::where('course_id', $course->id)
+                ->where('acc_id', $acc->id)
+                ->where('effective_from', '<=', now())
+                ->where(function ($q) {
+                    $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
+                })
+                ->latest('effective_from')
+                ->first();
+
+            // Add pricing information to course
+            $course->current_price = $currentPricing ? [
+                'base_price' => $currentPricing->base_price,
+                'currency' => $currentPricing->currency ?? 'USD',
+                'group_commission_percentage' => $currentPricing->group_commission_percentage,
+                'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage,
+                'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage,
+                'effective_from' => $currentPricing->effective_from,
+                'effective_to' => $currentPricing->effective_to,
+            ] : null;
+
+            return $course;
+        });
+
+        return response()->json(['courses' => $coursesWithDetails->values()]);
     }
 
     public function store(Request $request)
