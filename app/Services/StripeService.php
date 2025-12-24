@@ -125,6 +125,49 @@ class StripeService
     }
 
     /**
+     * Verify payment intent - checks status, amount, and metadata
+     */
+    public function verifyPaymentIntent(string $paymentIntentId, float $expectedAmount, array $expectedMetadata = []): PaymentIntent
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured or not active');
+        }
+
+        try {
+            $paymentIntent = PaymentIntent::retrieve($paymentIntentId);
+
+            // Verify status
+            if ($paymentIntent->status !== 'succeeded') {
+                throw new \Exception('Payment not completed. Status: ' . $paymentIntent->status);
+            }
+
+            // Verify amount (Stripe uses cents)
+            $expectedAmountInCents = (int)($expectedAmount * 100);
+            if ($paymentIntent->amount !== $expectedAmountInCents) {
+                throw new \Exception('Payment amount mismatch. Expected: ' . $expectedAmount . ', Received: ' . ($paymentIntent->amount / 100));
+            }
+
+            // Verify metadata
+            if (!empty($expectedMetadata)) {
+                $paymentMetadata = (array)($paymentIntent->metadata->toArray() ?? []);
+                foreach ($expectedMetadata as $key => $value) {
+                    if (!isset($paymentMetadata[$key]) || (string)$paymentMetadata[$key] !== (string)$value) {
+                        throw new \Exception("Metadata mismatch for key: {$key}. Expected: {$value}, Received: " . ($paymentMetadata[$key] ?? 'null'));
+                    }
+                }
+            }
+
+            return $paymentIntent;
+        } catch (ApiErrorException $e) {
+            Log::error('Stripe PaymentIntent verification failed', [
+                'error' => $e->getMessage(),
+                'payment_intent_id' => $paymentIntentId,
+            ]);
+            throw new \Exception('Failed to verify payment intent: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Create a charge (legacy method)
      */
     public function createCharge(float $amount, string $currency = 'USD', string $source, array $metadata = []): array

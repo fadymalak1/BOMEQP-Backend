@@ -8,11 +8,19 @@ use App\Models\InstructorAccAuthorization;
 use App\Models\TrainingCenterWallet;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class InstructorController extends Controller
 {
+    protected StripeService $stripeService;
+
+    public function __construct(StripeService $stripeService)
+    {
+        $this->stripeService = $stripeService;
+    }
     public function index(Request $request)
     {
         $user = $request->user();
@@ -34,7 +42,7 @@ class InstructorController extends Controller
             'email' => 'required|email|unique:instructors,email',
             'phone' => 'required|string',
             'id_number' => 'required|string|unique:instructors,id_number',
-            'cv_url' => 'nullable|string',
+            'cv' => 'nullable|file|mimes:pdf|max:10240', // PDF file, max 10MB
             'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
         ]);
@@ -46,6 +54,15 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
+        $cvUrl = null;
+        if ($request->hasFile('cv')) {
+            $cvFile = $request->file('cv');
+            $fileName = 'instructors/cv/' . time() . '_' . $trainingCenter->id . '_' . $cvFile->getClientOriginalName();
+            $cvPath = $cvFile->storeAs('public', $fileName);
+            // Get URL - Storage::url() returns /storage/{path}
+            $cvUrl = Storage::url($fileName);
+        }
+
         $instructor = Instructor::create([
             'training_center_id' => $trainingCenter->id,
             'first_name' => $request->first_name,
@@ -53,7 +70,7 @@ class InstructorController extends Controller
             'email' => $request->email,
             'phone' => $request->phone,
             'id_number' => $request->id_number,
-            'cv_url' => $request->cv_url,
+            'cv_url' => $cvUrl,
             'certificates_json' => $request->certificates_json ?? $request->certificates,
             'specializations' => $request->specializations,
             'status' => 'pending',
@@ -85,15 +102,33 @@ class InstructorController extends Controller
             'email' => 'sometimes|email|unique:instructors,email,' . $id,
             'phone' => 'sometimes|string',
             'id_number' => 'sometimes|string|unique:instructors,id_number,' . $id,
-            'cv_url' => 'nullable|string',
+            'cv' => 'nullable|file|mimes:pdf|max:10240', // PDF file, max 10MB
             'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
         ]);
 
         $updateData = $request->only([
             'first_name', 'last_name', 'email', 'phone', 'id_number',
-            'cv_url', 'specializations'
+            'specializations'
         ]);
+        
+        // Handle CV file upload
+        if ($request->hasFile('cv')) {
+            // Delete old CV file if exists
+            if ($instructor->cv_url) {
+                $oldFilePath = str_replace('/storage/', '', $instructor->cv_url);
+                if (Storage::disk('public')->exists($oldFilePath)) {
+                    Storage::disk('public')->delete($oldFilePath);
+                }
+            }
+
+            // Upload new CV file
+            $cvFile = $request->file('cv');
+            $fileName = 'instructors/cv/' . time() . '_' . $trainingCenter->id . '_' . $cvFile->getClientOriginalName();
+            $cvPath = $cvFile->storeAs('public', $fileName);
+            // Get URL - Storage::url() returns /storage/{path}
+            $updateData['cv_url'] = Storage::url($fileName);
+        }
         
         if ($request->has('certificates_json') || $request->has('certificates')) {
             $updateData['certificates_json'] = $request->certificates_json ?? $request->certificates;
@@ -157,6 +192,91 @@ class InstructorController extends Controller
     }
 
     /**
+     * Create payment intent for instructor authorization payment
+     */
+    public function createAuthorizationPaymentIntent(Request $request, $id)
+    {
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $authorization = InstructorAccAuthorization::with(['instructor', 'acc'])
+            ->where('id', $id)
+            ->where('training_center_id', $trainingCenter->id)
+            ->firstOrFail();
+
+        // Verify authorization is approved and commission is set
+        if ($authorization->status !== 'approved') {
+            return response()->json([
+                'message' => 'Authorization must be approved by ACC Admin first'
+            ], 400);
+        }
+
+        if ($authorization->group_admin_status !== 'commission_set') {
+            return response()->json([
+                'message' => 'Group Admin must set commission percentage first'
+            ], 400);
+        }
+
+        if ($authorization->payment_status === 'paid') {
+            return response()->json([
+                'message' => 'Authorization already paid'
+            ], 400);
+        }
+
+        if (!$authorization->authorization_price || $authorization->authorization_price <= 0) {
+            return response()->json([
+                'message' => 'Authorization price not set'
+            ], 400);
+        }
+
+        if (!$this->stripeService->isConfigured()) {
+            return response()->json([
+                'message' => 'Stripe payment is not configured'
+            ], 400);
+        }
+
+        try {
+            $result = $this->stripeService->createPaymentIntent(
+                $authorization->authorization_price,
+                'USD',
+                [
+                    'authorization_id' => (string)$authorization->id,
+                    'training_center_id' => (string)$trainingCenter->id,
+                    'acc_id' => (string)$authorization->acc_id,
+                    'instructor_id' => (string)$authorization->instructor_id,
+                    'type' => 'instructor_authorization',
+                    'amount' => (string)$authorization->authorization_price,
+                ]
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => 'Failed to create payment intent',
+                    'error' => $result['error'] ?? 'Unknown error'
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'client_secret' => $result['client_secret'],
+                'payment_intent_id' => $result['payment_intent_id'],
+                'amount' => $authorization->authorization_price,
+                'currency' => $result['currency'],
+                'authorization' => $authorization,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to create payment intent',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Pay for instructor authorization
      * Called after Group Admin sets commission percentage
      */
@@ -164,7 +284,7 @@ class InstructorController extends Controller
     {
         $request->validate([
             'payment_method' => 'required|in:wallet,credit_card',
-            'payment_intent_id' => 'nullable|string', // For Stripe
+            'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string',
         ]);
 
         $user = $request->user();
@@ -200,6 +320,32 @@ class InstructorController extends Controller
             return response()->json([
                 'message' => 'Authorization price not set'
             ], 400);
+        }
+
+        // Verify Stripe payment intent if credit card payment
+        if ($request->payment_method === 'credit_card') {
+            if (!$request->payment_intent_id) {
+                return response()->json([
+                    'message' => 'payment_intent_id is required for credit card payments'
+                ], 400);
+            }
+
+            try {
+                $this->stripeService->verifyPaymentIntent(
+                    $request->payment_intent_id,
+                    $authorization->authorization_price,
+                    [
+                        'authorization_id' => (string)$authorization->id,
+                        'training_center_id' => (string)$trainingCenter->id,
+                        'type' => 'instructor_authorization',
+                    ]
+                );
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'Payment verification failed',
+                    'error' => $e->getMessage()
+                ], 400);
+            }
         }
 
         // Check wallet balance before starting transaction

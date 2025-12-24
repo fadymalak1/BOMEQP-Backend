@@ -162,11 +162,12 @@ class CodeController extends Controller
         $metadata = [
             'transaction_type' => 'code_purchase',
             'payer_type' => 'training_center',
-            'payer_id' => $trainingCenter->id,
+            'payer_id' => (string)$trainingCenter->id,
             'payee_type' => 'acc',
-            'payee_id' => $request->acc_id,
-            'course_id' => $request->course_id,
-            'quantity' => $request->quantity,
+            'payee_id' => (string)$request->acc_id,
+            'course_id' => (string)$request->course_id,
+            'quantity' => (string)$request->quantity,
+            'type' => 'code_purchase',
             'discount_code' => $request->discount_code ?? '',
         ];
 
@@ -354,43 +355,22 @@ class CodeController extends Controller
             }
 
             // Verify payment intent with Stripe
-            if (!$this->stripeService->isConfigured()) {
+            try {
+                $this->stripeService->verifyPaymentIntent(
+                    $request->payment_intent_id,
+                    $finalAmount,
+                    [
+                        'payer_id' => (string)$trainingCenter->id,
+                        'payee_id' => (string)$request->acc_id,
+                        'course_id' => (string)$request->course_id,
+                        'quantity' => (string)$request->quantity,
+                        'type' => 'code_purchase',
+                    ]
+                );
+            } catch (\Exception $e) {
                 return response()->json([
-                    'message' => 'Stripe payment is not configured'
-                ], 400);
-            }
-
-            $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
-            
-            if (!$paymentIntent) {
-                return response()->json([
-                    'message' => 'Invalid payment intent'
-                ], 400);
-            }
-
-            // Verify payment intent status
-            if ($paymentIntent->status !== 'succeeded') {
-                return response()->json([
-                    'message' => 'Payment intent is not completed. Status: ' . $paymentIntent->status
-                ], 400);
-            }
-
-            // Verify payment intent amount matches
-            $paymentAmount = $paymentIntent->amount / 100; // Convert from cents
-            if (abs($paymentAmount - $finalAmount) > 0.01) { // Allow small floating point differences
-                return response()->json([
-                    'message' => 'Payment amount mismatch. Expected: ' . $finalAmount . ', Received: ' . $paymentAmount
-                ], 400);
-            }
-
-            // Verify metadata matches
-            $metadata = $paymentIntent->metadata->toArray();
-            if (($metadata['payer_id'] ?? null) != $trainingCenter->id ||
-                ($metadata['payee_id'] ?? null) != $request->acc_id ||
-                ($metadata['course_id'] ?? null) != $request->course_id ||
-                ($metadata['quantity'] ?? null) != $request->quantity) {
-                return response()->json([
-                    'message' => 'Payment intent metadata does not match purchase details'
+                    'message' => 'Payment verification failed',
+                    'error' => $e->getMessage()
                 ], 400);
             }
         }

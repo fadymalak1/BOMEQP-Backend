@@ -119,6 +119,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('acc')->middleware(['role:acc_admin'])->group(function () {
         Route::get('/dashboard', [App\Http\Controllers\API\ACC\DashboardController::class, 'index']);
         Route::get('/subscription', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'show']);
+        // Payment intent endpoints must come before payment endpoints
+        Route::post('/subscription/payment-intent', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'createPaymentIntent']);
+        Route::post('/subscription/renew-payment-intent', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'createRenewalPaymentIntent']);
         Route::post('/subscription/payment', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'payment']);
         Route::put('/subscription/renew', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'renew']);
 
@@ -185,6 +188,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Instructors
         // Specific routes must come before apiResource to avoid route conflicts
         Route::get('/instructors/authorizations', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'authorizations']);
+        Route::post('/instructors/authorizations/{id}/payment-intent', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'createAuthorizationPaymentIntent']);
         Route::post('/instructors/authorizations/{id}/pay', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'payAuthorization']);
         Route::post('/instructors/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'requestAuthorization']);
         Route::apiResource('instructors', App\Http\Controllers\API\TrainingCenter\InstructorController::class);

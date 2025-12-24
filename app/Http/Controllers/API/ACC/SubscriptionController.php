@@ -6,11 +6,137 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\ACCSubscription;
 use App\Models\Transaction;
+use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class SubscriptionController extends Controller
 {
+    protected StripeService $stripeService;
+
+    public function __construct(StripeService $stripeService)
+    {
+        $this->stripeService = $stripeService;
+    }
+
+    /**
+     * Create payment intent for subscription payment
+     */
+    public function createPaymentIntent(Request $request)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:0',
+        ]);
+
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        if (!$this->stripeService->isConfigured()) {
+            return response()->json([
+                'message' => 'Stripe payment is not configured'
+            ], 400);
+        }
+
+        try {
+            $result = $this->stripeService->createPaymentIntent(
+                $request->amount,
+                'USD',
+                [
+                    'acc_id' => (string)$acc->id,
+                    'user_id' => (string)$user->id,
+                    'type' => 'subscription',
+                    'amount' => (string)$request->amount,
+                ]
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => 'Failed to create payment intent',
+                    'error' => $result['error'] ?? 'Unknown error'
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'client_secret' => $result['client_secret'],
+                'payment_intent_id' => $result['payment_intent_id'],
+                'amount' => $result['amount'],
+                'currency' => $result['currency'],
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to create payment intent',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create payment intent for subscription renewal
+     */
+    public function createRenewalPaymentIntent(Request $request)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:0',
+        ]);
+
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $currentSubscription = $acc->subscriptions()->latest()->first();
+        if (!$currentSubscription) {
+            return response()->json(['message' => 'No subscription found. Please create a new subscription.'], 404);
+        }
+
+        if (!$this->stripeService->isConfigured()) {
+            return response()->json([
+                'message' => 'Stripe payment is not configured'
+            ], 400);
+        }
+
+        try {
+            $result = $this->stripeService->createPaymentIntent(
+                $request->amount,
+                'USD',
+                [
+                    'acc_id' => (string)$acc->id,
+                    'user_id' => (string)$user->id,
+                    'type' => 'subscription_renewal',
+                    'amount' => (string)$request->amount,
+                    'subscription_id' => (string)$currentSubscription->id,
+                ]
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => 'Failed to create payment intent',
+                    'error' => $result['error'] ?? 'Unknown error'
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'client_secret' => $result['client_secret'],
+                'payment_intent_id' => $result['payment_intent_id'],
+                'amount' => $result['amount'],
+                'currency' => $result['currency'],
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to create payment intent',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function show(Request $request)
     {
         $user = $request->user();
@@ -30,7 +156,7 @@ class SubscriptionController extends Controller
         $request->validate([
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:credit_card,wallet',
-            'payment_intent_id' => 'nullable|string', // if using Stripe
+            'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string',
         ]);
 
         $user = $request->user();
@@ -38,6 +164,31 @@ class SubscriptionController extends Controller
 
         if (!$acc) {
             return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        // Verify Stripe payment intent if credit card payment
+        if ($request->payment_method === 'credit_card') {
+            if (!$request->payment_intent_id) {
+                return response()->json([
+                    'message' => 'payment_intent_id is required for credit card payments'
+                ], 400);
+            }
+
+            try {
+                $this->stripeService->verifyPaymentIntent(
+                    $request->payment_intent_id,
+                    $request->amount,
+                    [
+                        'acc_id' => (string)$acc->id,
+                        'type' => 'subscription',
+                    ]
+                );
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'Payment verification failed',
+                    'error' => $e->getMessage()
+                ], 400);
+            }
         }
 
         DB::beginTransaction();
@@ -52,7 +203,7 @@ class SubscriptionController extends Controller
                 'amount' => $request->amount,
                 'currency' => 'USD',
                 'payment_method' => $request->payment_method,
-                'payment_gateway_transaction_id' => $request->payment_intent_id ?? $request->payment_gateway_transaction_id,
+                'payment_gateway_transaction_id' => $request->payment_intent_id,
                 'status' => 'completed',
                 'completed_at' => now(),
             ]);
@@ -99,7 +250,7 @@ class SubscriptionController extends Controller
         $request->validate([
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:credit_card,wallet',
-            'payment_intent_id' => 'nullable|string',
+            'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string',
             'auto_renew' => 'nullable|boolean',
         ]);
 
@@ -124,6 +275,32 @@ class SubscriptionController extends Controller
             ], 400);
         }
 
+        // Verify Stripe payment intent if credit card payment
+        if ($request->payment_method === 'credit_card') {
+            if (!$request->payment_intent_id) {
+                return response()->json([
+                    'message' => 'payment_intent_id is required for credit card payments'
+                ], 400);
+            }
+
+            try {
+                $this->stripeService->verifyPaymentIntent(
+                    $request->payment_intent_id,
+                    $request->amount,
+                    [
+                        'acc_id' => (string)$acc->id,
+                        'type' => 'subscription_renewal',
+                        'subscription_id' => (string)$currentSubscription->id,
+                    ]
+                );
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'Payment verification failed',
+                    'error' => $e->getMessage()
+                ], 400);
+            }
+        }
+
         DB::beginTransaction();
         try {
             // Create transaction for renewal
@@ -136,7 +313,7 @@ class SubscriptionController extends Controller
                 'amount' => $request->amount,
                 'currency' => 'USD',
                 'payment_method' => $request->payment_method,
-                'payment_gateway_transaction_id' => $request->payment_intent_id ?? $request->payment_gateway_transaction_id,
+                'payment_gateway_transaction_id' => $request->payment_intent_id,
                 'status' => 'completed',
                 'completed_at' => now(),
             ]);

@@ -2745,24 +2745,43 @@ curl -X POST "https://your-domain.com/api/training-center/accs/1/request-authori
 #### 94. Create Instructor
 **POST** `/training-center/instructors`
 
-**Request Body:**
-```json
-{
-  "first_name": "John",
-  "last_name": "Doe",
-  "email": "john@example.com",
-  "phone": "+1234567890",
-  "id_number": "ID123456",
-  "cv_url": "/cvs/john-doe.pdf",
-  "certificates_json": [
-    {
-      "name": "Safety Certification",
-      "issued_by": "Safety Board",
-      "year": 2020
-    }
-  ],
-  "specializations": ["Safety", "First Aid"]
-}
+Add a new instructor. CV must be uploaded as a PDF file (not a URL string).
+
+**Important:** This endpoint requires `multipart/form-data` content type for file upload.
+
+**Request Body (Form Data):**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `first_name` | string | Yes | Instructor's first name |
+| `last_name` | string | Yes | Instructor's last name |
+| `email` | string | Yes | Instructor's email (must be unique) |
+| `phone` | string | Yes | Instructor's phone number |
+| `id_number` | string | Yes | Instructor's ID number (must be unique) |
+| `cv` | file | No | CV file (PDF only, max 10MB) |
+| `certificates_json` | array | No | Array of certificates |
+| `specializations` | array | No | Array of specializations |
+
+**Example Request (JavaScript - FormData):**
+```javascript
+const formData = new FormData();
+formData.append('first_name', 'John');
+formData.append('last_name', 'Doe');
+formData.append('email', 'john@example.com');
+formData.append('phone', '+1234567890');
+formData.append('id_number', 'ID123456');
+formData.append('cv', cvFile); // File object from input[type="file"]
+formData.append('specializations[]', 'Safety');
+formData.append('specializations[]', 'First Aid');
+
+const response = await fetch('/api/training-center/instructors', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`
+    // Don't set Content-Type - browser will set it with boundary
+  },
+  body: formData
+});
 ```
 
 **Response (201):**
@@ -2770,13 +2789,27 @@ curl -X POST "https://your-domain.com/api/training-center/accs/1/request-authori
 {
   "instructor": {
     "id": 1,
+    "training_center_id": 2,
     "first_name": "John",
     "last_name": "Doe",
     "email": "john@example.com",
-    "status": "pending"
+    "phone": "+1234567890",
+    "id_number": "ID123456",
+    "cv_url": "/storage/instructors/cv/1234567890_2_john_doe_cv.pdf",
+    "certificates_json": null,
+    "specializations": ["Safety", "First Aid"],
+    "status": "pending",
+    "created_at": "2024-01-15T10:30:00.000000Z",
+    "updated_at": "2024-01-15T10:30:00.000000Z"
   }
 }
 ```
+
+**CV File Requirements:**
+- File type: PDF only (`.pdf`)
+- Maximum size: 10MB
+- Storage: Files are stored in `storage/app/public/instructors/cv/`
+- Access: CV URL is returned in `cv_url` field
 
 ---
 
@@ -2823,21 +2856,58 @@ curl -X POST "https://your-domain.com/api/training-center/accs/1/request-authori
 #### 97. Update Instructor
 **PUT** `/training-center/instructors/{id}`
 
-**Request Body:**
-```json
-{
-  "first_name": "John Updated",
-  "phone": "+1234567891"
+Update instructor details. All fields are optional. CV must be uploaded as a PDF file if updating.
+
+**Important:** This endpoint requires `multipart/form-data` content type when uploading CV file.
+
+**Request Body (Form Data):**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `first_name` | string | No | Instructor's first name |
+| `last_name` | string | No | Instructor's last name |
+| `email` | string | No | Instructor's email (must be unique if changed) |
+| `phone` | string | No | Instructor's phone number |
+| `id_number` | string | No | Instructor's ID number (must be unique if changed) |
+| `cv` | file | No | New CV file (PDF only, max 10MB). Old CV will be deleted. |
+| `certificates_json` | array | No | Array of certificates |
+| `specializations` | array | No | Array of specializations |
+
+**Example Request (JavaScript - FormData):**
+```javascript
+const formData = new FormData();
+formData.append('first_name', 'John Updated');
+formData.append('phone', '+1234567891');
+if (newCvFile) {
+  formData.append('cv', newCvFile); // File object
 }
+
+const response = await fetch(`/api/training-center/instructors/${instructorId}`, {
+  method: 'PUT',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  },
+  body: formData
+});
 ```
 
 **Response (200):**
 ```json
 {
   "message": "Instructor updated successfully",
-  "instructor": { ... }
+  "instructor": {
+    "id": 1,
+    "first_name": "John Updated",
+    "last_name": "Doe",
+    "email": "john@example.com",
+    "phone": "+1234567891",
+    "cv_url": "/storage/instructors/cv/1234567891_2_john_updated_cv.pdf",
+    "status": "pending"
+  }
 }
 ```
+
+**Note:** When a new CV file is uploaded, the old CV file is automatically deleted from storage.
 
 ---
 
