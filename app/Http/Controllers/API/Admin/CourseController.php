@@ -44,8 +44,31 @@ class CourseController extends Controller
 
         $courses = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 15);
 
+        // Add current pricing to each course
+        $coursesWithPricing = $courses->getCollection()->map(function ($course) {
+            // Get the current active pricing for this course
+            $currentPricing = \App\Models\CertificatePricing::where('course_id', $course->id)
+                ->where('acc_id', $course->acc_id)
+                ->where('effective_from', '<=', now())
+                ->where(function ($q) {
+                    $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
+                })
+                ->latest('effective_from')
+                ->first();
+
+            // Add pricing information to course
+            $course->current_price = $currentPricing ? [
+                'base_price' => $currentPricing->base_price,
+                'currency' => $currentPricing->currency ?? 'USD',
+                'effective_from' => $currentPricing->effective_from,
+                'effective_to' => $currentPricing->effective_to,
+            ] : null;
+
+            return $course;
+        });
+
         return response()->json([
-            'courses' => $courses->items(),
+            'courses' => $coursesWithPricing->values(),
             'pagination' => [
                 'current_page' => $courses->currentPage(),
                 'last_page' => $courses->lastPage(),

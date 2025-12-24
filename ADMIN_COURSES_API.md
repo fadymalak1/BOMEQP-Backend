@@ -76,6 +76,12 @@ GET /admin/courses?acc_id=1&status=active&level=beginner&per_page=20&page=1
       "status": "active",
       "created_at": "2024-01-15T10:30:00.000000Z",
       "updated_at": "2024-01-15T10:30:00.000000Z",
+      "current_price": {
+        "base_price": "500.00",
+        "currency": "USD",
+        "effective_from": "2024-01-01",
+        "effective_to": "2024-12-31"
+      },
       "acc": {
         "id": 1,
         "name": "ABC Accreditation Body",
@@ -102,6 +108,12 @@ GET /admin/courses?acc_id=1&status=active&level=beginner&per_page=20&page=1
   }
 }
 ```
+
+**Note:** The `current_price` field will be `null` if no active pricing is set for the course. It contains:
+- `base_price`: The current price per certificate code
+- `currency`: Currency code (default: USD)
+- `effective_from`: When the pricing becomes effective
+- `effective_to`: When the pricing expires (null if no expiration)
 
 ---
 
