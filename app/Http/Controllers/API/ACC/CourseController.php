@@ -78,6 +78,7 @@ class CourseController extends Controller
 
     public function store(Request $request)
     {
+        // Validate course fields
         $request->validate([
             'sub_category_id' => 'required|exists:sub_categories,id',
             'name' => 'required|string|max:255',
@@ -87,6 +88,15 @@ class CourseController extends Controller
             'duration_hours' => 'required|integer|min:1',
             'level' => 'required|in:beginner,intermediate,advanced',
             'status' => 'required|in:active,inactive,archived',
+            // Pricing fields (optional)
+            'pricing' => 'nullable|array',
+            'pricing.base_price' => 'required_with:pricing|numeric|min:0',
+            'pricing.currency' => 'required_with:pricing|string|size:3',
+            'pricing.group_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
+            'pricing.training_center_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
+            'pricing.instructor_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
+            'pricing.effective_from' => 'required_with:pricing|date',
+            'pricing.effective_to' => 'nullable|date|after:pricing.effective_from',
         ]);
 
         $user = $request->user();
@@ -96,6 +106,7 @@ class CourseController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
+        // Create course
         $course = Course::create([
             'sub_category_id' => $request->sub_category_id,
             'acc_id' => $acc->id,
@@ -108,7 +119,55 @@ class CourseController extends Controller
             'status' => $request->status,
         ]);
 
-        return response()->json(['course' => $course], 201);
+        // Create pricing if provided
+        if ($request->has('pricing') && $request->pricing) {
+            $pricingData = $request->pricing;
+            CertificatePricing::create([
+                'acc_id' => $acc->id,
+                'course_id' => $course->id,
+                'base_price' => $pricingData['base_price'],
+                'currency' => $pricingData['currency'],
+                'group_commission_percentage' => $pricingData['group_commission_percentage'],
+                'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
+                'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
+                'effective_from' => $pricingData['effective_from'],
+                'effective_to' => $pricingData['effective_to'] ?? null,
+            ]);
+        }
+
+        // Reload course with relationships
+        $course->load(['subCategory.category']);
+
+        // Get the current active pricing for this course
+        $currentPricing = CertificatePricing::where('course_id', $course->id)
+            ->where('acc_id', $acc->id)
+            ->where('effective_from', '<=', now())
+            ->where(function ($q) {
+                $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
+            })
+            ->latest('effective_from')
+            ->first();
+
+        // Add pricing information to course
+        $course->current_price = $currentPricing ? [
+            'base_price' => $currentPricing->base_price,
+            'currency' => $currentPricing->currency ?? 'USD',
+            'group_commission_percentage' => $currentPricing->group_commission_percentage,
+            'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage,
+            'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage,
+            'effective_from' => $currentPricing->effective_from,
+            'effective_to' => $currentPricing->effective_to,
+        ] : null;
+
+        $message = 'Course created successfully';
+        if ($request->has('pricing') && $request->pricing) {
+            $message .= ' with pricing';
+        }
+
+        return response()->json([
+            'message' => $message,
+            'course' => $course
+        ], 201);
     }
 
     public function show($id)
@@ -128,6 +187,7 @@ class CourseController extends Controller
 
         $course = Course::where('acc_id', $acc->id)->findOrFail($id);
 
+        // Validate course fields
         $request->validate([
             'sub_category_id' => 'sometimes|exists:sub_categories,id',
             'name' => 'sometimes|string|max:255',
@@ -137,14 +197,97 @@ class CourseController extends Controller
             'duration_hours' => 'sometimes|integer|min:1',
             'level' => 'sometimes|in:beginner,intermediate,advanced',
             'status' => 'sometimes|in:active,inactive,archived',
+            // Pricing fields (optional)
+            'pricing' => 'sometimes|array',
+            'pricing.base_price' => 'required_with:pricing|numeric|min:0',
+            'pricing.currency' => 'required_with:pricing|string|size:3',
+            'pricing.group_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
+            'pricing.training_center_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
+            'pricing.instructor_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
+            'pricing.effective_from' => 'required_with:pricing|date',
+            'pricing.effective_to' => 'nullable|date|after:pricing.effective_from',
         ]);
 
+        // Update course fields
         $course->update($request->only([
             'sub_category_id', 'name', 'name_ar', 'code', 'description',
             'duration_hours', 'level', 'status'
         ]));
 
-        return response()->json(['message' => 'Course updated successfully', 'course' => $course]);
+        // Handle pricing update if provided
+        if ($request->has('pricing')) {
+            $pricingData = $request->pricing;
+            
+            // Check if there's an existing active pricing
+            $existingPricing = CertificatePricing::where('course_id', $course->id)
+                ->where('acc_id', $acc->id)
+                ->where('effective_from', '<=', now())
+                ->where(function ($q) {
+                    $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
+                })
+                ->latest('effective_from')
+                ->first();
+
+            if ($existingPricing) {
+                // Update existing pricing
+                $existingPricing->update([
+                    'base_price' => $pricingData['base_price'],
+                    'currency' => $pricingData['currency'],
+                    'group_commission_percentage' => $pricingData['group_commission_percentage'],
+                    'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
+                    'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
+                    'effective_from' => $pricingData['effective_from'],
+                    'effective_to' => $pricingData['effective_to'] ?? null,
+                ]);
+            } else {
+                // Create new pricing
+                CertificatePricing::create([
+                    'acc_id' => $acc->id,
+                    'course_id' => $course->id,
+                    'base_price' => $pricingData['base_price'],
+                    'currency' => $pricingData['currency'],
+                    'group_commission_percentage' => $pricingData['group_commission_percentage'],
+                    'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
+                    'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
+                    'effective_from' => $pricingData['effective_from'],
+                    'effective_to' => $pricingData['effective_to'] ?? null,
+                ]);
+            }
+        }
+
+        // Reload course with relationships
+        $course->load(['subCategory.category']);
+
+        // Get the current active pricing for this course
+        $currentPricing = CertificatePricing::where('course_id', $course->id)
+            ->where('acc_id', $acc->id)
+            ->where('effective_from', '<=', now())
+            ->where(function ($q) {
+                $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
+            })
+            ->latest('effective_from')
+            ->first();
+
+        // Add pricing information to course
+        $course->current_price = $currentPricing ? [
+            'base_price' => $currentPricing->base_price,
+            'currency' => $currentPricing->currency ?? 'USD',
+            'group_commission_percentage' => $currentPricing->group_commission_percentage,
+            'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage,
+            'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage,
+            'effective_from' => $currentPricing->effective_from,
+            'effective_to' => $currentPricing->effective_to,
+        ] : null;
+
+        $message = 'Course updated successfully';
+        if ($request->has('pricing')) {
+            $message .= ' and pricing updated';
+        }
+
+        return response()->json([
+            'message' => $message,
+            'course' => $course
+        ]);
     }
 
     public function destroy($id)

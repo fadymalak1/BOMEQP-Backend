@@ -1688,7 +1688,32 @@ Get detailed information about a specific instructor including all relationships
 #### 62. Create Course
 **POST** `/acc/courses`
 
-**Request Body:**
+Create a new course. You can optionally include pricing information to set the course price at creation time.
+
+**Request Body (with pricing - optional):**
+```json
+{
+  "sub_category_id": 1,
+  "name": "Advanced Safety Training",
+  "name_ar": "تدريب السلامة المتقدم",
+  "code": "AST-101",
+  "description": "Comprehensive safety training course covering all aspects of workplace safety",
+  "duration_hours": 40,
+  "level": "intermediate",
+  "status": "active",
+  "pricing": {
+    "base_price": 500.00,
+    "currency": "USD",
+    "group_commission_percentage": 15.0,
+    "training_center_commission_percentage": 10.0,
+    "instructor_commission_percentage": 5.0,
+    "effective_from": "2024-01-01",
+    "effective_to": "2024-12-31"
+  }
+}
+```
+
+**Request Body (without pricing):**
 ```json
 {
   "sub_category_id": 1,
@@ -1705,16 +1730,72 @@ Get detailed information about a specific instructor including all relationships
 **Response (201):**
 ```json
 {
+  "message": "Course created successfully with pricing",
   "course": {
     "id": 1,
     "sub_category_id": 1,
     "acc_id": 1,
     "name": "Advanced Safety Training",
+    "name_ar": "تدريب السلامة المتقدم",
     "code": "AST-101",
-    "status": "active"
+    "description": "Comprehensive safety training course covering all aspects of workplace safety",
+    "duration_hours": 40,
+    "level": "intermediate",
+    "status": "active",
+    "created_at": "2024-01-15T10:30:00.000000Z",
+    "updated_at": "2024-01-15T10:30:00.000000Z",
+    "current_price": {
+      "base_price": "500.00",
+      "currency": "USD",
+      "group_commission_percentage": "15.00",
+      "training_center_commission_percentage": "10.00",
+      "instructor_commission_percentage": "5.00",
+      "effective_from": "2024-01-01",
+      "effective_to": "2024-12-31"
+    },
+    "sub_category": {
+      "id": 1,
+      "name": "Fire Safety",
+      "name_ar": "سلامة الحريق",
+      "category": {
+        "id": 1,
+        "name": "Safety Training",
+        "name_ar": "تدريب السلامة"
+      }
+    }
   }
 }
 ```
+
+**Field Requirements:**
+
+**Required Course Fields:**
+- `sub_category_id` (integer) - Sub category ID
+- `name` (string) - Course name
+- `code` (string) - Unique course code
+- `duration_hours` (integer) - Course duration in hours
+- `level` (string) - Course level: `beginner`, `intermediate`, or `advanced`
+- `status` (string) - Course status: `active`, `inactive`, or `archived`
+
+**Optional Course Fields:**
+- `name_ar` (string) - Course name in Arabic
+- `description` (string) - Course description
+
+**Optional Pricing Object:**
+If you include `pricing`, all pricing fields are required:
+- `pricing.base_price` (numeric) - Base price per certificate code
+- `pricing.currency` (string) - Currency code (3 characters, e.g., "USD")
+- `pricing.group_commission_percentage` (numeric) - Commission for Group Admin (0-100)
+- `pricing.training_center_commission_percentage` (numeric) - Commission for Training Center (0-100)
+- `pricing.instructor_commission_percentage` (numeric) - Commission for Instructor (0-100)
+- `pricing.effective_from` (date) - When pricing becomes effective
+- `pricing.effective_to` (date, nullable) - When pricing expires (null for no expiration)
+
+**Notes:**
+- You can create a course without pricing and add it later using the update endpoint
+- If pricing is provided, it will be created immediately and set as the active pricing
+- The response includes all course details with current pricing (if set) and relationships
+- `current_price` will be `null` if no pricing was provided or created
 
 ---
 
@@ -1826,22 +1907,77 @@ GET /acc/courses?status=active&level=intermediate&sub_category_id=1
 #### 65. Update Course
 **PUT** `/acc/courses/{id}`
 
-**Request Body:**
+Update course details and/or pricing in a single request. All fields are optional - only include the fields you want to update.
+
+**Request Body (All fields optional):**
 ```json
 {
+  "sub_category_id": 1,
   "name": "Updated Course Name",
+  "name_ar": "اسم الدورة المحدث",
+  "code": "UPD-101",
   "description": "Updated description",
-  "status": "active"
+  "duration_hours": 50,
+  "level": "advanced",
+  "status": "active",
+  "pricing": {
+    "base_price": 550.00,
+    "currency": "USD",
+    "group_commission_percentage": 15.0,
+    "training_center_commission_percentage": 10.0,
+    "instructor_commission_percentage": 5.0,
+    "effective_from": "2024-01-01",
+    "effective_to": "2024-12-31"
+  }
 }
 ```
+
+**Note:** 
+- You can update course details only, pricing only, or both together
+- If `pricing` is provided, it will update the existing active pricing or create a new one if none exists
+- All pricing fields are required when `pricing` object is included
 
 **Response (200):**
 ```json
 {
   "message": "Course updated successfully",
-  "course": { ... }
+  "course": {
+    "id": 1,
+    "sub_category_id": 1,
+    "acc_id": 1,
+    "name": "Updated Course Name",
+    "name_ar": "اسم الدورة المحدث",
+    "code": "UPD-101",
+    "description": "Updated description",
+    "duration_hours": 50,
+    "level": "advanced",
+    "status": "active",
+    "created_at": "2024-01-15T10:30:00.000000Z",
+    "updated_at": "2024-12-19T15:45:00.000000Z",
+    "current_price": {
+      "base_price": "500.00",
+      "currency": "USD",
+      "group_commission_percentage": "15.00",
+      "training_center_commission_percentage": "10.00",
+      "instructor_commission_percentage": "5.00",
+      "effective_from": "2024-01-01",
+      "effective_to": "2024-12-31"
+    },
+    "sub_category": {
+      "id": 1,
+      "name": "Fire Safety",
+      "name_ar": "سلامة الحريق",
+      "category": {
+        "id": 1,
+        "name": "Safety Training",
+        "name_ar": "تدريب السلامة"
+      }
+    }
+  }
 }
 ```
+
+**Note:** The response includes all course details with current pricing and relationships, similar to the list endpoint.
 
 ---
 
