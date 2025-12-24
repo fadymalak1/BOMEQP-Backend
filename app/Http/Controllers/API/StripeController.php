@@ -9,6 +9,7 @@ use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Stripe\Charge;
 
 class StripeController extends Controller
 {
@@ -188,25 +189,52 @@ class StripeController extends Controller
             return response()->json(['error' => 'Invalid signature'], 400);
         }
 
-        $event = json_decode($payload, true);
+        try {
+            $event = json_decode($payload, true);
 
-        Log::info('Stripe webhook received', ['event_type' => $event['type']]);
+            if (!isset($event['type'])) {
+                Log::warning('Stripe webhook received without event type');
+                return response()->json(['error' => 'Invalid event data'], 400);
+            }
 
-        switch ($event['type']) {
-            case 'payment_intent.succeeded':
-                $this->handlePaymentSucceeded($event['data']['object']);
-                break;
+            Log::info('Stripe webhook received', [
+                'event_type' => $event['type'],
+                'event_id' => $event['id'] ?? null,
+            ]);
 
-            case 'payment_intent.payment_failed':
-                $this->handlePaymentFailed($event['data']['object']);
-                break;
+            switch ($event['type']) {
+                case 'payment_intent.succeeded':
+                    $this->handlePaymentSucceeded($event['data']['object']);
+                    break;
 
-            case 'charge.refunded':
-                $this->handleRefund($event['data']['object']);
-                break;
+                case 'payment_intent.payment_failed':
+                    $this->handlePaymentFailed($event['data']['object']);
+                    break;
+
+                case 'payment_intent.canceled':
+                    $this->handlePaymentCanceled($event['data']['object']);
+                    break;
+
+                case 'charge.refunded':
+                    $this->handleRefund($event['data']['object']);
+                    break;
+
+                case 'charge.dispute.created':
+                    $this->handleDisputeCreated($event['data']['object']);
+                    break;
+
+                default:
+                    Log::info('Unhandled Stripe webhook event', ['event_type' => $event['type']]);
+            }
+
+            return response()->json(['received' => true]);
+        } catch (\Exception $e) {
+            Log::error('Error processing Stripe webhook', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json(['error' => 'Webhook processing failed'], 500);
         }
-
-        return response()->json(['received' => true]);
     }
 
     /**
@@ -217,12 +245,30 @@ class StripeController extends Controller
         $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntent['id'])->first();
 
         if ($transaction) {
-            $transaction->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-            ]);
+            // Only update if status is not already completed (idempotency)
+            if ($transaction->status !== 'completed') {
+                $transaction->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                ]);
 
-            Log::info('Transaction updated to completed', ['transaction_id' => $transaction->id]);
+                Log::info('Transaction updated to completed via webhook', [
+                    'transaction_id' => $transaction->id,
+                    'payment_intent_id' => $paymentIntent['id'],
+                    'transaction_type' => $transaction->transaction_type,
+                ]);
+            } else {
+                Log::info('Transaction already completed, skipping update', [
+                    'transaction_id' => $transaction->id,
+                    'payment_intent_id' => $paymentIntent['id'],
+                ]);
+            }
+        } else {
+            Log::warning('Payment succeeded webhook received but transaction not found', [
+                'payment_intent_id' => $paymentIntent['id'],
+                'amount' => $paymentIntent['amount'] ?? null,
+                'currency' => $paymentIntent['currency'] ?? null,
+            ]);
         }
     }
 
@@ -234,11 +280,41 @@ class StripeController extends Controller
         $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntent['id'])->first();
 
         if ($transaction) {
+            // Only update if status is not already failed
+            if ($transaction->status !== 'failed') {
+                $transaction->update([
+                    'status' => 'failed',
+                ]);
+
+                Log::info('Transaction updated to failed via webhook', [
+                    'transaction_id' => $transaction->id,
+                    'payment_intent_id' => $paymentIntent['id'],
+                    'error_message' => $paymentIntent['last_payment_error']['message'] ?? null,
+                ]);
+            }
+        } else {
+            Log::warning('Payment failed webhook received but transaction not found', [
+                'payment_intent_id' => $paymentIntent['id'],
+            ]);
+        }
+    }
+
+    /**
+     * Handle payment canceled
+     */
+    protected function handlePaymentCanceled(array $paymentIntent)
+    {
+        $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntent['id'])->first();
+
+        if ($transaction) {
             $transaction->update([
                 'status' => 'failed',
             ]);
 
-            Log::info('Transaction updated to failed', ['transaction_id' => $transaction->id]);
+            Log::info('Transaction updated to failed (canceled)', [
+                'transaction_id' => $transaction->id,
+                'payment_intent_id' => $paymentIntent['id'],
+            ]);
         }
     }
 
@@ -257,7 +333,49 @@ class StripeController extends Controller
                     'status' => 'refunded',
                 ]);
 
-                Log::info('Transaction updated to refunded', ['transaction_id' => $transaction->id]);
+                Log::info('Transaction updated to refunded', [
+                    'transaction_id' => $transaction->id,
+                    'payment_intent_id' => $paymentIntentId,
+                    'refund_amount' => $charge['amount_refunded'] ?? null,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Handle dispute created
+     */
+    protected function handleDisputeCreated(array $dispute)
+    {
+        $chargeId = $dispute['charge'] ?? null;
+        
+        if ($chargeId) {
+            // Try to find transaction by charge ID or payment intent
+            $transaction = Transaction::where('payment_gateway_transaction_id', $chargeId)->first();
+            
+            // If not found, try to get payment intent from charge
+            if (!$transaction) {
+                try {
+                    $charge = Charge::retrieve($chargeId);
+                    $paymentIntentId = $charge->payment_intent ?? null;
+                    if ($paymentIntentId) {
+                        $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntentId)->first();
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error retrieving charge for dispute', ['error' => $e->getMessage()]);
+                }
+            }
+
+            if ($transaction) {
+                Log::warning('Dispute created for transaction', [
+                    'transaction_id' => $transaction->id,
+                    'dispute_id' => $dispute['id'],
+                    'dispute_reason' => $dispute['reason'] ?? null,
+                    'dispute_amount' => $dispute['amount'] ?? null,
+                ]);
+                
+                // Optionally update transaction status or create dispute record
+                // Transaction status remains unchanged, but you may want to track disputes
             }
         }
     }

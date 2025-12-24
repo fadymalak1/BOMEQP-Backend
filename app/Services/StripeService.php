@@ -15,10 +15,29 @@ class StripeService
 
     public function __construct()
     {
+        // Try to get settings from database first
         $this->settings = StripeSetting::getActive();
         
-        if ($this->settings && $this->settings->secret_key) {
-            Stripe::setApiKey($this->settings->secret_key);
+        // If no database settings, try to use .env as fallback
+        if (!$this->settings || empty($this->settings->secret_key)) {
+            $envSecretKey = env('STRIPE_KEY');
+            $envPublishableKey = env('STRIPE_PUBLISHABLE_KEY');
+            $envWebhookSecret = env('STRIPE_WEBHOOK_SECRET');
+            
+            if ($envSecretKey) {
+                Stripe::setApiKey($envSecretKey);
+                // Create a virtual settings object from .env
+                $this->settings = new \stdClass();
+                $this->settings->secret_key = $envSecretKey;
+                $this->settings->publishable_key = $envPublishableKey;
+                $this->settings->webhook_secret = $envWebhookSecret;
+                $this->settings->is_active = true;
+            }
+        } else {
+            // Use database settings
+            if ($this->settings->secret_key) {
+                Stripe::setApiKey($this->settings->secret_key);
+            }
         }
     }
 
@@ -27,9 +46,24 @@ class StripeService
      */
     public function isConfigured(): bool
     {
-        return $this->settings !== null 
-            && $this->settings->is_active 
-            && !empty($this->settings->secret_key);
+        if ($this->settings === null) {
+            // Fallback to .env
+            return !empty(env('STRIPE_KEY'));
+        }
+        
+        // Check if secret key exists
+        $secretKey = $this->settings->secret_key ?? null;
+        if (empty($secretKey)) {
+            return false;
+        }
+        
+        // If it's a database model, check is_active
+        if ($this->settings instanceof \App\Models\StripeSetting) {
+            return $this->settings->is_active === true;
+        }
+        
+        // For .env object, assume active
+        return true;
     }
 
     /**
@@ -251,7 +285,12 @@ class StripeService
      */
     public function getPublishableKey(): ?string
     {
-        return $this->settings?->publishable_key;
+        if (!$this->settings) {
+            // Try .env as fallback
+            return env('STRIPE_PUBLISHABLE_KEY');
+        }
+        
+        return $this->settings->publishable_key ?? env('STRIPE_PUBLISHABLE_KEY');
     }
 
     /**
@@ -259,7 +298,20 @@ class StripeService
      */
     public function verifyWebhookSignature(string $payload, string $signature): bool
     {
-        if (!$this->settings || !$this->settings->webhook_secret) {
+        $webhookSecret = null;
+        
+        // Try to get webhook secret from settings (database or .env object)
+        if ($this->settings && isset($this->settings->webhook_secret)) {
+            $webhookSecret = $this->settings->webhook_secret;
+        }
+        
+        // Fallback to .env
+        if (!$webhookSecret) {
+            $webhookSecret = env('STRIPE_WEBHOOK_SECRET');
+        }
+
+        if (!$webhookSecret) {
+            Log::warning('Stripe webhook secret not configured');
             return false;
         }
 
@@ -267,7 +319,7 @@ class StripeService
             \Stripe\Webhook::constructEvent(
                 $payload,
                 $signature,
-                $this->settings->webhook_secret
+                $webhookSecret
             );
             return true;
         } catch (\Exception $e) {
