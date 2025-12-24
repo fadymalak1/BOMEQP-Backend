@@ -25,8 +25,27 @@ class DiscountCodeController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
         $request->validate([
-            'code' => 'required|string|max:255|unique:discount_codes,code',
+            'code' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) use ($acc) {
+                    $exists = DiscountCode::where('acc_id', $acc->id)
+                        ->where('code', $value)
+                        ->exists();
+                    if ($exists) {
+                        $fail('The discount code already exists for this ACC.');
+                    }
+                },
+            ],
             'discount_type' => 'required|in:time_limited,quantity_based',
             'discount_percentage' => 'required|numeric|min:0|max:100',
             'applicable_course_ids' => 'nullable|array',
@@ -35,13 +54,6 @@ class DiscountCodeController extends Controller
             'total_quantity' => 'required_if:discount_type,quantity_based|nullable|integer|min:1',
             'status' => 'required|in:active,expired,depleted,inactive',
         ]);
-
-        $user = $request->user();
-        $acc = ACC::where('email', $user->email)->first();
-
-        if (!$acc) {
-            return response()->json(['message' => 'ACC not found'], 404);
-        }
 
         $discountCode = DiscountCode::create([
             'acc_id' => $acc->id,
@@ -76,7 +88,20 @@ class DiscountCodeController extends Controller
         $discountCode = DiscountCode::where('acc_id', $acc->id)->findOrFail($id);
 
         $request->validate([
-            'code' => 'sometimes|string|max:255|unique:discount_codes,code,' . $id,
+            'code' => [
+                'sometimes',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) use ($acc, $id) {
+                    $exists = DiscountCode::where('acc_id', $acc->id)
+                        ->where('code', $value)
+                        ->where('id', '!=', $id)
+                        ->exists();
+                    if ($exists) {
+                        $fail('The discount code already exists for this ACC.');
+                    }
+                },
+            ],
             'discount_type' => 'sometimes|in:time_limited,quantity_based',
             'discount_percentage' => 'sometimes|numeric|min:0|max:100',
             'applicable_course_ids' => 'nullable|array',
