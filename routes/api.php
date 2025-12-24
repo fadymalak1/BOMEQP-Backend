@@ -145,8 +145,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/certificate-templates/{id}/preview', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'preview']);
 
         // Discount Codes
-        Route::apiResource('discount-codes', App\Http\Controllers\API\ACC\DiscountCodeController::class);
+        // Specific routes must come before apiResource to avoid route conflicts
         Route::post('/discount-codes/validate', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'validate']);
+        Route::apiResource('discount-codes', App\Http\Controllers\API\ACC\DiscountCodeController::class);
 
         // Materials
         Route::apiResource('materials', App\Http\Controllers\API\ACC\MaterialController::class);
