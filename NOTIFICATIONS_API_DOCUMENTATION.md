@@ -41,6 +41,7 @@ The BOMEQP system includes a comprehensive notification system that sends real-t
 | `instructor_authorized` | Training Center | Instructor authorization approved (ready for payment) |
 | `instructor_authorization_rejected` | Training Center | Instructor authorization rejected |
 | `instructor_authorization_paid` | Group Admin | Instructor authorization payment received |
+| `instructor_needs_commission` | Group Admin | Instructor approved by ACC, needs commission percentage set |
 
 ### Code Purchase Notifications
 

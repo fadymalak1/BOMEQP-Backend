@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\InstructorAccAuthorization;
 use App\Models\Instructor;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class InstructorController extends Controller
@@ -51,8 +52,18 @@ class InstructorController extends Controller
             'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
         ]);
 
-        // TODO: Send notification to Group Admin to set commission percentage
-        // TODO: Send notification to Training Center about payment requirement
+        // Send notification to Group Admin to set commission percentage
+        $authorization->load(['instructor', 'acc']);
+        $instructor = $authorization->instructor;
+        $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+        
+        $notificationService = new NotificationService();
+        $notificationService->notifyAdminInstructorNeedsCommission(
+            $authorization->id,
+            $instructorName,
+            $acc->name,
+            $request->authorization_price
+        );
 
         return response()->json([
             'message' => 'Instructor approved successfully. Waiting for Group Admin to set commission percentage.',

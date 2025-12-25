@@ -278,6 +278,25 @@ class NotificationService
     }
 
     /**
+     * Notify Admin that instructor authorization is approved and needs commission setting
+     */
+    public function notifyAdminInstructorNeedsCommission(int $authorizationId, string $instructorName, string $accName, float $authorizationPrice): void
+    {
+        $this->sendToRole(
+            'group_admin',
+            'instructor_needs_commission',
+            'New Instructor Authorization - Commission Required',
+            "Instructor '{$instructorName}' has been approved by {$accName}. Please set the commission percentage. Authorization price: $" . number_format($authorizationPrice, 2) . ".",
+            [
+                'authorization_id' => $authorizationId,
+                'instructor_name' => $instructorName,
+                'acc_name' => $accName,
+                'authorization_price' => $authorizationPrice
+            ]
+        );
+    }
+
+    /**
      * Notify ACC about code purchase (commission)
      */
     public function notifyAccCodePurchase(int $userId, int $batchId, string $trainingCenterName, int $quantity, float $amount, float $commission): void
