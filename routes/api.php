@@ -41,6 +41,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/refund', [App\Http\Controllers\API\StripeController::class, 'refund']);
     });
 
+    // Notifications routes (available to all authenticated users)
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [App\Http\Controllers\API\NotificationController::class, 'index']);
+        Route::get('/unread-count', [App\Http\Controllers\API\NotificationController::class, 'unreadCount']);
+        Route::post('/mark-all-read', [App\Http\Controllers\API\NotificationController::class, 'markAllAsRead']);
+        Route::delete('/read', [App\Http\Controllers\API\NotificationController::class, 'deleteRead']);
+        Route::get('/{id}', [App\Http\Controllers\API\NotificationController::class, 'show']);
+        Route::put('/{id}/read', [App\Http\Controllers\API\NotificationController::class, 'markAsRead']);
+        Route::put('/{id}/unread', [App\Http\Controllers\API\NotificationController::class, 'markAsUnread']);
+        Route::delete('/{id}', [App\Http\Controllers\API\NotificationController::class, 'destroy']);
+    });
+
     // Shared routes for both group_admin and acc_admin
     Route::prefix('admin')->middleware(['role:group_admin,acc_admin'])->group(function () {
         // Sub-categories (read access for ACC admins)

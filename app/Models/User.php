@@ -57,4 +57,20 @@ class User extends Authenticatable
     {
         return $this->hasMany(ACC::class, 'approved_by');
     }
+
+    /**
+     * Get all notifications for the user
+     */
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    /**
+     * Get unread notifications
+     */
+    public function unreadNotifications()
+    {
+        return $this->notifications()->where('is_read', false);
+    }
 }

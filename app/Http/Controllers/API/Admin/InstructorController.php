@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Instructor;
 use App\Models\InstructorAccAuthorization;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class InstructorController extends Controller
@@ -127,7 +128,23 @@ class InstructorController extends Controller
             'group_commission_set_at' => now(),
         ]);
 
-        // TODO: Send notification to Training Center to complete payment
+        // Send notification to Training Center to complete payment
+        $authorization->load(['instructor', 'trainingCenter']);
+        $trainingCenter = $authorization->trainingCenter;
+        if ($trainingCenter) {
+            $trainingCenterUser = \App\Models\User::where('email', $trainingCenter->email)->first();
+            if ($trainingCenterUser) {
+                $notificationService = new NotificationService();
+                $instructor = $authorization->instructor;
+                $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+                $notificationService->notifyInstructorAuthorized(
+                    $trainingCenterUser->id,
+                    $authorization->id,
+                    $instructorName,
+                    $authorization->acc->name
+                );
+            }
+        }
 
         return response()->json([
             'message' => 'Commission percentage set successfully. Training Center can now complete payment.',

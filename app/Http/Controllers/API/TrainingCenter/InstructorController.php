@@ -8,6 +8,7 @@ use App\Models\InstructorAccAuthorization;
 use App\Models\TrainingCenterWallet;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -166,7 +167,21 @@ class InstructorController extends Controller
             'documents_json' => $request->documents_json ?? $request->documents,
         ]);
 
-        // TODO: Send notification to ACC
+        // Send notification to ACC admin
+        $acc = \App\Models\ACC::find($request->acc_id);
+        if ($acc) {
+            $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+            if ($accUser) {
+                $notificationService = new NotificationService();
+                $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+                $notificationService->notifyInstructorAuthorizationRequested(
+                    $accUser->id,
+                    $authorization->id,
+                    $instructorName,
+                    $trainingCenter->name
+                );
+            }
+        }
 
         return response()->json([
             'message' => 'Authorization request submitted successfully',
@@ -417,6 +432,27 @@ class InstructorController extends Controller
             ]);
 
             DB::commit();
+
+            // Send notifications
+            $authorization->load(['instructor', 'acc', 'trainingCenter']);
+            $notificationService = new NotificationService();
+            $instructor = $authorization->instructor;
+            $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+            
+            // Notify Training Center
+            $notificationService->notifyInstructorAuthorized(
+                $user->id,
+                $authorization->id,
+                $instructorName,
+                $authorization->acc->name
+            );
+            
+            // Notify Admin
+            $notificationService->notifyInstructorAuthorizationPaid(
+                $authorization->id,
+                $instructorName,
+                $authorization->authorization_price
+            );
 
             return response()->json([
                 'message' => 'Payment successful. Instructor is now officially authorized.',

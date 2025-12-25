@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Mail\ResetPasswordMail;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -57,7 +58,7 @@ class AuthController extends Controller
 
         // Create ACC record if role is acc_admin
         if ($request->role === 'acc_admin') {
-            \App\Models\ACC::create([
+            $acc = \App\Models\ACC::create([
                 'name' => $request->name,
                 'legal_name' => $request->name,
                 'registration_number' => 'ACC-' . strtoupper(Str::random(8)),
@@ -67,6 +68,10 @@ class AuthController extends Controller
                 'email' => $request->email,
                 'status' => 'pending',
             ]);
+
+            // Notify admin about new ACC application
+            $notificationService = new NotificationService();
+            $notificationService->notifyAdminNewAccApplication($acc->id, $acc->name);
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;

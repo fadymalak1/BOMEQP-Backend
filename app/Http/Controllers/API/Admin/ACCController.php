@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\Category;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class ACCController extends Controller
@@ -35,6 +36,10 @@ class ACCController extends Controller
         $user = User::where('email', $acc->email)->first();
         if ($user && $user->role === 'acc_admin') {
             $user->update(['status' => 'active']);
+            
+            // Send notification to ACC admin
+            $notificationService = new NotificationService();
+            $notificationService->notifyAccApproved($user->id, $acc->id, $acc->name);
         }
 
         return response()->json(['message' => 'ACC application approved', 'acc' => $acc]);
@@ -50,6 +55,13 @@ class ACCController extends Controller
             'rejection_reason' => $request->rejection_reason,
             'approved_by' => $request->user()->id,
         ]);
+
+        // Send notification to ACC admin
+        $user = User::where('email', $acc->email)->first();
+        if ($user && $user->role === 'acc_admin') {
+            $notificationService = new NotificationService();
+            $notificationService->notifyAccRejected($user->id, $acc->id, $acc->name, $request->rejection_reason);
+        }
 
         return response()->json([
             'message' => 'ACC application rejected',

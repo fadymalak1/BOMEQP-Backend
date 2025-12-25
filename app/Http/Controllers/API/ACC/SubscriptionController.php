@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\ACCSubscription;
 use App\Models\Transaction;
+use App\Services\NotificationService;
 use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -235,6 +236,10 @@ class SubscriptionController extends Controller
 
             DB::commit();
 
+            // Send notification to ACC admin
+            $notificationService = new NotificationService();
+            $notificationService->notifySubscriptionPaid($user->id, $subscription->id, $request->amount);
+
             return response()->json([
                 'message' => 'Payment successful',
                 'subscription' => $subscription,
@@ -350,6 +355,13 @@ class SubscriptionController extends Controller
             }
 
             DB::commit();
+
+            // Send notification to ACC admin
+            $userModel = \App\Models\User::where('email', $acc->email)->first();
+            if ($userModel) {
+                $notificationService = new NotificationService();
+                $notificationService->notifySubscriptionPaid($userModel->id, $newSubscription->id, $request->amount);
+            }
 
             return response()->json([
                 'message' => 'Subscription renewed successfully',

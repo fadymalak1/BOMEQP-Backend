@@ -10,6 +10,7 @@ use App\Models\CertificatePricing;
 use App\Models\TrainingCenterWallet;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -457,6 +458,41 @@ class CodeController extends Controller
             }
 
             DB::commit();
+
+            // Send notifications
+            $notificationService = new NotificationService();
+            
+            // Notify Training Center
+            $notificationService->notifyCodePurchaseSuccess(
+                $user->id,
+                $batch->id,
+                $request->quantity,
+                $finalAmount
+            );
+            
+            // Notify Admin
+            $notificationService->notifyAdminCodePurchase(
+                $batch->id,
+                $trainingCenter->name,
+                $request->quantity,
+                $finalAmount
+            );
+            
+            // Notify ACC (about commission)
+            $acc = \App\Models\ACC::find($request->acc_id);
+            if ($acc) {
+                $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+                if ($accUser) {
+                    $notificationService->notifyAccCodePurchase(
+                        $accUser->id,
+                        $batch->id,
+                        $trainingCenter->name,
+                        $request->quantity,
+                        $finalAmount,
+                        $accCommissionAmount
+                    );
+                }
+            }
 
             // Format response to match requirements
             return response()->json([
