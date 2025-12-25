@@ -138,6 +138,26 @@ class NotificationService
     }
 
     /**
+     * Notify Admin about ACC subscription payment
+     */
+    public function notifyAdminSubscriptionPaid(int $accId, string $accName, float $amount, bool $isRenewal = false): void
+    {
+        $type = $isRenewal ? 'subscription_renewal' : 'subscription_payment';
+        $title = $isRenewal ? 'ACC Subscription Renewed' : 'ACC Subscription Payment Received';
+        $message = $isRenewal 
+            ? "{$accName} has renewed their subscription. Payment amount: $" . number_format($amount, 2) . "."
+            : "{$accName} has paid their subscription. Payment amount: $" . number_format($amount, 2) . ".";
+
+        $this->sendToRole(
+            'group_admin',
+            $type,
+            $title,
+            $message,
+            ['acc_id' => $accId, 'acc_name' => $accName, 'amount' => $amount, 'is_renewal' => $isRenewal]
+        );
+    }
+
+    /**
      * Notify ACC about subscription expiring soon
      */
     public function notifySubscriptionExpiring(int $userId, int $subscriptionId, string $expiryDate): void

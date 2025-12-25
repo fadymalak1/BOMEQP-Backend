@@ -236,9 +236,12 @@ class SubscriptionController extends Controller
 
             DB::commit();
 
-            // Send notification to ACC admin
+            // Send notifications
             $notificationService = new NotificationService();
             $notificationService->notifySubscriptionPaid($user->id, $subscription->id, $request->amount);
+            
+            // Notify Admin
+            $notificationService->notifyAdminSubscriptionPaid($acc->id, $acc->name, $request->amount, false);
 
             return response()->json([
                 'message' => 'Payment successful',
@@ -356,11 +359,14 @@ class SubscriptionController extends Controller
 
             DB::commit();
 
-            // Send notification to ACC admin
+            // Send notifications
             $userModel = \App\Models\User::where('email', $acc->email)->first();
             if ($userModel) {
                 $notificationService = new NotificationService();
                 $notificationService->notifySubscriptionPaid($userModel->id, $newSubscription->id, $request->amount);
+                
+                // Notify Admin
+                $notificationService->notifyAdminSubscriptionPaid($acc->id, $acc->name, $request->amount, true);
             }
 
             return response()->json([

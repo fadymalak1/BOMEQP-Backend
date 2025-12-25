@@ -32,6 +32,8 @@ The BOMEQP system includes a comprehensive notification system that sends real-t
 |------|-----------|---------|
 | `subscription_paid` | ACC Admin | Subscription payment successful |
 | `subscription_expiring` | ACC Admin | Subscription expiring soon |
+| `subscription_payment` | Group Admin | ACC subscription payment received |
+| `subscription_renewal` | Group Admin | ACC subscription renewal payment received |
 
 ### Instructor Authorization Notifications
 
