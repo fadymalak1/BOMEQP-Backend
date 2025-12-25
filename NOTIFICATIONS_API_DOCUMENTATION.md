@@ -71,6 +71,11 @@ All endpoints require authentication via Bearer token:
 Authorization: Bearer {token}
 ```
 
+**Note:** For SSE endpoints, you may need to pass the token as a query parameter since EventSource doesn't support custom headers by default:
+```
+/api/notifications/stream?token={token}&last_id=0
+```
+
 ---
 
 ### 1. Get All Notifications
@@ -256,7 +261,68 @@ Delete a specific notification.
 
 ---
 
-### 8. Delete All Read Notifications
+### 8. Stream Notifications (Server-Sent Events)
+
+**GET** `/api/notifications/stream`
+
+Stream notifications in real-time using Server-Sent Events (SSE). This endpoint keeps the connection open and sends new notifications as they arrive.
+
+**Query Parameters:**
+- `last_id` (integer, optional) - Last notification ID received (default: 0). Only notifications with ID greater than this will be sent.
+
+**Response Format (SSE):**
+```
+data: {"type":"connected","message":"Connected to notification stream","timestamp":"2024-12-25T10:30:00.000000Z"}
+
+data: {"type":"notification","notification":{"id":1,"type":"acc_approved",...},"timestamp":"2024-12-25T10:30:00.000000Z"}
+
+: heartbeat
+
+data: {"type":"timeout","message":"Connection timeout. Please reconnect.","timestamp":"2024-12-25T10:35:00.000000Z"}
+```
+
+**Event Types:**
+- `connected` - Initial connection established
+- `notification` - New notification received
+- `timeout` - Connection timeout (after 5 minutes)
+- `heartbeat` - Keep-alive message (sent every 30 seconds)
+
+**Connection Details:**
+- Connection automatically closes after 5 minutes (recommended to reconnect)
+- Heartbeat sent every 30 seconds to keep connection alive
+- Checks for new notifications every 2 seconds
+- Automatically handles client disconnection
+
+**Example Request:**
+```javascript
+const eventSource = new EventSource('/api/notifications/stream?last_id=0&token=your_token_here');
+```
+
+---
+
+### 9. Stream Unread Count (Server-Sent Events)
+
+**GET** `/api/notifications/stream/unread-count`
+
+Stream unread notification count updates in real-time using SSE.
+
+**Response Format (SSE):**
+```
+data: {"type":"count","unread_count":12,"timestamp":"2024-12-25T10:30:00.000000Z"}
+
+: heartbeat
+
+data: {"type":"count","unread_count":13,"timestamp":"2024-12-25T10:30:05.000000Z"}
+```
+
+**Example Request:**
+```javascript
+const countSource = new EventSource('/api/notifications/stream/unread-count?token=your_token_here');
+```
+
+---
+
+### 10. Delete All Read Notifications
 
 **DELETE** `/api/notifications/read`
 
@@ -470,16 +536,235 @@ function NotificationBell() {
 
 ### Real-time Updates
 
-For real-time notification updates, you can:
+The system provides **Server-Sent Events (SSE)** for real-time notification streaming. This is the recommended approach as it:
+- Reduces API calls significantly
+- Provides instant notifications
+- Uses less bandwidth than polling
+- Automatically reconnects on connection loss
 
-1. **Polling:** Fetch notifications every 30-60 seconds
-2. **WebSockets:** Use Laravel Echo or Pusher for real-time updates
-3. **Server-Sent Events (SSE):** Stream notifications to the client
+### Server-Sent Events (SSE) - Recommended
 
-### Example: Polling Implementation
+**Stream All Notifications:**
 
 ```javascript
-// Poll every 30 seconds
+const eventSource = new EventSource('/api/notifications/stream?last_id=0', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  if (data.type === 'notification') {
+    // Handle new notification
+    console.log('New notification:', data.notification);
+    addNotificationToUI(data.notification);
+    updateNotificationBadge();
+  } else if (data.type === 'connected') {
+    console.log('Connected to notification stream');
+  } else if (data.type === 'timeout') {
+    console.log('Connection timeout, reconnecting...');
+    eventSource.close();
+    // Reconnect after a delay
+    setTimeout(() => connectToStream(), 1000);
+  }
+};
+
+eventSource.onerror = (error) => {
+  console.error('SSE error:', error);
+  eventSource.close();
+  // Reconnect after error
+  setTimeout(() => connectToStream(), 5000);
+};
+```
+
+**Stream Unread Count Only:**
+
+```javascript
+const countEventSource = new EventSource('/api/notifications/stream/unread-count', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+countEventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  if (data.type === 'count') {
+    updateNotificationBadge(data.unread_count);
+  }
+};
+```
+
+**Note:** EventSource doesn't support custom headers by default. You'll need to either:
+1. Pass token as query parameter (less secure)
+2. Use a library like `eventsource` npm package that supports headers
+3. Use fetch with ReadableStream API
+
+**Using eventsource npm package:**
+
+```bash
+npm install eventsource
+```
+
+```javascript
+import EventSource from 'eventsource';
+
+const eventSource = new EventSource('/api/notifications/stream?last_id=0', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+// Same event handlers as above
+```
+
+**Using Fetch API with ReadableStream (Alternative):**
+
+```javascript
+async function connectToNotificationStream(lastId = 0) {
+  const response = await fetch(`/api/notifications/stream?last_id=${lastId}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'text/event-stream'
+    }
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    
+    if (done) {
+      console.log('Stream ended, reconnecting...');
+      setTimeout(() => connectToNotificationStream(lastId), 1000);
+      break;
+    }
+
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.substring(6));
+        handleNotificationData(data);
+      }
+    }
+  }
+}
+
+function handleNotificationData(data) {
+  if (data.type === 'notification') {
+    addNotificationToUI(data.notification);
+    updateNotificationBadge();
+  }
+}
+```
+
+### React Hook for SSE
+
+```jsx
+import { useEffect, useState, useRef } from 'react';
+
+function useNotificationStream(token) {
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
+  const eventSourceRef = useRef(null);
+  const lastIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!token) return;
+
+    // Close existing connection if any
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    // Create new EventSource connection
+    const eventSource = new EventSource(
+      `/api/notifications/stream?last_id=${lastIdRef.current}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }
+    );
+
+    eventSourceRef.current = eventSource;
+
+    eventSource.onopen = () => {
+      setIsConnected(true);
+      console.log('Connected to notification stream');
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'notification') {
+          const notification = data.notification;
+          setNotifications(prev => [notification, ...prev]);
+          
+          if (!notification.is_read) {
+            setUnreadCount(prev => prev + 1);
+          }
+
+          // Update last ID
+          if (notification.id > lastIdRef.current) {
+            lastIdRef.current = notification.id;
+          }
+        } else if (data.type === 'connected') {
+          setIsConnected(true);
+        } else if (data.type === 'timeout') {
+          console.log('Connection timeout, will reconnect');
+          eventSource.close();
+        }
+      } catch (error) {
+        console.error('Error parsing SSE data:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('SSE error:', error);
+      setIsConnected(false);
+      eventSource.close();
+      
+      // Reconnect after 5 seconds
+      setTimeout(() => {
+        if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+          // Trigger reconnection
+          eventSourceRef.current = null;
+        }
+      }, 5000);
+    };
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, [token]);
+
+  return {
+    notifications,
+    unreadCount,
+    isConnected
+  };
+}
+```
+
+### Polling (Fallback)
+
+If SSE is not supported, you can still use polling:
+
+### Example: Polling Implementation (Fallback)
+
+```javascript
+// Poll every 30 seconds (only use if SSE is not available)
 setInterval(async () => {
   const response = await fetch('/api/notifications/unread-count', {
     headers: {
@@ -492,6 +777,8 @@ setInterval(async () => {
   updateNotificationBadge(unread_count);
 }, 30000);
 ```
+
+**Note:** SSE is recommended over polling as it reduces server load and provides instant updates.
 
 ---
 

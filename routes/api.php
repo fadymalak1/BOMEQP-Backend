@@ -44,6 +44,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Notifications routes (available to all authenticated users)
     Route::prefix('notifications')->group(function () {
         Route::get('/', [App\Http\Controllers\API\NotificationController::class, 'index']);
+        Route::get('/stream', [App\Http\Controllers\API\NotificationController::class, 'stream']);
+        Route::get('/stream/unread-count', [App\Http\Controllers\API\NotificationController::class, 'streamUnreadCount']);
         Route::get('/unread-count', [App\Http\Controllers\API\NotificationController::class, 'unreadCount']);
         Route::post('/mark-all-read', [App\Http\Controllers\API\NotificationController::class, 'markAllAsRead']);
         Route::delete('/read', [App\Http\Controllers\API\NotificationController::class, 'deleteRead']);
