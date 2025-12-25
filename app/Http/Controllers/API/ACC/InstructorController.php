@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\InstructorAccAuthorization;
 use App\Models\Instructor;
+use App\Models\TrainingCenter;
+use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
@@ -94,7 +96,23 @@ class InstructorController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        // TODO: Send notification to instructor
+        // Send notification to Training Center
+        $authorization->load(['instructor', 'trainingCenter']);
+        $trainingCenter = $authorization->trainingCenter;
+        if ($trainingCenter) {
+            $trainingCenterUser = User::where('email', $trainingCenter->email)->first();
+            if ($trainingCenterUser) {
+                $notificationService = new NotificationService();
+                $instructor = $authorization->instructor;
+                $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+                $notificationService->notifyInstructorAuthorizationRejected(
+                    $trainingCenterUser->id,
+                    $authorization->id,
+                    $instructorName,
+                    $request->rejection_reason
+                );
+            }
+        }
 
         return response()->json(['message' => 'Instructor rejected']);
     }

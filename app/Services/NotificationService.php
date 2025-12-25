@@ -180,6 +180,20 @@ class NotificationService
     }
 
     /**
+     * Notify Training Center about successful instructor authorization payment
+     */
+    public function notifyInstructorAuthorizationPaymentSuccess(int $userId, int $authorizationId, string $instructorName, float $amount): void
+    {
+        $this->send(
+            $userId,
+            'instructor_authorization_payment_success',
+            'Payment Successful',
+            "Payment of $" . number_format($amount, 2) . " for instructor '{$instructorName}' authorization has been processed successfully. The instructor is now officially authorized.",
+            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'amount' => $amount]
+        );
+    }
+
+    /**
      * Notify Training Center about instructor authorization rejection
      */
     public function notifyInstructorAuthorizationRejected(int $userId, int $authorizationId, string $instructorName, string $reason): void
@@ -208,16 +222,16 @@ class NotificationService
     }
 
     /**
-     * Notify Training Center about new authorization request from ACC
+     * Notify ACC Admin about new authorization request from Training Center
      */
-    public function notifyTrainingCenterAuthorizationRequested(int $userId, int $authorizationId, string $accName): void
+    public function notifyTrainingCenterAuthorizationRequested(int $userId, int $authorizationId, string $trainingCenterName): void
     {
         $this->send(
             $userId,
             'training_center_authorization_requested',
             'New Authorization Request',
-            "{$accName} has requested authorization for your training center.",
-            ['authorization_id' => $authorizationId, 'acc_name' => $accName]
+            "{$trainingCenterName} has requested authorization with your ACC.",
+            ['authorization_id' => $authorizationId, 'training_center_name' => $trainingCenterName]
         );
     }
 
@@ -246,6 +260,20 @@ class NotificationService
             'Authorization Rejected',
             "Your authorization request with {$accName} has been rejected. Reason: {$reason}",
             ['authorization_id' => $authorizationId, 'acc_name' => $accName, 'reason' => $reason]
+        );
+    }
+
+    /**
+     * Notify Training Center about authorization return
+     */
+    public function notifyTrainingCenterAuthorizationReturned(int $userId, int $authorizationId, string $accName, string $comment): void
+    {
+        $this->send(
+            $userId,
+            'training_center_authorization_returned',
+            'Authorization Request Returned',
+            "Your authorization request with {$accName} has been returned for revision. Comment: {$comment}",
+            ['authorization_id' => $authorizationId, 'acc_name' => $accName, 'comment' => $comment]
         );
     }
 

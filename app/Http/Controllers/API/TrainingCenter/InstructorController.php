@@ -439,12 +439,12 @@ class InstructorController extends Controller
             $instructor = $authorization->instructor;
             $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
             
-            // Notify Training Center
-            $notificationService->notifyInstructorAuthorized(
+            // Notify Training Center about successful payment
+            $notificationService->notifyInstructorAuthorizationPaymentSuccess(
                 $user->id,
                 $authorization->id,
                 $instructorName,
-                $authorization->acc->name
+                $authorization->authorization_price
             );
             
             // Notify Admin

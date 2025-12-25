@@ -40,6 +40,7 @@ The BOMEQP system includes a comprehensive notification system that sends real-t
 | `instructor_authorization_requested` | ACC Admin | Training Center requests instructor authorization |
 | `instructor_authorized` | Training Center | Instructor authorization approved (ready for payment) |
 | `instructor_authorization_rejected` | Training Center | Instructor authorization rejected |
+| `instructor_authorization_payment_success` | Training Center | Instructor authorization payment successful |
 | `instructor_authorization_paid` | Group Admin | Instructor authorization payment received |
 | `instructor_needs_commission` | Group Admin | Instructor approved by ACC, needs commission percentage set |
 
@@ -55,9 +56,10 @@ The BOMEQP system includes a comprehensive notification system that sends real-t
 
 | Type | Recipient | Trigger |
 |------|-----------|---------|
-| `training_center_authorization_requested` | Training Center | ACC requests authorization |
+| `training_center_authorization_requested` | ACC Admin | Training Center requests authorization |
 | `training_center_authorized` | Training Center | Authorization approved |
 | `training_center_authorization_rejected` | Training Center | Authorization rejected |
+| `training_center_authorization_returned` | Training Center | Authorization request returned for revision |
 
 ---
 

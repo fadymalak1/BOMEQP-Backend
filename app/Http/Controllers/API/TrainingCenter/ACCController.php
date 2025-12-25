@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\TrainingCenterAccAuthorization;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -151,6 +152,17 @@ class ACCController extends Controller
                 'status' => 'pending',
                 'documents_json' => $documents,
             ]);
+
+            // Send notification to ACC admin
+            $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+            if ($accUser) {
+                $notificationService = new NotificationService();
+                $notificationService->notifyTrainingCenterAuthorizationRequested(
+                    $accUser->id,
+                    $authorization->id,
+                    $trainingCenter->name
+                );
+            }
 
             return response()->json([
                 'message' => 'Authorization request submitted successfully',

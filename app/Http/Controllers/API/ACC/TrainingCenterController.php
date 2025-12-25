@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\TrainingCenterAccAuthorization;
 use App\Models\TrainingCenter;
+use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class TrainingCenterController extends Controller
@@ -45,8 +47,22 @@ class TrainingCenterController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        // TODO: Notify Group admin to set commission percentage
-        // TODO: Send notification to training center
+        // Send notifications
+        $authorization->load(['trainingCenter', 'acc']);
+        $notificationService = new NotificationService();
+        
+        // Notify Training Center
+        $trainingCenter = $authorization->trainingCenter;
+        if ($trainingCenter) {
+            $trainingCenterUser = User::where('email', $trainingCenter->email)->first();
+            if ($trainingCenterUser) {
+                $notificationService->notifyTrainingCenterAuthorized(
+                    $trainingCenterUser->id,
+                    $authorization->id,
+                    $acc->name
+                );
+            }
+        }
 
         return response()->json(['message' => 'Training center approved successfully']);
     }
@@ -74,7 +90,21 @@ class TrainingCenterController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        // TODO: Send notification to training center
+        // Send notification to Training Center
+        $authorization->load(['trainingCenter', 'acc']);
+        $trainingCenter = $authorization->trainingCenter;
+        if ($trainingCenter) {
+            $trainingCenterUser = User::where('email', $trainingCenter->email)->first();
+            if ($trainingCenterUser) {
+                $notificationService = new NotificationService();
+                $notificationService->notifyTrainingCenterAuthorizationRejected(
+                    $trainingCenterUser->id,
+                    $authorization->id,
+                    $acc->name,
+                    $request->rejection_reason
+                );
+            }
+        }
 
         return response()->json(['message' => 'Training center rejected']);
     }
@@ -102,7 +132,21 @@ class TrainingCenterController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        // TODO: Send notification to training center
+        // Send notification to Training Center
+        $authorization->load(['trainingCenter', 'acc']);
+        $trainingCenter = $authorization->trainingCenter;
+        if ($trainingCenter) {
+            $trainingCenterUser = User::where('email', $trainingCenter->email)->first();
+            if ($trainingCenterUser) {
+                $notificationService = new NotificationService();
+                $notificationService->notifyTrainingCenterAuthorizationReturned(
+                    $trainingCenterUser->id,
+                    $authorization->id,
+                    $acc->name,
+                    $request->return_comment
+                );
+            }
+        }
 
         return response()->json(['message' => 'Request returned successfully']);
     }
