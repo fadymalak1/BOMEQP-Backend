@@ -25,6 +25,11 @@ Route::get('/certificates/verify/{code}', [App\Http\Controllers\API\CertificateC
 // Stripe webhook (public, but verified by signature)
 Route::post('/stripe/webhook', [App\Http\Controllers\API\StripeController::class, 'handleWebhook']);
 
+// Public file access routes (specific routes first)
+Route::get('/storage/instructors/cv/{filename}', [App\Http\Controllers\API\FileController::class, 'instructorCv']);
+// General storage route (must be last to avoid conflicts)
+Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, 'serveFile'])->where('path', '.+');
+
 // Protected routes
 Route::middleware(['auth:sanctum'])->group(function () {
     // Auth routes

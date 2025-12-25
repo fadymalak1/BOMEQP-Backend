@@ -58,10 +58,11 @@ class InstructorController extends Controller
         $cvUrl = null;
         if ($request->hasFile('cv')) {
             $cvFile = $request->file('cv');
-            $fileName = 'instructors/cv/' . time() . '_' . $trainingCenter->id . '_' . $cvFile->getClientOriginalName();
-            $cvPath = $cvFile->storeAs('public', $fileName);
-            // Get URL - Storage::url() returns /storage/{path}
-            $cvUrl = Storage::url($fileName);
+            $fileName = time() . '_' . $trainingCenter->id . '_' . $cvFile->getClientOriginalName();
+            // Store file in public disk
+            $cvPath = $cvFile->storeAs('instructors/cv', $fileName, 'public');
+            // Generate URL using the API route
+            $cvUrl = url('/api/storage/instructors/cv/' . $fileName);
         }
 
         $instructor = Instructor::create([
@@ -117,18 +118,26 @@ class InstructorController extends Controller
         if ($request->hasFile('cv')) {
             // Delete old CV file if exists
             if ($instructor->cv_url) {
-                $oldFilePath = str_replace('/storage/', '', $instructor->cv_url);
-                if (Storage::disk('public')->exists($oldFilePath)) {
-                    Storage::disk('public')->delete($oldFilePath);
+                // Extract filename from URL (format: /api/storage/instructors/cv/{filename} or full URL)
+                $urlParts = parse_url($instructor->cv_url);
+                $path = ltrim($urlParts['path'] ?? '', '/');
+                // Extract filename from path like: api/storage/instructors/cv/filename.pdf
+                if (preg_match('#instructors/cv/(.+)$#', $path, $matches)) {
+                    $oldFileName = $matches[1];
+                    $oldFilePath = 'instructors/cv/' . $oldFileName;
+                    if (Storage::disk('public')->exists($oldFilePath)) {
+                        Storage::disk('public')->delete($oldFilePath);
+                    }
                 }
             }
 
             // Upload new CV file
             $cvFile = $request->file('cv');
-            $fileName = 'instructors/cv/' . time() . '_' . $trainingCenter->id . '_' . $cvFile->getClientOriginalName();
-            $cvPath = $cvFile->storeAs('public', $fileName);
-            // Get URL - Storage::url() returns /storage/{path}
-            $updateData['cv_url'] = Storage::url($fileName);
+            $fileName = time() . '_' . $trainingCenter->id . '_' . $cvFile->getClientOriginalName();
+            // Store file in public disk
+            $cvPath = $cvFile->storeAs('instructors/cv', $fileName, 'public');
+            // Generate URL using the API route
+            $updateData['cv_url'] = url('/api/storage/instructors/cv/' . $fileName);
         }
         
         if ($request->has('certificates_json') || $request->has('certificates')) {
