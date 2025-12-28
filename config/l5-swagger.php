@@ -22,12 +22,14 @@ return [
             ],
             'paths' => [
                 'use_absolute_path' => env('L5_SWAGGER_USE_ABSOLUTE_PATH', false),
+                'base' => env('L5_SWAGGER_BASE_PATH', null),
                 'docs' => storage_path('api-docs'),
                 'docs_json' => 'api-docs.json',
                 'docs_yaml' => 'api-docs.yaml',
                 'annotations' => [
                     app_path('Http/Controllers'),
                 ],
+                'excludes' => [],
             ],
         ],
     ],
