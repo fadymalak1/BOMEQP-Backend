@@ -140,3 +140,4 @@ Since your assets are at `public_html/v1/public/vendor/scribe`, and your app is 
 
 The assets should then be accessible at: `https://aeroenix.com/v1/vendor/scribe/css/...`
 
+

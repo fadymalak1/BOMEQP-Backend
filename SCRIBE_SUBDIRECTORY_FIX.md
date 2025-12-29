@@ -127,3 +127,4 @@ Since your assets are at `public_html/v1/public/vendor/scribe/`, and they should
 
 This should generate documentation with correct asset paths including the `/v1/` prefix.
 
+

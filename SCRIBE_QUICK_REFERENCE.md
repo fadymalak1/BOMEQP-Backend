@@ -165,3 +165,4 @@ Edit `config/scribe.php` to customize:
 
 See `app/Http/Controllers/API/AuthController.php` for complete examples.
 
+

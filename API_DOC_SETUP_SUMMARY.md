@@ -180,3 +180,4 @@ If you were using Swagger before:
 - ✅ No more complex attribute syntax needed
 - ✅ Documentation generation is now simpler
 
+

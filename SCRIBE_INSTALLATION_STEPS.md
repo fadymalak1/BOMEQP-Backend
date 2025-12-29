@@ -129,3 +129,4 @@ The 404 error is happening because:
 3. ✅ Generate docs: `php artisan scribe:generate`
 4. ✅ Access at: `https://aeroenix.com/v1/docs` (or configure custom route)
 
+

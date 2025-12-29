@@ -60,3 +60,4 @@ Your API documentation will be available at:
 
 The assets should now load correctly with the route we added, or by configuring the base_url in Scribe's config file.
 
+

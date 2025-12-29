@@ -260,3 +260,4 @@ The default route is `/docs`. To change it to `/api/doc`, update `config/scribe.
 
 See `app/Http/Controllers/API/AuthController.php` for examples of documented endpoints using Scribe annotations.
 
+

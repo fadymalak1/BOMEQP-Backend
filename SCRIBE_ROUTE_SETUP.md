@@ -115,3 +115,4 @@ The 404 error occurs because:
 
 The route will work automatically once Scribe is installed and configured!
 
+
