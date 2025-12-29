@@ -15,6 +15,10 @@ php artisan route:clear
 php artisan cache:clear
 php artisan view:clear
 
+REM Upgrade Scribe configuration if needed
+echo 🔄 Checking Scribe configuration...
+php artisan scribe:upgrade --force
+
 REM Generate documentation
 echo 📝 Generating documentation...
 php artisan scribe:generate

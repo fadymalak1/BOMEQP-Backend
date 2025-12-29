@@ -16,6 +16,16 @@ php artisan route:clear
 php artisan cache:clear
 php artisan view:clear
 
+# Upgrade Scribe configuration if needed
+echo "🔄 Checking Scribe configuration..."
+if php artisan scribe:upgrade --dry-run &>/dev/null; then
+    echo "⚠️  Scribe configuration needs upgrade..."
+    php artisan scribe:upgrade --force
+    echo "✅ Configuration upgraded"
+else
+    echo "✅ Configuration is up to date"
+fi
+
 # Generate documentation
 echo "📝 Generating documentation..."
 php artisan scribe:generate
