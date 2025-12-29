@@ -19,6 +19,7 @@ class Course extends Model
         'code',
         'description',
         'duration_hours',
+        'max_capacity',
         'level',
         'status',
     ];

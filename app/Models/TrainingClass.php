@@ -22,7 +22,6 @@ class TrainingClass extends Model
         'start_date',
         'end_date',
         'schedule_json',
-        'max_capacity',
         'enrolled_count',
         'status',
         'location',

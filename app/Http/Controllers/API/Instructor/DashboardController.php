@@ -81,7 +81,7 @@ class DashboardController extends Controller
 
         // Recent classes (latest 10)
         $recentClasses = TrainingClass::where('instructor_id', $instructor->id)
-            ->with(['course:id,name,code', 'trainingCenter:id,name'])
+            ->with(['course:id,name,code,max_capacity', 'trainingCenter:id,name'])
             ->orderBy('start_date', 'desc')
             ->orderBy('created_at', 'desc')
             ->limit(10)
@@ -102,7 +102,7 @@ class DashboardController extends Controller
                     'end_date' => $class->end_date ? $class->end_date->format('Y-m-d') : null,
                     'status' => $class->status,
                     'enrolled_count' => $class->enrolled_count ?? 0,
-                    'max_capacity' => $class->max_capacity ?? 0,
+                    'max_capacity' => $class->course->max_capacity ?? 0,
                     'location' => $class->location ?? 'physical',
                     'location_details' => $class->location_details ?? null,
                 ];

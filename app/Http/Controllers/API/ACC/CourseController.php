@@ -82,6 +82,7 @@ class CourseController extends Controller
      * @bodyParam code string required Unique course code. Example: AFS-001
      * @bodyParam description string optional Course description. Example: Advanced fire safety training course
      * @bodyParam duration_hours integer required Course duration in hours. Example: 40
+     * @bodyParam max_capacity integer required Maximum capacity for classes of this course. Example: 20
      * @bodyParam level string required Course level. Example: advanced
      * @bodyParam status string required Course status. Example: active
      * @bodyParam pricing array optional Pricing information.
@@ -111,6 +112,7 @@ class CourseController extends Controller
             'code' => 'required|string|max:255|unique:courses,code',
             'description' => 'nullable|string',
             'duration_hours' => 'required|integer|min:1',
+            'max_capacity' => 'required|integer|min:1',
             'level' => 'required|in:beginner,intermediate,advanced',
             'status' => 'required|in:active,inactive,archived',
             // Pricing fields (optional)
@@ -135,6 +137,7 @@ class CourseController extends Controller
             'code' => $request->code,
             'description' => $request->description,
             'duration_hours' => $request->duration_hours,
+            'max_capacity' => $request->max_capacity,
             'level' => $request->level,
             'status' => $request->status,
         ]);
@@ -217,6 +220,7 @@ class CourseController extends Controller
      * @bodyParam code string optional Unique course code. Example: AFS-001
      * @bodyParam description string optional Course description. Example: Advanced fire safety training course
      * @bodyParam duration_hours integer optional Course duration in hours. Example: 40
+     * @bodyParam max_capacity integer optional Maximum capacity for classes of this course. Example: 25
      * @bodyParam level string optional Course level. Example: advanced
      * @bodyParam status string optional Course status. Example: active
      * @bodyParam pricing array optional Pricing information.
@@ -257,6 +261,7 @@ class CourseController extends Controller
             'code' => 'sometimes|string|max:255|unique:courses,code,' . $id,
             'description' => 'nullable|string',
             'duration_hours' => 'sometimes|integer|min:1',
+            'max_capacity' => 'sometimes|integer|min:1',
             'level' => 'sometimes|in:beginner,intermediate,advanced',
             'status' => 'sometimes|in:active,inactive,archived',
             // Pricing fields (optional)
@@ -268,7 +273,7 @@ class CourseController extends Controller
         // Update course fields
         $course->update($request->only([
             'sub_category_id', 'name', 'name_ar', 'code', 'description',
-            'duration_hours', 'level', 'status'
+            'duration_hours', 'max_capacity', 'level', 'status'
         ]));
 
         // Handle pricing update if provided (pricing is always effective - no date restrictions)

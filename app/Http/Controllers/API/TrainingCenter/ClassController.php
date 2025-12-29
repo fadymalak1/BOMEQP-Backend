@@ -35,7 +35,6 @@ class ClassController extends Controller
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
             'schedule_json' => 'nullable|array',
-            'max_capacity' => 'required|integer|min:1',
             'location' => 'required|in:physical,online',
             'location_details' => 'nullable|string',
         ]);
@@ -65,7 +64,6 @@ class ClassController extends Controller
             'start_date' => $request->start_date,
             'end_date' => $request->end_date,
             'schedule_json' => $request->schedule_json ?? $request->schedule,
-            'max_capacity' => $request->max_capacity,
             'enrolled_count' => 0,
             'status' => 'scheduled',
             'location' => $request->location,
@@ -100,7 +98,6 @@ class ClassController extends Controller
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after:start_date',
             'schedule_json' => 'nullable|array',
-            'max_capacity' => 'sometimes|integer|min:1',
             'location' => 'sometimes|in:physical,online',
             'location_details' => 'nullable|string',
             'status' => 'sometimes|in:scheduled,in_progress,completed,cancelled',
@@ -108,7 +105,7 @@ class ClassController extends Controller
 
         $updateData = $request->only([
             'course_id', 'class_id', 'instructor_id', 'start_date', 'end_date',
-            'max_capacity', 'location', 'location_details', 'status'
+            'location', 'location_details', 'status'
         ]);
 
         if ($request->has('schedule_json') || $request->has('schedule')) {
