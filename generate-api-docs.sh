@@ -16,16 +16,6 @@ php artisan route:clear
 php artisan cache:clear
 php artisan view:clear
 
-# Upgrade Scribe configuration if needed
-echo "🔄 Checking Scribe configuration..."
-if php artisan scribe:upgrade --dry-run &>/dev/null; then
-    echo "⚠️  Scribe configuration needs upgrade..."
-    php artisan scribe:upgrade --force
-    echo "✅ Configuration upgraded"
-else
-    echo "✅ Configuration is up to date"
-fi
-
 # Generate documentation
 echo "📝 Generating documentation..."
 php artisan scribe:generate
@@ -34,12 +24,17 @@ php artisan scribe:generate
 if [ -f "public/docs/index.html" ]; then
     echo ""
     echo "✅ Documentation generated successfully!"
-    echo "📄 Access your docs at: https://aeroenix.com/v1/docs"
+    echo ""
+    echo "📄 Access your docs at:"
+    echo "   🌐 Production: https://aeroenix.com/v1/docs"
+    echo "   🔗 Alternative: https://aeroenix.com/v1/api/doc (redirects to /docs)"
     echo ""
     echo "📊 Generated files:"
     echo "   - HTML: public/docs/index.html"
-    echo "   - OpenAPI: public/docs/openapi.yaml"
-    echo "   - Postman: public/docs/postman.json"
+    echo "   - OpenAPI: storage/app/private/scribe/openapi.yaml"
+    echo "   - Postman: storage/app/private/scribe/collection.json"
+    echo ""
+    echo "💡 Tip: Run this script again after adding new API endpoints to update the docs!"
 else
     echo ""
     echo "❌ Error: Documentation generation failed!"

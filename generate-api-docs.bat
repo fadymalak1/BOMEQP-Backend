@@ -15,10 +15,6 @@ php artisan route:clear
 php artisan cache:clear
 php artisan view:clear
 
-REM Upgrade Scribe configuration if needed
-echo 🔄 Checking Scribe configuration...
-php artisan scribe:upgrade --force
-
 REM Generate documentation
 echo 📝 Generating documentation...
 php artisan scribe:generate
@@ -27,12 +23,17 @@ REM Check if generation was successful
 if exist "public\docs\index.html" (
     echo.
     echo ✅ Documentation generated successfully!
-    echo 📄 Access your docs at: http://localhost:8000/docs
+    echo.
+    echo 📄 Access your docs at:
+    echo    🌐 Production: https://aeroenix.com/v1/docs
+    echo    🔗 Local: http://localhost:8000/docs
     echo.
     echo 📊 Generated files:
     echo    - HTML: public\docs\index.html
-    echo    - OpenAPI: public\docs\openapi.yaml
-    echo    - Postman: public\docs\postman.json
+    echo    - OpenAPI: storage\app\private\scribe\openapi.yaml
+    echo    - Postman: storage\app\private\scribe\collection.json
+    echo.
+    echo 💡 Tip: Run this script again after adding new API endpoints to update the docs!
 ) else (
     echo.
     echo ❌ Error: Documentation generation failed!
