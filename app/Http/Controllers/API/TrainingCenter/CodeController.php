@@ -334,31 +334,31 @@ class CodeController extends Controller
         $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
         $accCommissionAmount = ($finalAmount * $accCommissionPercentage) / 100;
 
-        // Validate payment_intent_id for credit card payments
-        if (!$request->payment_intent_id) {
-            return response()->json([
-                'message' => 'payment_intent_id is required for credit card payments'
-            ], 400);
-        }
+            // Validate payment_intent_id for credit card payments
+            if (!$request->payment_intent_id) {
+                return response()->json([
+                    'message' => 'payment_intent_id is required for credit card payments'
+                ], 400);
+            }
 
-        // Verify payment intent with Stripe
-        try {
-            $this->stripeService->verifyPaymentIntent(
-                $request->payment_intent_id,
-                $finalAmount,
-                [
-                    'payer_id' => (string)$trainingCenter->id,
-                    'payee_id' => (string)$request->acc_id,
-                    'course_id' => (string)$request->course_id,
-                    'quantity' => (string)$request->quantity,
-                    'type' => 'code_purchase',
-                ]
-            );
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Payment verification failed',
-                'error' => $e->getMessage()
-            ], 400);
+            // Verify payment intent with Stripe
+            try {
+                $this->stripeService->verifyPaymentIntent(
+                    $request->payment_intent_id,
+                    $finalAmount,
+                    [
+                        'payer_id' => (string)$trainingCenter->id,
+                        'payee_id' => (string)$request->acc_id,
+                        'course_id' => (string)$request->course_id,
+                        'quantity' => (string)$request->quantity,
+                        'type' => 'code_purchase',
+                    ]
+                );
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'Payment verification failed',
+                    'error' => $e->getMessage()
+                ], 400);
         }
 
         DB::beginTransaction();
