@@ -121,25 +121,36 @@ class AuthController extends Controller
         ], 201);
     }
 
-    /**
-     * User login
-     * 
-     * Authenticate user with email and password. Returns authentication token.
-     * 
-     * @group Authentication
-     * 
-     * @bodyParam email string required User's email address. Example: john@example.com
-     * @bodyParam password string required User's password. Example: password123
-     * 
-     * @response 200 {
-     *   "message": "Login successful",
-     *   "user": {...},
-     *   "token": "1|xxxxxxxxxxxxx"
-     * }
-     * @response 422 {
-     *   "message": "The provided credentials are incorrect."
-     * }
-     */
+    #[OA\Post(
+        path: "/api/auth/login",
+        summary: "User login",
+        description: "Authenticate user with email and password. Returns authentication token.",
+        tags: ["Authentication"],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["email", "password"],
+                properties: [
+                    new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
+                    new OA\Property(property: "password", type: "string", format: "password", example: "password123")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Login successful",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Login successful"),
+                        new OA\Property(property: "user", type: "object"),
+                        new OA\Property(property: "token", type: "string", example: "1|xxxxxxxxxxxxx")
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: "Invalid credentials")
+        ]
+    )]
     public function login(Request $request)
     {
         $request->validate([
@@ -170,21 +181,25 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * User logout
-     * 
-     * Logout the authenticated user and invalidate the current token.
-     * 
-     * @group Authentication
-     * @authenticated
-     * 
-     * @response 200 {
-     *   "message": "Logged out successfully"
-     * }
-     * @response 401 {
-     *   "message": "Unauthenticated."
-     * }
-     */
+    #[OA\Post(
+        path: "/api/auth/logout",
+        summary: "User logout",
+        description: "Logout the authenticated user and invalidate the current token.",
+        tags: ["Authentication"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Logged out successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Logged out successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
@@ -192,26 +207,60 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logged out successfully']);
     }
 
-    /**
-     * Get user profile
-     * 
-     * Get the authenticated user's profile information.
-     * 
-     * @group Authentication
-     * @authenticated
-     * 
-     * @response 200 {
-     *   "user": {...}
-     * }
-     * @response 401 {
-     *   "message": "Unauthenticated."
-     * }
-     */
+    #[OA\Get(
+        path: "/api/auth/profile",
+        summary: "Get user profile",
+        description: "Get the authenticated user's profile information.",
+        tags: ["Authentication"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "User profile",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "user", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
     public function profile(Request $request)
     {
         return response()->json(['user' => $request->user()]);
     }
 
+    #[OA\Put(
+        path: "/api/auth/profile",
+        summary: "Update user profile",
+        description: "Update the authenticated user's profile information.",
+        tags: ["Authentication"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "name", type: "string", example: "John Doe"),
+                    new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Profile updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Profile updated successfully"),
+                        new OA\Property(property: "user", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function updateProfile(Request $request)
     {
         $request->validate([
@@ -224,6 +273,37 @@ class AuthController extends Controller
         return response()->json(['message' => 'Profile updated successfully', 'user' => $request->user()]);
     }
 
+    #[OA\Put(
+        path: "/api/auth/change-password",
+        summary: "Change password",
+        description: "Change the authenticated user's password.",
+        tags: ["Authentication"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["current_password", "password", "password_confirmation"],
+                properties: [
+                    new OA\Property(property: "current_password", type: "string", format: "password", example: "oldpassword123"),
+                    new OA\Property(property: "password", type: "string", format: "password", example: "newpassword123"),
+                    new OA\Property(property: "password_confirmation", type: "string", format: "password", example: "newpassword123")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Password changed successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Password changed successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 422, description: "Validation error or incorrect current password")
+        ]
+    )]
     public function changePassword(Request $request)
     {
         $request->validate([
@@ -240,6 +320,34 @@ class AuthController extends Controller
         return response()->json(['message' => 'Password changed successfully']);
     }
 
+    #[OA\Post(
+        path: "/api/auth/forgot-password",
+        summary: "Forgot password",
+        description: "Request a password reset link to be sent to the user's email.",
+        tags: ["Authentication"],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["email"],
+                properties: [
+                    new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Password reset link sent",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Password reset link sent to your email")
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: "User not found"),
+            new OA\Response(response: 500, description: "Email sending failed")
+        ]
+    )]
     public function forgotPassword(Request $request)
     {
         $request->validate([
@@ -284,6 +392,38 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: "/api/auth/reset-password",
+        summary: "Reset password",
+        description: "Reset user password using the token from the password reset email.",
+        tags: ["Authentication"],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["token", "email", "password", "password_confirmation"],
+                properties: [
+                    new OA\Property(property: "token", type: "string", example: "reset_token_here"),
+                    new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
+                    new OA\Property(property: "password", type: "string", format: "password", example: "newpassword123"),
+                    new OA\Property(property: "password_confirmation", type: "string", format: "password", example: "newpassword123")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Password reset successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Password reset successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Invalid or expired token"),
+            new OA\Response(response: 404, description: "User not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function resetPassword(Request $request)
     {
         $request->validate([
@@ -340,6 +480,33 @@ class AuthController extends Controller
         ], 200);
     }
 
+    #[OA\Get(
+        path: "/api/auth/verify-email/{token}",
+        summary: "Verify email",
+        description: "Verify user email address using the verification token.",
+        tags: ["Authentication"],
+        parameters: [
+            new OA\Parameter(
+                name: "token",
+                in: "path",
+                required: true,
+                schema: new OA\Schema(type: "string"),
+                example: "verification_token_here"
+            )
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Email verified successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Email verified successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Invalid or expired token")
+        ]
+    )]
     public function verifyEmail($token)
     {
         // Implementation for email verification
