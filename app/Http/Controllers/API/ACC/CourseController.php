@@ -48,25 +48,18 @@ class CourseController extends Controller
 
         $courses = $query->orderBy('created_at', 'desc')->get();
 
-        // Add current pricing to each course
+        // Add current pricing to each course (pricing is always effective)
         $coursesWithDetails = $courses->map(function ($course) use ($acc) {
-            // Get the current active pricing for this course
+            // Get the current pricing for this course
             $currentPricing = CertificatePricing::where('course_id', $course->id)
                 ->where('acc_id', $acc->id)
-                ->where('effective_from', '<=', now())
-                ->where(function ($q) {
-                    $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
-                })
-                ->latest('effective_from')
+                ->latest('created_at')
                 ->first();
 
-            // Add pricing information to course (commission comes from ACC, set by Group Admin)
+            // Add pricing information to course
             $course->current_price = $currentPricing ? [
                 'base_price' => $currentPricing->base_price,
                 'currency' => $currentPricing->currency ?? 'USD',
-                'group_commission_percentage' => $acc->commission_percentage ?? 0, // From ACC, set by Group Admin
-                'effective_from' => $currentPricing->effective_from,
-                'effective_to' => $currentPricing->effective_to,
             ] : null;
 
             return $course;
@@ -94,11 +87,6 @@ class CourseController extends Controller
      * @bodyParam pricing array optional Pricing information.
      * @bodyParam pricing.base_price number required Base price. Example: 500.00
      * @bodyParam pricing.currency string required Currency code (3 characters). Example: USD
-     * @bodyParam pricing.group_commission_percentage number required Group commission (0-100). Example: 10.0
-     * @bodyParam pricing.training_center_commission_percentage number required Training center commission (0-100). Example: 5.0
-     * @bodyParam pricing.instructor_commission_percentage number required Instructor commission (0-100). Example: 3.0
-     * @bodyParam pricing.effective_from date required Effective from date. Example: 2024-01-01
-     * @bodyParam pricing.effective_to date optional Effective to date. Example: 2024-12-31
      * 
      * @response 201 {
      *   "message": "Course created successfully with pricing",
@@ -108,12 +96,7 @@ class CourseController extends Controller
      *     "code": "AFS-001",
      *     "current_price": {
      *       "base_price": 500.00,
-     *       "currency": "USD",
-     *       "group_commission_percentage": 10.0,
-     *       "training_center_commission_percentage": 5.0,
-     *       "instructor_commission_percentage": 3.0,
-     *       "effective_from": "2024-01-01",
-     *       "effective_to": null
+     *       "currency": "USD"
      *     }
      *   }
      * }
@@ -134,29 +117,7 @@ class CourseController extends Controller
             'pricing' => 'nullable|array',
             'pricing.base_price' => 'required_with:pricing|numeric|min:0',
             'pricing.currency' => 'required_with:pricing|string|size:3',
-            'pricing.group_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.training_center_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.instructor_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.effective_from' => 'required_with:pricing|date',
-            'pricing.effective_to' => 'nullable|date|after:pricing.effective_from',
         ]);
-
-        // Validate commission percentages if pricing is provided
-        if ($request->has('pricing') && $request->pricing) {
-            $pricingData = $request->pricing;
-            $totalCommission = ($pricingData['group_commission_percentage'] ?? 0) + 
-                              ($pricingData['training_center_commission_percentage'] ?? 0) + 
-                              ($pricingData['instructor_commission_percentage'] ?? 0);
-            
-            if ($totalCommission > 100) {
-                return response()->json([
-                    'message' => 'Total commission percentages cannot exceed 100%',
-                    'errors' => [
-                        'pricing.commission_percentages' => ['The sum of all commission percentages is ' . $totalCommission . '% which exceeds 100%']
-                    ]
-                ], 422);
-            }
-        }
 
         $user = $request->user();
         $acc = ACC::where('email', $user->email)->first();
@@ -178,44 +139,48 @@ class CourseController extends Controller
             'status' => $request->status,
         ]);
 
-        // Create pricing if provided
+        // Create pricing if provided (commissions are set by Group Admin, not ACC)
+        // Pricing is always effective - no date restrictions
         if ($request->has('pricing') && $request->pricing) {
             $pricingData = $request->pricing;
-            CertificatePricing::create([
-                'acc_id' => $acc->id,
-                'course_id' => $course->id,
-                'base_price' => $pricingData['base_price'],
-                'currency' => $pricingData['currency'],
-                'group_commission_percentage' => $pricingData['group_commission_percentage'],
-                'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
-                'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
-                'effective_from' => $pricingData['effective_from'],
-                'effective_to' => $pricingData['effective_to'] ?? null,
-            ]);
+            // If pricing exists, update it; otherwise create new
+            $existingPricing = CertificatePricing::where('course_id', $course->id)
+                ->where('acc_id', $acc->id)
+                ->first();
+            
+            if ($existingPricing) {
+                $existingPricing->update([
+                    'base_price' => $pricingData['base_price'],
+                    'currency' => $pricingData['currency'],
+                ]);
+            } else {
+                CertificatePricing::create([
+                    'acc_id' => $acc->id,
+                    'course_id' => $course->id,
+                    'base_price' => $pricingData['base_price'],
+                    'currency' => $pricingData['currency'],
+                    'group_commission_percentage' => 0,
+                    'training_center_commission_percentage' => 0,
+                    'instructor_commission_percentage' => 0,
+                    'effective_from' => now()->format('Y-m-d'),
+                    'effective_to' => null,
+                ]);
+            }
         }
 
         // Reload course with relationships
         $course->load(['subCategory.category']);
 
-        // Get the current active pricing for this course
+        // Get the current pricing for this course (always effective)
         $currentPricing = CertificatePricing::where('course_id', $course->id)
             ->where('acc_id', $acc->id)
-            ->where('effective_from', '<=', now())
-            ->where(function ($q) {
-                $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
-            })
-            ->latest('effective_from')
+            ->latest('created_at')
             ->first();
 
         // Add pricing information to course
         $course->current_price = $currentPricing ? [
             'base_price' => $currentPricing->base_price,
             'currency' => $currentPricing->currency ?? 'USD',
-            'group_commission_percentage' => $currentPricing->group_commission_percentage ?? 0,
-            'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage ?? 0,
-            'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage ?? 0,
-            'effective_from' => $currentPricing->effective_from,
-            'effective_to' => $currentPricing->effective_to,
         ] : null;
 
         $message = 'Course created successfully';
@@ -257,11 +222,6 @@ class CourseController extends Controller
      * @bodyParam pricing array optional Pricing information.
      * @bodyParam pricing.base_price number required Base price. Example: 550.00
      * @bodyParam pricing.currency string required Currency code (3 characters). Example: USD
-     * @bodyParam pricing.group_commission_percentage number required Group commission (0-100). Example: 10.0
-     * @bodyParam pricing.training_center_commission_percentage number required Training center commission (0-100). Example: 5.0
-     * @bodyParam pricing.instructor_commission_percentage number required Instructor commission (0-100). Example: 3.0
-     * @bodyParam pricing.effective_from date required Effective from date. Example: 2024-01-01
-     * @bodyParam pricing.effective_to date optional Effective to date. Example: 2024-12-31
      * 
      * @response 200 {
      *   "message": "Course updated successfully and pricing updated",
@@ -271,10 +231,7 @@ class CourseController extends Controller
      *     "code": "AFS-001",
      *     "current_price": {
      *       "base_price": 550.00,
-     *       "currency": "USD",
-     *       "group_commission_percentage": 10.0,
-     *       "training_center_commission_percentage": 5.0,
-     *       "instructor_commission_percentage": 3.0,
+     *       "currency": "USD"
      *       "effective_from": "2024-01-01",
      *       "effective_to": null
      *     }
@@ -306,29 +263,7 @@ class CourseController extends Controller
             'pricing' => 'sometimes|array',
             'pricing.base_price' => 'required_with:pricing|numeric|min:0',
             'pricing.currency' => 'required_with:pricing|string|size:3',
-            'pricing.group_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.training_center_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.instructor_commission_percentage' => 'required_with:pricing|numeric|min:0|max:100',
-            'pricing.effective_from' => 'required_with:pricing|date',
-            'pricing.effective_to' => 'nullable|date|after:pricing.effective_from',
         ]);
-
-        // Validate commission percentages if pricing is provided
-        if ($request->has('pricing') && $request->pricing) {
-            $pricingData = $request->pricing;
-            $totalCommission = ($pricingData['group_commission_percentage'] ?? 0) + 
-                              ($pricingData['training_center_commission_percentage'] ?? 0) + 
-                              ($pricingData['instructor_commission_percentage'] ?? 0);
-            
-            if ($totalCommission > 100) {
-                return response()->json([
-                    'message' => 'Total commission percentages cannot exceed 100%',
-                    'errors' => [
-                        'pricing.commission_percentages' => ['The sum of all commission percentages is ' . $totalCommission . '% which exceeds 100%']
-                    ]
-                ], 422);
-            }
-        }
 
         // Update course fields
         $course->update($request->only([
@@ -336,68 +271,34 @@ class CourseController extends Controller
             'duration_hours', 'level', 'status'
         ]));
 
-        // Handle pricing update if provided
+        // Handle pricing update if provided (pricing is always effective - no date restrictions)
         if ($request->has('pricing') && $request->pricing) {
             $pricingData = $request->pricing;
             
-            // Check if there's an existing active pricing
+            // Get existing pricing for this course
             $existingPricing = CertificatePricing::where('course_id', $course->id)
                 ->where('acc_id', $acc->id)
-                ->where('effective_from', '<=', now())
-                ->where(function ($q) {
-                    $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
-                })
-                ->latest('effective_from')
+                ->latest('created_at')
                 ->first();
 
             if ($existingPricing) {
-                // Check if the new effective_from date overlaps with existing pricing
-                $newEffectiveFrom = Carbon::parse($pricingData['effective_from']);
-                $existingEffectiveFrom = Carbon::parse($existingPricing->effective_from);
-                
-                // If new date is different, end the existing pricing and create new one
-                if ($newEffectiveFrom->ne($existingEffectiveFrom)) {
-                    // End the previous pricing one day before the new one starts
-                    $previousEffectiveTo = $newEffectiveFrom->copy()->subDay();
-                    $existingPricing->update([
-                        'effective_to' => $previousEffectiveTo->format('Y-m-d')
-                    ]);
-                    
-                    // Create new pricing
-                    CertificatePricing::create([
-                        'acc_id' => $acc->id,
-                        'course_id' => $course->id,
-                        'base_price' => $pricingData['base_price'],
-                        'currency' => $pricingData['currency'],
-                        'group_commission_percentage' => $pricingData['group_commission_percentage'],
-                        'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
-                        'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
-                        'effective_from' => $pricingData['effective_from'],
-                        'effective_to' => $pricingData['effective_to'] ?? null,
-                    ]);
-                } else {
-                    // Update existing pricing with same effective_from date
-                    $existingPricing->update([
-                        'base_price' => $pricingData['base_price'],
-                        'currency' => $pricingData['currency'],
-                        'group_commission_percentage' => $pricingData['group_commission_percentage'],
-                        'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
-                        'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
-                        'effective_to' => $pricingData['effective_to'] ?? null,
-                    ]);
-                }
+                // Update existing pricing (commissions not updated by ACC)
+                $existingPricing->update([
+                    'base_price' => $pricingData['base_price'],
+                    'currency' => $pricingData['currency'],
+                ]);
             } else {
-                // Create new pricing if no active pricing exists
+                // Create new pricing if none exists (commissions are set by Group Admin, not ACC)
                 CertificatePricing::create([
                     'acc_id' => $acc->id,
                     'course_id' => $course->id,
                     'base_price' => $pricingData['base_price'],
                     'currency' => $pricingData['currency'],
-                    'group_commission_percentage' => $pricingData['group_commission_percentage'],
-                    'training_center_commission_percentage' => $pricingData['training_center_commission_percentage'],
-                    'instructor_commission_percentage' => $pricingData['instructor_commission_percentage'],
-                    'effective_from' => $pricingData['effective_from'],
-                    'effective_to' => $pricingData['effective_to'] ?? null,
+                    'group_commission_percentage' => 0,
+                    'training_center_commission_percentage' => 0,
+                    'instructor_commission_percentage' => 0,
+                    'effective_from' => now()->format('Y-m-d'),
+                    'effective_to' => null,
                 ]);
             }
         }
@@ -405,25 +306,16 @@ class CourseController extends Controller
         // Reload course with relationships
         $course->load(['subCategory.category']);
 
-        // Get the current active pricing for this course
+        // Get the current pricing for this course (always effective)
         $currentPricing = CertificatePricing::where('course_id', $course->id)
             ->where('acc_id', $acc->id)
-            ->where('effective_from', '<=', now())
-            ->where(function ($q) {
-                $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
-            })
-            ->latest('effective_from')
+            ->latest('created_at')
             ->first();
 
         // Add pricing information to course
         $course->current_price = $currentPricing ? [
             'base_price' => $currentPricing->base_price,
             'currency' => $currentPricing->currency ?? 'USD',
-            'group_commission_percentage' => $currentPricing->group_commission_percentage ?? 0,
-            'training_center_commission_percentage' => $currentPricing->training_center_commission_percentage ?? 0,
-            'instructor_commission_percentage' => $currentPricing->instructor_commission_percentage ?? 0,
-            'effective_from' => $currentPricing->effective_from,
-            'effective_to' => $currentPricing->effective_to,
         ] : null;
 
         $message = 'Course updated successfully';

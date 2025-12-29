@@ -1,6 +1,6 @@
-# Course Create and Update API Documentation
+# Course Create, Update, and View API Documentation
 
-Complete documentation for creating and updating courses with pricing support.
+Complete documentation for creating, updating, and viewing courses with optional pricing support. Pricing is completely optional - you can create and manage courses without setting any pricing information.
 
 ## Base URL
 ```
@@ -15,13 +15,36 @@ Authorization: Bearer {token}
 
 ---
 
+## Important Notes
+
+### Pricing is Completely Optional
+
+- **You can create courses without any pricing information**
+- **You can add pricing later if needed**
+- **You can update courses without touching pricing**
+- **Pricing is not required for course creation or management**
+
+The endpoints support optional pricing, but courses work perfectly fine without it. Only include pricing when you want to set the base price for the course certificate.
+
+---
+
+## Endpoints Overview
+
+1. **Create Course** - Create a new course (with or without pricing)
+2. **Update Course** - Update course details and/or pricing
+3. **View Course** - Get course details including pricing (if set)
+
+---
+
 ## Endpoints
 
 ### 1. Create Course
 
+**Note:** Pricing is completely optional. You can create a course without any pricing information and add it later if needed.
+
 **POST** `/api/acc/courses`
 
-Create a new course with optional pricing. You can set the base price and commission percentages when creating the course.
+Create a new course. Pricing is completely optional - you can create a course without pricing and add it later. If you want to set pricing, you can include the base price when creating the course. Commission percentages are managed by Group Admins separately and are not part of this endpoint.
 
 **Request Body:**
 
@@ -50,12 +73,7 @@ Create a new course with optional pricing. You can set the base price and commis
   "status": "active",
   "pricing": {
     "base_price": 500.00,
-    "currency": "USD",
-    "group_commission_percentage": 10.0,
-    "training_center_commission_percentage": 5.0,
-    "instructor_commission_percentage": 3.0,
-    "effective_from": "2024-01-01",
-    "effective_to": "2024-12-31"
+    "currency": "USD"
   }
 }
 ```
@@ -76,17 +94,13 @@ Create a new course with optional pricing. You can set the base price and commis
 - `pricing` (object, optional) - Pricing information object
   - `base_price` (number, required if pricing provided, min:0) - Base price for the course certificate
   - `currency` (string, required if pricing provided, size:3) - Currency code (e.g., "USD", "EUR")
-  - `group_commission_percentage` (number, required if pricing provided, 0-100) - Group admin commission percentage
-  - `training_center_commission_percentage` (number, required if pricing provided, 0-100) - Training center commission percentage
-  - `instructor_commission_percentage` (number, required if pricing provided, 0-100) - Instructor commission percentage
-  - `effective_from` (date, required if pricing provided) - Date from which this pricing is effective (YYYY-MM-DD)
-  - `effective_to` (date, optional) - Date until which this pricing is effective (YYYY-MM-DD). Must be after `effective_from`
+
+**Note:** 
+- Commission percentages are not set by ACC admins. They are managed by Group Admins separately.
+- Pricing is always effective immediately when set. There are no date restrictions.
 
 **Validation Rules:**
 - Course code must be unique across all courses
-- Total commission percentages (group + training_center + instructor) cannot exceed 100%
-- `effective_to` must be after `effective_from` if provided
-- All commission percentages must be between 0 and 100
 
 **Response (201):**
 ```json
@@ -113,15 +127,10 @@ Create a new course with optional pricing. You can set the base price and commis
         "name": "Safety"
       }
     },
-    "current_price": {
-      "base_price": 500.00,
-      "currency": "USD",
-      "group_commission_percentage": 10.0,
-      "training_center_commission_percentage": 5.0,
-      "instructor_commission_percentage": 3.0,
-      "effective_from": "2024-01-01",
-      "effective_to": "2024-12-31"
-    }
+      "current_price": {
+        "base_price": 500.00,
+        "currency": "USD"
+      }
   }
 }
 ```
@@ -150,17 +159,6 @@ Create a new course with optional pricing. You can set the base price and commis
 }
 ```
 
-**Error Response (422) - Commission Exceeds 100%:**
-```json
-{
-  "message": "Total commission percentages cannot exceed 100%",
-  "errors": {
-    "pricing.commission_percentages": [
-      "The sum of all commission percentages is 120% which exceeds 100%"
-    ]
-  }
-}
-```
 
 **Error Response (404):**
 ```json
@@ -197,12 +195,7 @@ Update course details and optionally update or set pricing. All fields are optio
   "name": "Advanced Fire Safety - Updated",
   "pricing": {
     "base_price": 550.00,
-    "currency": "USD",
-    "group_commission_percentage": 12.0,
-    "training_center_commission_percentage": 5.0,
-    "instructor_commission_percentage": 3.0,
-    "effective_from": "2024-01-01",
-    "effective_to": null
+    "currency": "USD"
   }
 }
 ```
@@ -221,9 +214,9 @@ All fields are the same as in the create endpoint, but all are optional:
 - `pricing` (object, optional) - Same structure as create endpoint
 
 **How Pricing Update Works:**
-1. If there's an active pricing with the same `effective_from` date, it will be updated
-2. If there's an active pricing with a different `effective_from` date, the old pricing will be ended and a new one created
-3. If no active pricing exists, a new pricing record will be created
+1. If pricing exists for the course, it will be updated with the new values
+2. If no pricing exists, a new pricing record will be created
+3. Pricing is always effective immediately - no date restrictions
 
 **Response (200):**
 ```json
@@ -250,15 +243,10 @@ All fields are the same as in the create endpoint, but all are optional:
         "name": "Safety"
       }
     },
-    "current_price": {
-      "base_price": 550.00,
-      "currency": "USD",
-      "group_commission_percentage": 12.0,
-      "training_center_commission_percentage": 5.0,
-      "instructor_commission_percentage": 3.0,
-      "effective_from": "2024-01-01",
-      "effective_to": null
-    }
+      "current_price": {
+        "base_price": 550.00,
+        "currency": "USD"
+      }
   }
 }
 ```
@@ -270,15 +258,10 @@ All fields are the same as in the create endpoint, but all are optional:
   "course": {
     "id": 1,
     "name": "Advanced Fire Safety - Updated",
-    "current_price": {
-      "base_price": 500.00,
-      "currency": "USD",
-      "group_commission_percentage": 10.0,
-      "training_center_commission_percentage": 5.0,
-      "instructor_commission_percentage": 3.0,
-      "effective_from": "2024-01-01",
-      "effective_to": null
-    }
+      "current_price": {
+        "base_price": 500.00,
+        "currency": "USD"
+      }
   }
 }
 ```
@@ -290,15 +273,71 @@ All fields are the same as in the create endpoint, but all are optional:
 }
 ```
 
-**Error Response (422) - Commission Exceeds 100%:**
+
+---
+
+### 3. View Course
+
+**GET** `/api/acc/courses/{id}`
+
+Get detailed information about a specific course, including its current pricing (if set).
+
+**URL Parameters:**
+- `id` (integer, required) - Course ID
+
+**Response (200):**
 ```json
 {
-  "message": "Total commission percentages cannot exceed 100%",
-  "errors": {
-    "pricing.commission_percentages": [
-      "The sum of all commission percentages is 110% which exceeds 100%"
+  "course": {
+    "id": 1,
+    "sub_category_id": 1,
+    "acc_id": 1,
+    "name": "Advanced Fire Safety",
+    "name_ar": "السلامة من الحرائق المتقدمة",
+    "code": "AFS-001",
+    "description": "Advanced fire safety training course covering all aspects of fire prevention and safety protocols.",
+    "duration_hours": 40,
+    "level": "advanced",
+    "status": "active",
+    "created_at": "2024-01-15T10:30:00.000000Z",
+    "updated_at": "2024-01-15T10:30:00.000000Z",
+    "sub_category": {
+      "id": 1,
+      "name": "Fire Safety",
+      "category": {
+        "id": 1,
+        "name": "Safety"
+      }
+    },
+    "certificate_pricing": [
+      {
+        "id": 1,
+        "base_price": 500.00,
+        "currency": "USD",
+        "created_at": "2024-01-15T10:30:00.000000Z"
+      }
     ]
   }
+}
+```
+
+**Response (200) - Course Without Pricing:**
+```json
+{
+  "course": {
+    "id": 1,
+    "name": "Advanced Fire Safety",
+    "code": "AFS-001",
+    "status": "active",
+    "certificate_pricing": []
+  }
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "message": "No query results for model [App\\Models\\Course] {id}"
 }
 ```
 
@@ -306,7 +345,9 @@ All fields are the same as in the create endpoint, but all are optional:
 
 ## Usage Examples
 
-### Example 1: Create Course Without Pricing
+### Example 1: Create Course Without Pricing (Recommended First Step)
+
+**Note:** You can always add pricing later. It's perfectly fine to create a course without pricing.
 
 ```javascript
 const response = await fetch('/api/acc/courses', {
@@ -329,7 +370,9 @@ const data = await response.json();
 console.log(data.message); // "Course created successfully"
 ```
 
-### Example 2: Create Course With Pricing
+### Example 2: Create Course With Optional Pricing
+
+**Note:** Pricing is optional. Only include it if you want to set the base price immediately.
 
 ```javascript
 const response = await fetch('/api/acc/courses', {
@@ -349,11 +392,7 @@ const response = await fetch('/api/acc/courses', {
     status: 'active',
     pricing: {
       base_price: 500.00,
-      currency: 'USD',
-      group_commission_percentage: 10.0,
-      training_center_commission_percentage: 5.0,
-      instructor_commission_percentage: 3.0,
-      effective_from: '2024-01-01'
+      currency: 'USD'
     }
   })
 });
@@ -393,11 +432,7 @@ const response = await fetch('/api/acc/courses/1', {
     name: 'Advanced Fire Safety - Updated',
     pricing: {
       base_price: 550.00,
-      currency: 'USD',
-      group_commission_percentage: 12.0,
-      training_center_commission_percentage: 5.0,
-      instructor_commission_percentage: 3.0,
-      effective_from: '2024-01-01'
+      currency: 'USD'
     }
   })
 });
@@ -406,7 +441,22 @@ const data = await response.json();
 console.log(data.message); // "Course updated successfully and pricing updated"
 ```
 
-### Example 5: Update Multiple Course Fields
+### Example 5: View Course Details
+
+```javascript
+const response = await fetch('/api/acc/courses/1', {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+const data = await response.json();
+console.log('Course:', data.course.name);
+console.log('Current Price:', data.course.certificate_pricing);
+```
+
+### Example 6: Update Multiple Course Fields
 
 ```javascript
 const response = await fetch('/api/acc/courses/1', {
@@ -442,14 +492,10 @@ curl -X POST "https://aeroenix.com/v1/api/acc/courses" \
     "duration_hours": 40,
     "level": "advanced",
     "status": "active",
-    "pricing": {
-      "base_price": 500.00,
-      "currency": "USD",
-      "group_commission_percentage": 10.0,
-      "training_center_commission_percentage": 5.0,
-      "instructor_commission_percentage": 3.0,
-      "effective_from": "2024-01-01"
-    }
+      "pricing": {
+        "base_price": 500.00,
+        "currency": "USD"
+      }
   }'
 ```
 
@@ -461,15 +507,19 @@ curl -X PUT "https://aeroenix.com/v1/api/acc/courses/1" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Advanced Fire Safety - Updated",
-    "pricing": {
-      "base_price": 550.00,
-      "currency": "USD",
-      "group_commission_percentage": 12.0,
-      "training_center_commission_percentage": 5.0,
-      "instructor_commission_percentage": 3.0,
-      "effective_from": "2024-01-01"
-    }
+      "pricing": {
+        "base_price": 550.00,
+        "currency": "USD"
+      }
   }'
+```
+
+### Test View Course
+
+```bash
+curl -X GET "https://aeroenix.com/v1/api/acc/courses/1" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json"
 ```
 
 ---
@@ -492,51 +542,7 @@ curl -X PUT "https://aeroenix.com/v1/api/acc/courses/1" \
 }
 ```
 
-### Issue: "Total commission percentages cannot exceed 100%"
 
-**Solution:** Ensure the sum of all three commission percentages is 100% or less.
-
-```json
-// ❌ Invalid
-{
-  "pricing": {
-    "group_commission_percentage": 50,
-    "training_center_commission_percentage": 40,
-    "instructor_commission_percentage": 30  // Total: 120%
-  }
-}
-
-// ✅ Valid
-{
-  "pricing": {
-    "group_commission_percentage": 50,
-    "training_center_commission_percentage": 30,
-    "instructor_commission_percentage": 20  // Total: 100%
-  }
-}
-```
-
-### Issue: "effective_to must be after effective_from"
-
-**Solution:** Ensure the `effective_to` date is after the `effective_from` date.
-
-```json
-// ❌ Invalid
-{
-  "pricing": {
-    "effective_from": "2024-12-31",
-    "effective_to": "2024-01-01"
-  }
-}
-
-// ✅ Valid
-{
-  "pricing": {
-    "effective_from": "2024-01-01",
-    "effective_to": "2024-12-31"
-  }
-}
-```
 
 ### Issue: "The selected sub category id is invalid"
 
@@ -551,27 +557,20 @@ curl -X PUT "https://aeroenix.com/v1/api/acc/courses/1" \
 When you create a course with pricing:
 1. The course is created first
 2. A new pricing record is created and linked to the course
-3. The pricing becomes active immediately if `effective_from` is today or in the past
+3. The pricing is **always effective immediately** - no date restrictions
 
 ### Updating Course with Pricing
 
 When you update a course with pricing:
-1. **If active pricing exists with same `effective_from` date:**
+1. **If pricing exists:**
    - The existing pricing record is updated with new values
+   - Pricing remains effective immediately
    
-2. **If active pricing exists with different `effective_from` date:**
-   - The old pricing's `effective_to` is set to one day before the new pricing starts
+2. **If no pricing exists:**
    - A new pricing record is created
-   
-3. **If no active pricing exists:**
-   - A new pricing record is created
+   - Pricing is effective immediately
 
-**Example Scenario:**
-- Existing pricing: `effective_from: 2024-01-01`, `effective_to: null` (active)
-- Update with: `effective_from: 2024-06-01`
-- Result: 
-  - Old pricing gets `effective_to: 2024-05-31`
-  - New pricing is created with `effective_from: 2024-06-01`
+**Note:** Pricing is always effective when set. There are no date-based restrictions or expiration dates.
 
 ---
 
@@ -598,6 +597,8 @@ When you update a course with pricing:
 
 ### Pricing Model
 
+**Note:** Commission percentages are stored in the database but are managed by Group Admins, not through this API.
+
 ```json
 {
   "id": 1,
@@ -605,11 +606,6 @@ When you update a course with pricing:
   "course_id": 1,
   "base_price": 500.00,
   "currency": "USD",
-  "group_commission_percentage": 10.00,
-  "training_center_commission_percentage": 5.00,
-  "instructor_commission_percentage": 3.00,
-  "effective_from": "2024-01-01",
-  "effective_to": "2024-12-31",
   "created_at": "2024-01-15T10:30:00.000000Z",
   "updated_at": "2024-01-15T10:30:00.000000Z"
 }
@@ -619,24 +615,27 @@ When you update a course with pricing:
 
 ## Best Practices
 
-1. **Set Pricing on Creation**: If you know the pricing, include it when creating the course to avoid an extra API call
-2. **Use Unique Codes**: Always use unique, descriptive course codes
-3. **Validate Commissions**: Always ensure commission percentages total 100% or less
-4. **Use Effective Dates**: Use `effective_from` and `effective_to` to manage price changes over time
+1. **Pricing is Optional**: You can create courses without pricing and add it later. Don't feel pressured to set pricing immediately.
+2. **Set Pricing When Ready**: If you know the pricing, include it when creating the course to avoid an extra API call. But it's perfectly fine to add it later.
+3. **Use Unique Codes**: Always use unique, descriptive course codes
+4. **Pricing is Always Effective**: When you set pricing, it becomes effective immediately. There are no date restrictions.
 5. **Partial Updates**: When updating, only send fields you want to change
-6. **Check Active Pricing**: Before updating pricing, check if there's already an active one to understand the behavior
+6. **View Before Update**: Use the GET endpoint to view current course details and pricing before making updates
+7. **Simple Pricing Updates**: Updating pricing simply updates the existing price - no complex date logic needed
 
 ---
 
 ## Summary
 
-✅ **Create Course (POST)**: Creates new course with optional pricing  
-✅ **Update Course (PUT)**: Updates course details and/or pricing  
-✅ **Pricing Support**: Full pricing with commission percentages in both create and update  
-✅ **Validation**: Ensures commission percentages don't exceed 100%  
-✅ **Date Management**: Handles effective dates and automatically manages pricing transitions  
+✅ **Create Course (POST)**: Creates new course with completely optional pricing  
+✅ **Update Course (PUT)**: Updates course details and/or optional pricing  
+✅ **View Course (GET)**: View course details including current pricing (if set)  
+✅ **Pricing is Optional**: You can create and manage courses without any pricing information  
+✅ **Pricing Support**: When pricing is provided, supports base price and currency  
+✅ **Always Effective**: Pricing is always effective immediately when set - no date restrictions  
 ✅ **Error Handling**: Provides clear error messages for validation failures  
-✅ **Flexible Updates**: Update any combination of course fields and pricing
+✅ **Flexible Updates**: Update any combination of course fields and pricing  
+✅ **Commission Management**: Commission percentages are managed by Group Admins, not ACC admins
 
 ---
 
