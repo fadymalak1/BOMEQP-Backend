@@ -175,6 +175,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Certificates & Classes
         Route::get('/certificates', [App\Http\Controllers\API\ACC\CertificateController::class, 'index']);
         Route::get('/classes', [App\Http\Controllers\API\ACC\ClassController::class, 'index']);
+        Route::get('/classes/{id}', [App\Http\Controllers\API\ACC\ClassController::class, 'show']);
 
         // Financial
         Route::get('/financial/transactions', [App\Http\Controllers\API\ACC\FinancialController::class, 'transactions']);
