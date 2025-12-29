@@ -31,7 +31,7 @@ class ClassController extends Controller
         return response()->json(['classes' => $classes]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $user = $request->user();
         $instructor = Instructor::where('email', $user->email)->first();

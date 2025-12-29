@@ -248,10 +248,26 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Instructor routes
     Route::prefix('instructor')->middleware(['role:instructor'])->group(function () {
         Route::get('/dashboard', [App\Http\Controllers\API\Instructor\DashboardController::class, 'index']);
+        
+        // Profile
+        Route::get('/profile', [App\Http\Controllers\API\Instructor\ProfileController::class, 'show']);
+        Route::put('/profile', [App\Http\Controllers\API\Instructor\ProfileController::class, 'update']);
+        
+        // Classes
         Route::get('/classes', [App\Http\Controllers\API\Instructor\ClassController::class, 'index']);
         Route::get('/classes/{id}', [App\Http\Controllers\API\Instructor\ClassController::class, 'show']);
         Route::put('/classes/{id}/mark-complete', [App\Http\Controllers\API\Instructor\ClassController::class, 'markComplete']);
+        
+        // Training Centers
+        Route::get('/training-centers', [App\Http\Controllers\API\Instructor\TrainingCenterController::class, 'index']);
+        
+        // ACCs
+        Route::get('/accs', [App\Http\Controllers\API\Instructor\ACCController::class, 'index']);
+        
+        // Materials
         Route::get('/materials', [App\Http\Controllers\API\Instructor\MaterialController::class, 'index']);
+        
+        // Earnings
         Route::get('/earnings', [App\Http\Controllers\API\Instructor\EarningController::class, 'index']);
     });
 });
