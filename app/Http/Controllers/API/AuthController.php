@@ -14,47 +14,35 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use OpenApi\Attributes as OA;
 
 class AuthController extends Controller
 {
-    #[OA\Post(
-        path: "/api/auth/register",
-        summary: "Register a new user",
-        description: "Register a new user (Training Center or ACC Admin). Training centers are active immediately, ACCs require approval.",
-        tags: ["Authentication"],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ["name", "email", "password", "password_confirmation", "role"],
-                properties: [
-                    new OA\Property(property: "name", type: "string", example: "John Doe"),
-                    new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
-                    new OA\Property(property: "password", type: "string", format: "password", example: "password123"),
-                    new OA\Property(property: "password_confirmation", type: "string", format: "password", example: "password123"),
-                    new OA\Property(property: "role", type: "string", enum: ["training_center_admin", "acc_admin"], example: "training_center_admin"),
-                    new OA\Property(property: "country", type: "string", example: "USA"),
-                    new OA\Property(property: "city", type: "string", example: "New York"),
-                    new OA\Property(property: "address", type: "string", example: "123 Main St"),
-                    new OA\Property(property: "phone", type: "string", example: "+1234567890"),
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 201,
-                description: "Registration successful",
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: "message", type: "string", example: "Registration successful"),
-                        new OA\Property(property: "user", type: "object"),
-                        new OA\Property(property: "token", type: "string", example: "1|xxxxxxxxxxxxx"),
-                    ]
-                )
-            ),
-            new OA\Response(response: 422, description: "Validation error"),
-        ]
-    )]
+    /**
+     * Register a new user
+     * 
+     * Register a new user (Training Center or ACC Admin). Training centers are active immediately, ACCs require approval.
+     * 
+     * @group Authentication
+     * 
+     * @bodyParam name string required The user's name. Example: John Doe
+     * @bodyParam email string required The user's email address. Example: john@example.com
+     * @bodyParam password string required The user's password (min 8 characters). Example: password123
+     * @bodyParam password_confirmation string required Password confirmation. Example: password123
+     * @bodyParam role string required User role. Must be one of: training_center_admin, acc_admin. Example: training_center_admin
+     * @bodyParam country string optional Country. Example: USA
+     * @bodyParam city string optional City. Example: New York
+     * @bodyParam address string optional Address. Example: 123 Main St
+     * @bodyParam phone string optional Phone number. Example: +1234567890
+     * 
+     * @response 201 {
+     *   "message": "Registration successful",
+     *   "user": {...},
+     *   "token": "1|xxxxxxxxxxxxx"
+     * }
+     * @response 422 {
+     *   "errors": {...}
+     * }
+     */
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -121,36 +109,25 @@ class AuthController extends Controller
         ], 201);
     }
 
-    #[OA\Post(
-        path: "/api/auth/login",
-        summary: "User login",
-        description: "Authenticate user with email and password. Returns authentication token.",
-        tags: ["Authentication"],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ["email", "password"],
-                properties: [
-                    new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
-                    new OA\Property(property: "password", type: "string", format: "password", example: "password123"),
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: "Login successful",
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: "message", type: "string", example: "Login successful"),
-                        new OA\Property(property: "user", type: "object"),
-                        new OA\Property(property: "token", type: "string", example: "1|xxxxxxxxxxxxx"),
-                    ]
-                )
-            ),
-            new OA\Response(response: 422, description: "Invalid credentials"),
-        ]
-    )]
+    /**
+     * User login
+     * 
+     * Authenticate user with email and password. Returns authentication token.
+     * 
+     * @group Authentication
+     * 
+     * @bodyParam email string required User's email address. Example: john@example.com
+     * @bodyParam password string required User's password. Example: password123
+     * 
+     * @response 200 {
+     *   "message": "Login successful",
+     *   "user": {...},
+     *   "token": "1|xxxxxxxxxxxxx"
+     * }
+     * @response 422 {
+     *   "message": "The provided credentials are incorrect."
+     * }
+     */
     public function login(Request $request)
     {
         $request->validate([
@@ -181,25 +158,21 @@ class AuthController extends Controller
         ]);
     }
 
-    #[OA\Post(
-        path: "/api/auth/logout",
-        summary: "User logout",
-        description: "Logout the authenticated user and invalidate the current token.",
-        tags: ["Authentication"],
-        security: [["sanctum" => []]],
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: "Logout successful",
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: "message", type: "string", example: "Logged out successfully"),
-                    ]
-                )
-            ),
-            new OA\Response(response: 401, description: "Unauthenticated"),
-        ]
-    )]
+    /**
+     * User logout
+     * 
+     * Logout the authenticated user and invalidate the current token.
+     * 
+     * @group Authentication
+     * @authenticated
+     * 
+     * @response 200 {
+     *   "message": "Logged out successfully"
+     * }
+     * @response 401 {
+     *   "message": "Unauthenticated."
+     * }
+     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
@@ -207,25 +180,21 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logged out successfully']);
     }
 
-    #[OA\Get(
-        path: "/api/auth/profile",
-        summary: "Get user profile",
-        description: "Get the authenticated user's profile information.",
-        tags: ["Authentication"],
-        security: [["sanctum" => []]],
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: "User profile",
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: "user", type: "object"),
-                    ]
-                )
-            ),
-            new OA\Response(response: 401, description: "Unauthenticated"),
-        ]
-    )]
+    /**
+     * Get user profile
+     * 
+     * Get the authenticated user's profile information.
+     * 
+     * @group Authentication
+     * @authenticated
+     * 
+     * @response 200 {
+     *   "user": {...}
+     * }
+     * @response 401 {
+     *   "message": "Unauthenticated."
+     * }
+     */
     public function profile(Request $request)
     {
         return response()->json(['user' => $request->user()]);
