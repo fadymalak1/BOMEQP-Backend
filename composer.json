@@ -51,6 +51,15 @@
             "@php artisan config:clear --ansi",
             "@php artisan test"
         ],
+        "docs": [
+            "@php artisan config:clear",
+            "@php artisan route:clear",
+            "@php artisan cache:clear",
+            "@php artisan scribe:generate"
+        ],
+        "docs:generate": [
+            "@php artisan scribe:generate"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

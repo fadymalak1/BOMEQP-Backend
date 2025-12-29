@@ -144,6 +144,7 @@ INTRO
         'bash',
         'javascript',
         'php',
+        'python',
     ],
 
     /*
@@ -165,7 +166,7 @@ INTRO
     | Options: 'default', 'elements'
     |
     */
-    'theme' => 'default',
+    'theme' => 'elements', // Better UI with modern design
 
     /*
     |--------------------------------------------------------------------------
@@ -198,7 +199,7 @@ INTRO
     | Options: 'alpha', 'http_method', 'custom'
     |
     */
-    'sort' => 'alpha',
+    'sort' => 'http_method', // Group by HTTP method for better organization
 
     /*
     |--------------------------------------------------------------------------
