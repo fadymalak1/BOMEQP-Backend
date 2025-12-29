@@ -381,27 +381,27 @@ class InstructorController extends Controller
         }
 
         // Verify Stripe payment intent
-        if (!$request->payment_intent_id) {
-            return response()->json([
-                'message' => 'payment_intent_id is required for credit card payments'
-            ], 400);
-        }
+            if (!$request->payment_intent_id) {
+                return response()->json([
+                    'message' => 'payment_intent_id is required for credit card payments'
+                ], 400);
+            }
 
-        try {
-            $this->stripeService->verifyPaymentIntent(
-                $request->payment_intent_id,
-                $authorization->authorization_price,
-                [
-                    'authorization_id' => (string)$authorization->id,
-                    'training_center_id' => (string)$trainingCenter->id,
-                    'type' => 'instructor_authorization',
-                ]
-            );
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Payment verification failed',
-                'error' => $e->getMessage()
-            ], 400);
+            try {
+                $this->stripeService->verifyPaymentIntent(
+                    $request->payment_intent_id,
+                    $authorization->authorization_price,
+                    [
+                        'authorization_id' => (string)$authorization->id,
+                        'training_center_id' => (string)$trainingCenter->id,
+                        'type' => 'instructor_authorization',
+                    ]
+                );
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'Payment verification failed',
+                    'error' => $e->getMessage()
+                ], 400);
         }
 
         DB::beginTransaction();

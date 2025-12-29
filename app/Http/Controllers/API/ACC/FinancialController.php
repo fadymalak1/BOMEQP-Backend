@@ -84,7 +84,23 @@ class FinancialController extends Controller
 
         // Format transactions with detailed information
         $formattedTransactions = $transactions->getCollection()->map(function ($transaction) {
-            return $this->formatTransaction($transaction);
+            try {
+                return $this->formatTransaction($transaction);
+            } catch (\Exception $e) {
+                \Log::error('Error formatting transaction: ' . $e->getMessage(), [
+                    'transaction_id' => $transaction->id ?? null,
+                    'trace' => $e->getTraceAsString()
+                ]);
+                // Return basic transaction data if formatting fails
+                return [
+                    'id' => $transaction->id ?? null,
+                    'transaction_type' => $transaction->transaction_type ?? null,
+                    'amount' => $transaction->amount ?? 0,
+                    'currency' => $transaction->currency ?? 'USD',
+                    'status' => $transaction->status ?? null,
+                    'error' => 'Failed to format transaction details',
+                ];
+            }
         });
 
         return response()->json([
@@ -138,29 +154,32 @@ class FinancialController extends Controller
         }
 
         // Format commission ledgers
-        $commissionLedgers = $transaction->commissionLedgers->map(function ($ledger) {
-            return [
-                'id' => $ledger->id,
-                'acc' => $ledger->acc ? [
-                    'id' => $ledger->acc->id,
-                    'name' => $ledger->acc->name,
-                ] : null,
-                'training_center' => $ledger->trainingCenter ? [
-                    'id' => $ledger->trainingCenter->id,
-                    'name' => $ledger->trainingCenter->name,
-                ] : null,
-                'instructor' => $ledger->instructor ? [
-                    'id' => $ledger->instructor->id,
-                    'name' => ($ledger->instructor->first_name ?? '') . ' ' . ($ledger->instructor->last_name ?? ''),
-                ] : null,
-                'group_commission_amount' => $ledger->group_commission_amount,
-                'group_commission_percentage' => $ledger->group_commission_percentage,
-                'acc_commission_amount' => $ledger->acc_commission_amount,
-                'acc_commission_percentage' => $ledger->acc_commission_percentage,
-                'settlement_status' => $ledger->settlement_status,
-                'settlement_date' => $ledger->settlement_date,
-            ];
-        });
+        $commissionLedgers = [];
+        if ($transaction->commissionLedgers && $transaction->commissionLedgers->count() > 0) {
+            $commissionLedgers = $transaction->commissionLedgers->map(function ($ledger) {
+                return [
+                    'id' => $ledger->id ?? null,
+                    'acc' => ($ledger->acc ?? null) ? [
+                        'id' => $ledger->acc->id ?? null,
+                        'name' => $ledger->acc->name ?? null,
+                    ] : null,
+                    'training_center' => ($ledger->trainingCenter ?? null) ? [
+                        'id' => $ledger->trainingCenter->id ?? null,
+                        'name' => $ledger->trainingCenter->name ?? null,
+                    ] : null,
+                    'instructor' => ($ledger->instructor ?? null) ? [
+                        'id' => $ledger->instructor->id ?? null,
+                        'name' => trim(($ledger->instructor->first_name ?? '') . ' ' . ($ledger->instructor->last_name ?? '')),
+                    ] : null,
+                    'group_commission_amount' => $ledger->group_commission_amount ?? 0,
+                    'group_commission_percentage' => $ledger->group_commission_percentage ?? 0,
+                    'acc_commission_amount' => $ledger->acc_commission_amount ?? 0,
+                    'acc_commission_percentage' => $ledger->acc_commission_percentage ?? 0,
+                    'settlement_status' => $ledger->settlement_status ?? null,
+                    'settlement_date' => $ledger->settlement_date ?? null,
+                ];
+            })->toArray();
+        }
 
         return [
             'id' => $transaction->id,
@@ -224,40 +243,48 @@ class FinancialController extends Controller
      */
     private function getReferenceDetails($type, $model)
     {
-        switch ($type) {
-            case 'ACCSubscription':
-                return [
-                    'acc_id' => $model->acc_id,
-                    'plan' => $model->plan,
-                    'start_date' => $model->start_date,
-                    'end_date' => $model->end_date,
-                    'status' => $model->status,
-                ];
-            case 'CodeBatch':
-                return [
-                    'training_center_id' => $model->training_center_id,
-                    'acc_id' => $model->acc_id,
-                    'quantity' => $model->quantity,
-                    'total_amount' => $model->total_amount,
-                ];
-            case 'TrainingCenterPurchase':
-                return [
-                    'training_center_id' => $model->training_center_id,
-                    'acc_id' => $model->acc_id,
-                    'purchase_type' => $model->purchase_type,
-                    'item_id' => $model->item_id,
-                    'amount' => $model->amount,
-                ];
-            case 'MonthlySettlement':
-                return [
-                    'acc_id' => $model->acc_id,
-                    'settlement_month' => $model->settlement_month,
-                    'total_revenue' => $model->total_revenue,
-                    'group_commission_amount' => $model->group_commission_amount,
-                    'status' => $model->status,
-                ];
-            default:
-                return [];
+        if (!$model) {
+            return [];
+        }
+
+        try {
+            switch ($type) {
+                case 'ACCSubscription':
+                    return [
+                        'acc_id' => $model->acc_id ?? null,
+                        'plan' => $model->plan ?? null,
+                        'start_date' => $model->subscription_start_date ?? $model->start_date ?? null,
+                        'end_date' => $model->subscription_end_date ?? $model->end_date ?? null,
+                        'status' => $model->payment_status ?? $model->status ?? null,
+                    ];
+                case 'CodeBatch':
+                    return [
+                        'training_center_id' => $model->training_center_id ?? null,
+                        'acc_id' => $model->acc_id ?? null,
+                        'quantity' => $model->quantity ?? null,
+                        'total_amount' => $model->total_amount ?? null,
+                    ];
+                case 'TrainingCenterPurchase':
+                    return [
+                        'training_center_id' => $model->training_center_id ?? null,
+                        'acc_id' => $model->acc_id ?? null,
+                        'purchase_type' => $model->purchase_type ?? null,
+                        'item_id' => $model->item_id ?? null,
+                        'amount' => $model->amount ?? null,
+                    ];
+                case 'MonthlySettlement':
+                    return [
+                        'acc_id' => $model->acc_id ?? null,
+                        'settlement_month' => $model->settlement_month ?? null,
+                        'total_revenue' => $model->total_revenue ?? null,
+                        'group_commission_amount' => $model->group_commission_amount ?? null,
+                        'status' => $model->status ?? null,
+                    ];
+                default:
+                    return [];
+            }
+        } catch (\Exception $e) {
+            return [];
         }
     }
 
