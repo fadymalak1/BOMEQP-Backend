@@ -11,6 +11,36 @@ use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
+    /**
+     * Get instructor dashboard data
+     * 
+     * Returns all data needed for the instructor dashboard including:
+     * - Profile summary (name, email)
+     * - Class statistics (total, upcoming, in progress, completed)
+     * - Recent classes
+     * - Additional data (earnings, training centers, ACCs, notifications)
+     * 
+     * @group Instructor Dashboard
+     * @authenticated
+     * 
+     * @response 200 {
+     *   "profile": {
+     *     "name": "Fady Malak",
+     *     "email": "fady@example.com"
+     *   },
+     *   "statistics": {
+     *     "total_classes": 10,
+     *     "upcoming_classes": 2,
+     *     "in_progress": 1,
+     *     "completed": 7
+     *   },
+     *   "recent_classes": [...],
+     *   "earnings": {...},
+     *   "training_centers": [...],
+     *   "accs": [...],
+     *   "unread_notifications_count": 3
+     * }
+     */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -22,39 +52,38 @@ class DashboardController extends Controller
             return response()->json(['message' => 'Instructor not found'], 404);
         }
 
-        // Profile information
+        // Profile summary for dashboard (matching UI requirements)
         $profile = [
-            'id' => $instructor->id,
-            'first_name' => $instructor->first_name,
-            'last_name' => $instructor->last_name,
-            'full_name' => $instructor->first_name . ' ' . $instructor->last_name,
-            'email' => $instructor->email,
-            'phone' => $instructor->phone,
-            'id_number' => $instructor->id_number,
-            'cv_url' => $instructor->cv_url,
-            'certificates' => $instructor->certificates_json ?? [],
-            'specializations' => $instructor->specializations ?? [],
-            'status' => $instructor->status,
-            'training_center' => $instructor->trainingCenter,
+            'name' => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
+            'email' => $instructor->email ?? null,
         ];
 
-        // Classes statistics
-        $assignedClasses = TrainingClass::where('instructor_id', $instructor->id)->count();
+        // If name is empty, set to null
+        if (empty(trim($profile['name']))) {
+            $profile['name'] = null;
+        }
+
+        // Classes statistics - matching dashboard cards
+        $totalClasses = TrainingClass::where('instructor_id', $instructor->id)->count();
+        
         $upcomingClasses = TrainingClass::where('instructor_id', $instructor->id)
             ->where('status', 'scheduled')
-            ->where('start_date', '>=', now())
+            ->where('start_date', '>=', now()->startOfDay())
             ->count();
-        $completedClasses = TrainingClass::where('instructor_id', $instructor->id)
-            ->where('status', 'completed')
-            ->count();
-        $inProgressClasses = TrainingClass::where('instructor_id', $instructor->id)
+        
+        $inProgress = TrainingClass::where('instructor_id', $instructor->id)
             ->where('status', 'in_progress')
             ->count();
+        
+        $completed = TrainingClass::where('instructor_id', $instructor->id)
+            ->where('status', 'completed')
+            ->count();
 
-        // Recent classes
-        $assignedClassesList = TrainingClass::where('instructor_id', $instructor->id)
+        // Recent classes (latest 10)
+        $recentClasses = TrainingClass::where('instructor_id', $instructor->id)
             ->with(['course:id,name,code', 'trainingCenter:id,name'])
             ->orderBy('start_date', 'desc')
+            ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
             ->map(function($class) {
@@ -62,19 +91,20 @@ class DashboardController extends Controller
                     'id' => $class->id,
                     'course' => [
                         'id' => $class->course->id ?? null,
-                        'name' => $class->course->name ?? '',
+                        'name' => $class->course->name ?? 'N/A',
                         'code' => $class->course->code ?? '',
                     ],
                     'training_center' => [
                         'id' => $class->trainingCenter->id ?? null,
-                        'name' => $class->trainingCenter->name ?? '',
+                        'name' => $class->trainingCenter->name ?? 'N/A',
                     ],
-                    'start_date' => $class->start_date,
-                    'end_date' => $class->end_date,
+                    'start_date' => $class->start_date ? $class->start_date->format('Y-m-d') : null,
+                    'end_date' => $class->end_date ? $class->end_date->format('Y-m-d') : null,
                     'status' => $class->status,
-                    'enrolled_count' => $class->enrolled_count,
-                    'max_capacity' => $class->max_capacity,
-                    'location' => $class->location,
+                    'enrolled_count' => $class->enrolled_count ?? 0,
+                    'max_capacity' => $class->max_capacity ?? 0,
+                    'location' => $class->location ?? 'physical',
+                    'location_details' => $class->location_details ?? null,
                 ];
             });
 
@@ -176,19 +206,26 @@ class DashboardController extends Controller
         $unreadNotificationsCount = $user->unreadNotifications()->count();
 
         return response()->json([
+            // Profile summary for dashboard UI
             'profile' => $profile,
+            
+            // Statistics matching dashboard cards
             'statistics' => [
-                'total_classes' => $assignedClasses,
+                'total_classes' => $totalClasses,
                 'upcoming_classes' => $upcomingClasses,
-                'in_progress_classes' => $inProgressClasses,
-                'completed_classes' => $completedClasses,
+                'in_progress' => $inProgress,
+                'completed' => $completed,
             ],
-            'recent_classes' => $assignedClassesList,
+            
+            // Recent classes for dashboard
+            'recent_classes' => $recentClasses,
+            
+            // Additional data
             'earnings' => [
-                'total' => $totalEarnings,
-                'this_month' => $earningsThisMonth,
-                'pending' => $pendingEarnings,
-                'paid' => $totalEarnings - $pendingEarnings,
+                'total' => round($totalEarnings, 2),
+                'this_month' => round($earningsThisMonth, 2),
+                'pending' => round($pendingEarnings, 2),
+                'paid' => round($totalEarnings - $pendingEarnings, 2),
             ],
             'training_centers' => $trainingCenters,
             'accs' => $accs,

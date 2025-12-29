@@ -26,15 +26,19 @@ class InstructorCredentialsMail extends Mailable
         $this->instructorName = $instructorName;
         $this->trainingCenterName = $trainingCenterName;
         
-        // Construct login URL - if FRONTEND_URL is set, use it, otherwise construct from APP_URL
+        // Construct login URL - use the frontend login URL
         $frontendUrl = env('FRONTEND_URL');
         if ($frontendUrl) {
             $this->loginUrl = rtrim($frontendUrl, '/') . '/login';
         } else {
-            // Fallback: construct from APP_URL (remove /api if present)
+            // Fallback: construct from APP_URL, extract base domain and remove /v1 and /api prefixes
             $appUrl = rtrim(config('app.url'), '/');
-            $appUrl = str_replace('/api', '', $appUrl);
-            $this->loginUrl = $appUrl . '/login';
+            // Parse URL to get base domain
+            $parsedUrl = parse_url($appUrl);
+            $scheme = $parsedUrl['scheme'] ?? 'https';
+            $host = $parsedUrl['host'] ?? 'aeroenix.com';
+            // Use base domain with /login (without /v1 or /api)
+            $this->loginUrl = $scheme . '://' . $host . '/login';
         }
     }
 
