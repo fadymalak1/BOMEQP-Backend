@@ -6,8 +6,12 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// API Documentation Route - Redirect /api/doc to /docs
+// API Documentation Routes - Redirect to /docs
 Route::get('/api/doc', function () {
+    return redirect('/docs');
+});
+
+Route::get('/api/docs', function () {
     return redirect('/docs');
 });
 
