@@ -95,8 +95,8 @@ class ProfileController extends Controller
      * @bodyParam last_name string optional Instructor's last name. Example: Doe
      * @bodyParam phone string optional Phone number. Example: +1234567890
      * @bodyParam cv file optional CV file (PDF, max 10MB)
-     * @bodyParam certificates_json array optional Certificates array. Example: [{"name": "Fire Safety", "issuer": "ABC", "expiry": "2025-12-31"}]
-     * @bodyParam specializations array optional Specializations array. Example: ["Fire Safety", "First Aid"]
+     * @bodyParam certificates_json array optional Certificates array (JSON format)
+     * @bodyParam specializations array optional Specializations array
      * 
      * @response 200 {
      *   "message": "Profile updated successfully",
