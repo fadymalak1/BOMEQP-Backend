@@ -21,9 +21,10 @@ return [
     |--------------------------------------------------------------------------
     |
     | The base URL for your API. This is used to generate example URLs.
+    | Note: Do not include /api here as routes already have the api prefix.
     |
     */
-    'base_url' => env('SCRIBE_BASE_URL', 'https://aeroenix.com/v1'),
+    'base_url' => 'https://aeroenix.com/v1',
 
     /*
     |--------------------------------------------------------------------------
