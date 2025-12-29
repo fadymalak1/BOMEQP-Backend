@@ -5,7 +5,6 @@ namespace App\Http\Controllers\API\TrainingCenter;
 use App\Http\Controllers\Controller;
 use App\Models\Instructor;
 use App\Models\InstructorAccAuthorization;
-use App\Models\TrainingCenterWallet;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Mail\InstructorCredentialsMail;
@@ -342,7 +341,7 @@ class InstructorController extends Controller
     public function payAuthorization(Request $request, $id)
     {
         $request->validate([
-            'payment_method' => 'required|in:wallet,credit_card',
+            'payment_method' => 'required|in:credit_card',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string',
         ]);
 
@@ -381,55 +380,32 @@ class InstructorController extends Controller
             ], 400);
         }
 
-        // Verify Stripe payment intent if credit card payment
-        if ($request->payment_method === 'credit_card') {
-            if (!$request->payment_intent_id) {
-                return response()->json([
-                    'message' => 'payment_intent_id is required for credit card payments'
-                ], 400);
-            }
-
-            try {
-                $this->stripeService->verifyPaymentIntent(
-                    $request->payment_intent_id,
-                    $authorization->authorization_price,
-                    [
-                        'authorization_id' => (string)$authorization->id,
-                        'training_center_id' => (string)$trainingCenter->id,
-                        'type' => 'instructor_authorization',
-                    ]
-                );
-            } catch (\Exception $e) {
-                return response()->json([
-                    'message' => 'Payment verification failed',
-                    'error' => $e->getMessage()
-                ], 400);
-            }
+        // Verify Stripe payment intent
+        if (!$request->payment_intent_id) {
+            return response()->json([
+                'message' => 'payment_intent_id is required for credit card payments'
+            ], 400);
         }
 
-        // Check wallet balance before starting transaction
-        if ($request->payment_method === 'wallet') {
-            $wallet = TrainingCenterWallet::firstOrCreate(
-                ['training_center_id' => $trainingCenter->id],
-                ['balance' => 0, 'currency' => 'USD']
+        try {
+            $this->stripeService->verifyPaymentIntent(
+                $request->payment_intent_id,
+                $authorization->authorization_price,
+                [
+                    'authorization_id' => (string)$authorization->id,
+                    'training_center_id' => (string)$trainingCenter->id,
+                    'type' => 'instructor_authorization',
+                ]
             );
-
-            if ($wallet->balance < $authorization->authorization_price) {
-                return response()->json([
-                    'message' => 'Insufficient wallet balance'
-                ], 400);
-            }
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Payment verification failed',
+                'error' => $e->getMessage()
+            ], 400);
         }
 
         DB::beginTransaction();
         try {
-            // Process payment
-            if ($request->payment_method === 'wallet') {
-                $wallet = TrainingCenterWallet::findOrFail($wallet->id);
-                $wallet->decrement('balance', $authorization->authorization_price);
-                $wallet->update(['last_updated' => now()]);
-            }
-
             // Create transaction
             $transaction = Transaction::create([
                 'transaction_type' => 'commission',

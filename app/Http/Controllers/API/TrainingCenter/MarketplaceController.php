@@ -52,7 +52,7 @@ class MarketplaceController extends Controller
             'purchase_type' => 'required|in:material,course,package',
             'item_id' => 'required|integer',
             'acc_id' => 'required|exists:accs,id',
-            'payment_method' => 'required|in:wallet,credit_card',
+            'payment_method' => 'required|in:credit_card',
         ]);
 
         $user = $request->user();
@@ -72,15 +72,6 @@ class MarketplaceController extends Controller
 
         DB::beginTransaction();
         try {
-            // Process payment
-            if ($request->payment_method === 'wallet') {
-                $wallet = \App\Models\TrainingCenterWallet::where('training_center_id', $trainingCenter->id)->first();
-                if (!$wallet || $wallet->balance < $amount) {
-                    return response()->json(['message' => 'Insufficient wallet balance'], 400);
-                }
-                $wallet->decrement('balance', $amount);
-            }
-
             // Create transaction
             $transaction = Transaction::create([
                 'transaction_type' => 'material_purchase',

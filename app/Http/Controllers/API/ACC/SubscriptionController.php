@@ -156,7 +156,7 @@ class SubscriptionController extends Controller
     {
         $request->validate([
             'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|in:credit_card,wallet',
+            'payment_method' => 'required|in:credit_card',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string',
         ]);
 
@@ -257,7 +257,7 @@ class SubscriptionController extends Controller
     {
         $request->validate([
             'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|in:credit_card,wallet',
+            'payment_method' => 'required|in:credit_card',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string',
             'auto_renew' => 'nullable|boolean',
         ]);

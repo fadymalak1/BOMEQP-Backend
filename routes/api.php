@@ -220,10 +220,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/codes/inventory', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'inventory']);
         Route::get('/codes/batches', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'batches']);
 
-        // Wallet
-        Route::post('/wallet/add-funds', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'addFunds']);
-        Route::get('/wallet/balance', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'balance']);
-        Route::get('/wallet/transactions', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'transactions']);
+        // Financial
+        Route::get('/financial/transactions', [App\Http\Controllers\API\TrainingCenter\WalletController::class, 'transactions']);
 
         // Courses (from approved ACCs)
         Route::get('/courses', [App\Http\Controllers\API\TrainingCenter\CourseController::class, 'index']);

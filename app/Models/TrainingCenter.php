@@ -38,11 +38,6 @@ class TrainingCenter extends Model
         return $this->hasMany(TrainingCenterAccAuthorization::class, 'training_center_id');
     }
 
-    public function wallet(): HasOne
-    {
-        return $this->hasOne(TrainingCenterWallet::class, 'training_center_id');
-    }
-
     public function instructors(): HasMany
     {
         return $this->hasMany(Instructor::class, 'training_center_id');

@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Models\TrainingCenterAccAuthorization;
 use App\Models\CertificateCode;
 use App\Models\TrainingClass;
-use App\Models\TrainingCenterWallet;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
@@ -47,14 +46,10 @@ class DashboardController extends Controller
             ->whereIn('status', ['scheduled', 'in_progress'])
             ->count();
 
-        $wallet = TrainingCenterWallet::where('training_center_id', $trainingCenter->id)->first();
-        $walletBalance = $wallet ? $wallet->balance : 0;
-
         return response()->json([
             'authorizations' => $authorizations,
             'code_inventory' => $codeInventory,
             'active_classes' => $activeClasses,
-            'wallet_balance' => $walletBalance,
         ]);
     }
 }

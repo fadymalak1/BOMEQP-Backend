@@ -7,7 +7,6 @@ use App\Models\CertificateCode;
 use App\Models\CodeBatch;
 use App\Models\DiscountCode;
 use App\Models\CertificatePricing;
-use App\Models\TrainingCenterWallet;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -206,7 +205,7 @@ class CodeController extends Controller
             'course_id' => 'required|integer|exists:courses,id',
             'quantity' => 'required|integer|min:1',
             'discount_code' => 'nullable|string|max:255',
-            'payment_method' => 'required|in:wallet,credit_card',
+            'payment_method' => 'required|in:credit_card',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string|max:255',
         ]);
 
@@ -335,56 +334,35 @@ class CodeController extends Controller
         $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
         $accCommissionAmount = ($finalAmount * $accCommissionPercentage) / 100;
 
-        // Check wallet balance before starting transaction
-        if ($request->payment_method === 'wallet') {
-            $wallet = TrainingCenterWallet::firstOrCreate(
-                ['training_center_id' => $trainingCenter->id],
-                ['balance' => 0, 'currency' => 'USD']
+        // Validate payment_intent_id for credit card payments
+        if (!$request->payment_intent_id) {
+            return response()->json([
+                'message' => 'payment_intent_id is required for credit card payments'
+            ], 400);
+        }
+
+        // Verify payment intent with Stripe
+        try {
+            $this->stripeService->verifyPaymentIntent(
+                $request->payment_intent_id,
+                $finalAmount,
+                [
+                    'payer_id' => (string)$trainingCenter->id,
+                    'payee_id' => (string)$request->acc_id,
+                    'course_id' => (string)$request->course_id,
+                    'quantity' => (string)$request->quantity,
+                    'type' => 'code_purchase',
+                ]
             );
-
-            if ($wallet->balance < $finalAmount) {
-                return response()->json([
-                    'message' => 'Insufficient wallet balance'
-                ], 402); // Payment Required
-            }
-        } elseif ($request->payment_method === 'credit_card') {
-            // Validate payment_intent_id for credit card payments
-            if (!$request->payment_intent_id) {
-                return response()->json([
-                    'message' => 'payment_intent_id is required for credit card payments'
-                ], 400);
-            }
-
-            // Verify payment intent with Stripe
-            try {
-                $this->stripeService->verifyPaymentIntent(
-                    $request->payment_intent_id,
-                    $finalAmount,
-                    [
-                        'payer_id' => (string)$trainingCenter->id,
-                        'payee_id' => (string)$request->acc_id,
-                        'course_id' => (string)$request->course_id,
-                        'quantity' => (string)$request->quantity,
-                        'type' => 'code_purchase',
-                    ]
-                );
-            } catch (\Exception $e) {
-                return response()->json([
-                    'message' => 'Payment verification failed',
-                    'error' => $e->getMessage()
-                ], 400);
-            }
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Payment verification failed',
+                'error' => $e->getMessage()
+            ], 400);
         }
 
         DB::beginTransaction();
         try {
-            // Process payment
-            if ($request->payment_method === 'wallet') {
-                $wallet = TrainingCenterWallet::findOrFail($wallet->id);
-                $wallet->decrement('balance', $finalAmount);
-                $wallet->update(['last_updated' => now()]);
-            }
-
             // Create transaction
             $transaction = Transaction::create([
                 'transaction_type' => 'code_purchase',
