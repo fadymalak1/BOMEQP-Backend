@@ -7,9 +7,36 @@ use Illuminate\Http\Request;
 use App\Models\ACC;
 use App\Models\TrainingCenterAccAuthorization;
 use App\Models\Transaction;
+use OpenApi\Attributes as OA;
 
 class DashboardController extends Controller
 {
+    #[OA\Get(
+        path: "/api/acc/dashboard",
+        summary: "Get ACC dashboard data",
+        description: "Get dashboard statistics and data for the authenticated ACC admin.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Dashboard data retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "subscription_status", type: "string", example: "active"),
+                        new OA\Property(property: "subscription_expires_at", type: "string", format: "date-time", nullable: true),
+                        new OA\Property(property: "pending_requests", type: "object"),
+                        new OA\Property(property: "revenue", type: "object"),
+                        new OA\Property(property: "active_training_centers", type: "integer", example: 5),
+                        new OA\Property(property: "active_instructors", type: "integer", example: 10),
+                        new OA\Property(property: "certificates_generated", type: "integer", example: 100)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();

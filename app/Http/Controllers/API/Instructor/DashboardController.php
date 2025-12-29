@@ -8,39 +8,36 @@ use App\Models\TrainingClass;
 use App\Models\Transaction;
 use App\Models\ACC;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class DashboardController extends Controller
 {
-    /**
-     * Get instructor dashboard data
-     * 
-     * Returns all data needed for the instructor dashboard including:
-     * - Profile summary (name, email)
-     * - Class statistics (total, upcoming, in progress, completed)
-     * - Recent classes
-     * - Additional data (earnings, training centers, ACCs, notifications)
-     * 
-     * @group Instructor Dashboard
-     * @authenticated
-     * 
-     * @response 200 {
-     *   "profile": {
-     *     "name": "Fady Malak",
-     *     "email": "fady@example.com"
-     *   },
-     *   "statistics": {
-     *     "total_classes": 10,
-     *     "upcoming_classes": 2,
-     *     "in_progress": 1,
-     *     "completed": 7
-     *   },
-     *   "recent_classes": [...],
-     *   "earnings": {...},
-     *   "training_centers": [...],
-     *   "accs": [...],
-     *   "unread_notifications_count": 3
-     * }
-     */
+    #[OA\Get(
+        path: "/api/instructor/dashboard",
+        summary: "Get instructor dashboard data",
+        description: "Returns all data needed for the instructor dashboard including profile, class statistics, recent classes, earnings, training centers, ACCs, and notifications.",
+        tags: ["Instructor"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Dashboard data retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "profile", type: "object"),
+                        new OA\Property(property: "statistics", type: "object"),
+                        new OA\Property(property: "recent_classes", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "earnings", type: "object"),
+                        new OA\Property(property: "training_centers", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "accs", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "unread_notifications_count", type: "integer", example: 3)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();

@@ -8,9 +8,36 @@ use App\Models\Course;
 use App\Models\CertificatePricing;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use OpenApi\Attributes as OA;
 
 class CourseController extends Controller
 {
+    #[OA\Get(
+        path: "/api/acc/courses",
+        summary: "List ACC courses",
+        description: "Get all courses for the authenticated ACC with optional filtering.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "sub_category_id", in: "query", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "level", in: "query", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"))
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Courses retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "courses", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -68,41 +95,55 @@ class CourseController extends Controller
         return response()->json(['courses' => $coursesWithDetails->values()]);
     }
 
-    /**
-     * Create a new course
-     * 
-     * Create a new course with optional pricing. If pricing is provided, it will be set for the course.
-     * 
-     * @group ACC Courses
-     * @authenticated
-     * 
-     * @bodyParam sub_category_id integer required Sub category ID. Example: 1
-     * @bodyParam name string required Course name. Example: Advanced Fire Safety
-     * @bodyParam name_ar string optional Course name in Arabic. Example: السلامة من الحرائق المتقدمة
-     * @bodyParam code string required Unique course code. Example: AFS-001
-     * @bodyParam description string optional Course description. Example: Advanced fire safety training course
-     * @bodyParam duration_hours integer required Course duration in hours. Example: 40
-     * @bodyParam max_capacity integer required Maximum capacity for classes of this course. Example: 20
-     * @bodyParam assessor_required boolean optional Whether an assessor is required for this course. Example: true
-     * @bodyParam level string required Course level. Example: advanced
-     * @bodyParam status string required Course status. Example: active
-     * @bodyParam pricing array optional Pricing information.
-     * @bodyParam pricing.base_price number required Base price. Example: 500.00
-     * @bodyParam pricing.currency string required Currency code (3 characters). Example: USD
-     * 
-     * @response 201 {
-     *   "message": "Course created successfully with pricing",
-     *   "course": {
-     *     "id": 1,
-     *     "name": "Advanced Fire Safety",
-     *     "code": "AFS-001",
-     *     "current_price": {
-     *       "base_price": 500.00,
-     *       "currency": "USD"
-     *     }
-     *   }
-     * }
-     */
+    #[OA\Post(
+        path: "/api/acc/courses",
+        summary: "Create a new course",
+        description: "Create a new course with optional pricing. If pricing is provided, it will be set for the course.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["sub_category_id", "name", "code", "duration_hours", "max_capacity", "level", "status"],
+                properties: [
+                    new OA\Property(property: "sub_category_id", type: "integer", example: 1),
+                    new OA\Property(property: "name", type: "string", example: "Advanced Fire Safety"),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true, example: "السلامة من الحرائق المتقدمة"),
+                    new OA\Property(property: "code", type: "string", example: "AFS-001"),
+                    new OA\Property(property: "description", type: "string", nullable: true, example: "Advanced fire safety training course"),
+                    new OA\Property(property: "duration_hours", type: "integer", example: 40),
+                    new OA\Property(property: "max_capacity", type: "integer", example: 20),
+                    new OA\Property(property: "assessor_required", type: "boolean", nullable: true, example: true),
+                    new OA\Property(property: "level", type: "string", enum: ["beginner", "intermediate", "advanced"], example: "advanced"),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive", "archived"], example: "active"),
+                    new OA\Property(
+                        property: "pricing",
+                        type: "object",
+                        nullable: true,
+                        properties: [
+                            new OA\Property(property: "base_price", type: "number", format: "float", example: 500.00),
+                            new OA\Property(property: "currency", type: "string", example: "USD")
+                        ]
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Course created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Course created successfully with pricing"),
+                        new OA\Property(property: "course", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function store(Request $request)
     {
         // Validate course fields

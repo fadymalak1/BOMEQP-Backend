@@ -8,9 +8,32 @@ use App\Models\TrainingCenterAccAuthorization;
 use App\Models\CertificateCode;
 use App\Models\TrainingClass;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class DashboardController extends Controller
 {
+    #[OA\Get(
+        path: "/api/training-center/dashboard",
+        summary: "Get Training Center dashboard data",
+        description: "Get dashboard statistics and data for the authenticated training center admin.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Dashboard data retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "authorizations", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "code_inventory", type: "object"),
+                        new OA\Property(property: "active_classes", type: "integer", example: 5)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();

@@ -6,13 +6,23 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use OpenApi\Attributes as OA;
 
 class FileController extends Controller
 {
-    /**
-     * Serve instructor CV file
-     * GET /api/storage/instructors/cv/{filename}
-     */
+    #[OA\Get(
+        path: "/api/storage/instructors/cv/{filename}",
+        summary: "Get instructor CV file",
+        description: "Serve an instructor CV file. This is a public endpoint.",
+        tags: ["Files"],
+        parameters: [
+            new OA\Parameter(name: "filename", in: "path", required: true, schema: new OA\Schema(type: "string"), example: "cv_1234567890.pdf")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "File retrieved successfully"),
+            new OA\Response(response: 404, description: "File not found")
+        ]
+    )]
     public function instructorCv(Request $request, string $filename)
     {
         $filePath = 'instructors/cv/' . $filename;
@@ -31,10 +41,21 @@ class FileController extends Controller
         ]);
     }
 
-    /**
-     * Serve any file from public storage
-     * GET /api/storage/{path}
-     */
+    #[OA\Get(
+        path: "/api/storage/{path}",
+        summary: "Get file from storage",
+        description: "Serve a file from public storage. Only authorized paths are allowed.",
+        tags: ["Files"],
+        parameters: [
+            new OA\Parameter(name: "path", in: "path", required: true, schema: new OA\Schema(type: "string"), example: "authorization/document.pdf")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "File retrieved successfully"),
+            new OA\Response(response: 400, description: "Invalid path"),
+            new OA\Response(response: 403, description: "Access denied"),
+            new OA\Response(response: 404, description: "File not found")
+        ]
+    )]
     public function serveFile(Request $request, string $path)
     {
         // Security: Only allow certain paths
