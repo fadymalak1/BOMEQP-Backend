@@ -49,6 +49,7 @@ class InstructorController extends Controller
             'cv' => 'nullable|file|mimes:pdf|max:10240', // PDF file, max 10MB
             'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
+            'is_assessor' => 'nullable|boolean',
         ]);
 
         $user = $request->user();
@@ -83,6 +84,7 @@ class InstructorController extends Controller
             'cv_url' => $cvUrl,
             'certificates_json' => $request->certificates_json ?? $request->certificates,
             'specializations' => $request->specializations,
+            'is_assessor' => $request->boolean('is_assessor', false),
             'status' => 'pending',
         ]);
 
@@ -141,12 +143,18 @@ class InstructorController extends Controller
             'cv' => 'nullable|file|mimes:pdf|max:10240', // PDF file, max 10MB
             'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
+            'is_assessor' => 'nullable|boolean',
         ]);
 
         $updateData = $request->only([
             'first_name', 'last_name', 'email', 'phone', 'id_number',
-            'specializations'
+            'specializations', 'is_assessor'
         ]);
+        
+        // Handle boolean conversion for is_assessor
+        if ($request->has('is_assessor')) {
+            $updateData['is_assessor'] = $request->boolean('is_assessor');
+        }
         
         // Handle CV file upload
         if ($request->hasFile('cv')) {

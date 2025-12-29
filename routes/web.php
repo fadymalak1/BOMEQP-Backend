@@ -6,6 +6,11 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+// API Documentation Route - Redirect /api/doc to /docs
+Route::get('/api/doc', function () {
+    return redirect('/docs');
+});
+
 // Serve Scribe assets with correct path for subdirectory deployment
 Route::get('/vendor/scribe/{path}', function ($path) {
     $assetPath = public_path("vendor/scribe/{$path}");

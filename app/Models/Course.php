@@ -20,9 +20,17 @@ class Course extends Model
         'description',
         'duration_hours',
         'max_capacity',
+        'assessor_required',
         'level',
         'status',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'assessor_required' => 'boolean',
+        ];
+    }
 
     public function subCategory(): BelongsTo
     {

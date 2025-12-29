@@ -22,6 +22,7 @@ class Instructor extends Model
         'certificates_json',
         'specializations',
         'status',
+        'is_assessor',
     ];
 
     protected function casts(): array
@@ -29,6 +30,7 @@ class Instructor extends Model
         return [
             'certificates_json' => 'array',
             'specializations' => 'array',
+            'is_assessor' => 'boolean',
         ];
     }
 

@@ -83,6 +83,7 @@ class CourseController extends Controller
      * @bodyParam description string optional Course description. Example: Advanced fire safety training course
      * @bodyParam duration_hours integer required Course duration in hours. Example: 40
      * @bodyParam max_capacity integer required Maximum capacity for classes of this course. Example: 20
+     * @bodyParam assessor_required boolean optional Whether an assessor is required for this course. Example: true
      * @bodyParam level string required Course level. Example: advanced
      * @bodyParam status string required Course status. Example: active
      * @bodyParam pricing array optional Pricing information.
@@ -113,6 +114,7 @@ class CourseController extends Controller
             'description' => 'nullable|string',
             'duration_hours' => 'required|integer|min:1',
             'max_capacity' => 'required|integer|min:1',
+            'assessor_required' => 'nullable|boolean',
             'level' => 'required|in:beginner,intermediate,advanced',
             'status' => 'required|in:active,inactive,archived',
             // Pricing fields (optional)
@@ -138,6 +140,7 @@ class CourseController extends Controller
             'description' => $request->description,
             'duration_hours' => $request->duration_hours,
             'max_capacity' => $request->max_capacity,
+            'assessor_required' => $request->boolean('assessor_required', false),
             'level' => $request->level,
             'status' => $request->status,
         ]);
@@ -221,6 +224,7 @@ class CourseController extends Controller
      * @bodyParam description string optional Course description. Example: Advanced fire safety training course
      * @bodyParam duration_hours integer optional Course duration in hours. Example: 40
      * @bodyParam max_capacity integer optional Maximum capacity for classes of this course. Example: 25
+     * @bodyParam assessor_required boolean optional Whether an assessor is required for this course. Example: true
      * @bodyParam level string optional Course level. Example: advanced
      * @bodyParam status string optional Course status. Example: active
      * @bodyParam pricing array optional Pricing information.
@@ -262,6 +266,7 @@ class CourseController extends Controller
             'description' => 'nullable|string',
             'duration_hours' => 'sometimes|integer|min:1',
             'max_capacity' => 'sometimes|integer|min:1',
+            'assessor_required' => 'nullable|boolean',
             'level' => 'sometimes|in:beginner,intermediate,advanced',
             'status' => 'sometimes|in:active,inactive,archived',
             // Pricing fields (optional)
@@ -271,10 +276,17 @@ class CourseController extends Controller
         ]);
 
         // Update course fields
-        $course->update($request->only([
+        $updateData = $request->only([
             'sub_category_id', 'name', 'name_ar', 'code', 'description',
             'duration_hours', 'max_capacity', 'level', 'status'
-        ]));
+        ]);
+        
+        // Handle boolean conversion for assessor_required
+        if ($request->has('assessor_required')) {
+            $updateData['assessor_required'] = $request->boolean('assessor_required');
+        }
+        
+        $course->update($updateData);
 
         // Handle pricing update if provided (pricing is always effective - no date restrictions)
         if ($request->has('pricing') && $request->pricing) {

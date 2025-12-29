@@ -81,10 +81,11 @@ class InstructorController extends Controller
             'cv_url' => 'nullable|string|max:255',
             'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
+            'is_assessor' => 'nullable|boolean',
             'status' => 'sometimes|in:pending,active,suspended,inactive',
         ]);
 
-        $instructor->update($request->only([
+        $updateData = $request->only([
             'first_name',
             'last_name',
             'email',
@@ -94,7 +95,14 @@ class InstructorController extends Controller
             'certificates_json',
             'specializations',
             'status',
-        ]));
+        ]);
+        
+        // Handle boolean conversion for is_assessor
+        if ($request->has('is_assessor')) {
+            $updateData['is_assessor'] = $request->boolean('is_assessor');
+        }
+        
+        $instructor->update($updateData);
 
         return response()->json([
             'message' => 'Instructor updated successfully',
