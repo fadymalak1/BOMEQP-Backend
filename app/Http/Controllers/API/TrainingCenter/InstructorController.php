@@ -8,11 +8,15 @@ use App\Models\InstructorAccAuthorization;
 use App\Models\TrainingCenterWallet;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Mail\InstructorCredentialsMail;
 use App\Services\NotificationService;
 use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class InstructorController extends Controller
 {
@@ -40,7 +44,7 @@ class InstructorController extends Controller
         $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
-            'email' => 'required|email|unique:instructors,email',
+            'email' => 'required|email|unique:instructors,email|unique:users,email',
             'phone' => 'required|string',
             'id_number' => 'required|string|unique:instructors,id_number',
             'cv' => 'nullable|file|mimes:pdf|max:10240', // PDF file, max 10MB
@@ -65,6 +69,11 @@ class InstructorController extends Controller
             $cvUrl = url('/api/storage/instructors/cv/' . $fileName);
         }
 
+        // Generate a random password for the instructor
+        $password = Str::random(12);
+        $instructorName = $request->first_name . ' ' . $request->last_name;
+
+        // Create instructor record
         $instructor = Instructor::create([
             'training_center_id' => $trainingCenter->id,
             'first_name' => $request->first_name,
@@ -78,7 +87,33 @@ class InstructorController extends Controller
             'status' => 'pending',
         ]);
 
-        return response()->json(['instructor' => $instructor], 201);
+        // Create user account for the instructor
+        $user = User::create([
+            'name' => $instructorName,
+            'email' => $request->email,
+            'password' => Hash::make($password),
+            'role' => 'instructor',
+            'status' => 'active', // Instructors are active immediately
+        ]);
+
+        // Send email with credentials
+        try {
+            Mail::to($request->email)->send(new InstructorCredentialsMail(
+                $request->email,
+                $password,
+                $instructorName,
+                $trainingCenter->name
+            ));
+        } catch (\Exception $e) {
+            // Log the error but don't fail the request
+            \Log::error('Failed to send instructor credentials email: ' . $e->getMessage());
+            // You can optionally return a warning in the response
+        }
+
+        return response()->json([
+            'message' => 'Instructor created successfully. Credentials have been sent to the instructor\'s email.',
+            'instructor' => $instructor,
+        ], 201);
     }
 
     public function show($id)
