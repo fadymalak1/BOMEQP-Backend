@@ -237,24 +237,27 @@ class ProfileController extends Controller
             'old_cv_url' => $instructor->cv_url
         ]);
         
-        // Update all fields including cv_url - use direct assignment to ensure cv_url is saved
-        if (!empty($updateData)) {
-            foreach ($updateData as $key => $value) {
-                if ($key === 'cv_url' || in_array($key, $instructor->getFillable())) {
-                    $instructor->$key = $value;
-                }
-            }
+        // Use direct DB update to ensure cv_url is saved correctly
+        if (isset($updateData['cv_url'])) {
+            // Update cv_url directly in database first
+            DB::table('instructors')
+                ->where('id', $instructor->id)
+                ->update(['cv_url' => $updateData['cv_url']]);
+            \Log::info('CV URL updated directly in DB', [
+                'instructor_id' => $instructor->id,
+                'new_cv_url' => $updateData['cv_url']
+            ]);
         }
         
-        // Save the model
-        $saved = $instructor->save();
-        
-        if (!$saved) {
-            \Log::error('Failed to save instructor profile', ['instructor_id' => $instructor->id]);
-            return response()->json([
-                'message' => 'Failed to update profile',
-                'error' => 'Database update failed'
-            ], 500);
+        // Update other fields using Eloquent
+        if (!empty($updateData)) {
+            // Remove cv_url from updateData since we already updated it directly
+            $otherUpdateData = $updateData;
+            unset($otherUpdateData['cv_url']);
+            
+            if (!empty($otherUpdateData)) {
+                $instructor->update($otherUpdateData);
+            }
         }
         
         // Refresh to ensure we have the latest data
@@ -269,19 +272,18 @@ class ProfileController extends Controller
             'instructor_id' => $instructor->id,
             'cv_url_in_model' => $instructor->cv_url,
             'cv_url_from_db' => $actualCvUrl,
-            'was_saved' => $saved,
-            'update_data_cv_url' => $updateData['cv_url'] ?? 'NOT IN UPDATE DATA'
+            'expected_cv_url' => $updateData['cv_url'] ?? 'NOT SET'
         ]);
         
-        // If cv_url was supposed to be updated but wasn't, try direct DB update
+        // Final verification - if still not updated, try one more time
         if (isset($updateData['cv_url']) && $actualCvUrl !== $updateData['cv_url']) {
-            \Log::warning('CV URL mismatch, attempting direct DB update', [
+            \Log::warning('CV URL still not updated, forcing update', [
                 'expected' => $updateData['cv_url'],
                 'actual' => $actualCvUrl
             ]);
-            \DB::table('instructors')
+            DB::table('instructors')
                 ->where('id', $instructor->id)
-                ->update(['cv_url' => $updateData['cv_url']]);
+                ->update(['cv_url' => $updateData['cv_url'], 'updated_at' => now()]);
             $instructor->refresh();
         }
 
