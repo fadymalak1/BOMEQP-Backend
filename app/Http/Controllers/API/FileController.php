@@ -11,7 +11,7 @@ use OpenApi\Attributes as OA;
 class FileController extends Controller
 {
     #[OA\Get(
-        path: "/api/storage/instructors/cv/{filename}",
+        path: "/storage/instructors/cv/{filename}",
         summary: "Get instructor CV file",
         description: "Serve an instructor CV file. This is a public endpoint.",
         tags: ["Files"],
@@ -42,7 +42,7 @@ class FileController extends Controller
     }
 
     #[OA\Get(
-        path: "/api/storage/{path}",
+        path: "/storage/{path}",
         summary: "Get file from storage",
         description: "Serve a file from public storage. Only authorized paths are allowed.",
         tags: ["Files"],

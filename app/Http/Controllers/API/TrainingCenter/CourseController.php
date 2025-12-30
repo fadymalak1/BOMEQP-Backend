@@ -6,12 +6,40 @@ use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\TrainingCenterAccAuthorization;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class CourseController extends Controller
 {
-    /**
-     * Get all courses from ACCs that have approved this training center
-     */
+    #[OA\Get(
+        path: "/training-center/courses",
+        summary: "List available courses",
+        description: "Get all courses from ACCs that have approved this training center. Only shows active courses.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "acc_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "sub_category_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "level", in: "query", schema: new OA\Schema(type: "string", enum: ["beginner", "intermediate", "advanced"]), example: "beginner"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "fire safety"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Courses retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "courses", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "pagination", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "ACC not authorized"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -98,9 +126,30 @@ class CourseController extends Controller
         ]);
     }
 
-    /**
-     * Get a specific course details
-     */
+    #[OA\Get(
+        path: "/training-center/courses/{id}",
+        summary: "Get course details",
+        description: "Get detailed information about a specific course from an authorized ACC.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Course retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "course", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Course not available - ACC authorization required"),
+            new OA\Response(response: 404, description: "Course not found")
+        ]
+    )]
     public function show($id)
     {
         $user = request()->user();

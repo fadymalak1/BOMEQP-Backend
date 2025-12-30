@@ -7,61 +7,42 @@ use App\Models\ACC;
 use App\Models\TrainingClass;
 use App\Models\TrainingCenterAccAuthorization;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class ClassController extends Controller
 {
-    /**
-     * Get all classes from training centers that have authorization from this ACC
-     * 
-     * Only shows classes for courses that belong to the ACC and from training centers
-     * that have approved authorization from the ACC.
-     * 
-     * @group ACC Classes
-     * @authenticated
-     * 
-     * @queryParam status string Filter by class status (scheduled, in_progress, completed, cancelled). Example: in_progress
-     * @queryParam training_center_id integer Filter by training center ID. Example: 1
-     * @queryParam course_id integer Filter by course ID. Example: 1
-     * @queryParam date_from date Filter classes starting from date (YYYY-MM-DD). Example: 2024-01-01
-     * @queryParam date_to date Filter classes starting until date (YYYY-MM-DD). Example: 2024-12-31
-     * @queryParam per_page integer Items per page. Example: 15
-     * @queryParam page integer Page number. Example: 1
-     * 
-     * @response 200 {
-     *   "data": [
-     *     {
-     *       "id": 1,
-     *       "training_center_id": 1,
-     *       "course_id": 1,
-     *       "instructor_id": 1,
-     *       "start_date": "2024-02-01",
-     *       "end_date": "2024-02-05",
-     *       "status": "scheduled",
-     *       "enrolled_count": 15,
-     *       "location": "physical",
-     *       "location_details": "Training Room A",
-     *       "course": {
-     *         "id": 1,
-     *         "name": "Fire Safety",
-     *         "code": "FS-001"
-     *       },
-     *       "training_center": {
-     *         "id": 1,
-     *         "name": "ABC Training Center",
-     *         "email": "info@abc.com"
-     *       },
-     *       "instructor": {
-     *         "id": 1,
-     *         "first_name": "John",
-     *         "last_name": "Doe"
-     *       }
-     *     }
-     *   ],
-     *   "current_page": 1,
-     *   "per_page": 15,
-     *   "total": 50
-     * }
-     */
+    #[OA\Get(
+        path: "/acc/classes",
+        summary: "List ACC classes",
+        description: "Get all classes from training centers that have authorization from this ACC. Only shows classes for courses that belong to the ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"]), example: "in_progress"),
+            new OA\Parameter(name: "training_center_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "date_from", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-01-01"),
+            new OA\Parameter(name: "date_to", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-12-31"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Classes retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer", example: 1),
+                        new OA\Property(property: "per_page", type: "integer", example: 15),
+                        new OA\Property(property: "total", type: "integer", example: 50)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -115,49 +96,25 @@ class ClassController extends Controller
         return response()->json($classes);
     }
 
-    /**
-     * Get a specific class by ID
-     * 
-     * @group ACC Classes
-     * @authenticated
-     * 
-     * @urlParam id integer required The ID of the class. Example: 1
-     * 
-     * @response 200 {
-     *   "id": 1,
-     *   "training_center_id": 1,
-     *   "course_id": 1,
-     *   "instructor_id": 1,
-     *   "start_date": "2024-02-01",
-     *   "end_date": "2024-02-05",
-     *   "status": "scheduled",
-     *   "enrolled_count": 15,
-     *   "location": "physical",
-     *   "location_details": "Training Room A",
-     *   "schedule_json": {
-     *     "monday": "09:00-17:00",
-     *     "tuesday": "09:00-17:00"
-     *   },
-     *   "course": {
-     *     "id": 1,
-     *     "name": "Fire Safety",
-     *     "code": "FS-001",
-     *     "description": "Fire safety training course"
-     *   },
-     *   "training_center": {
-     *     "id": 1,
-     *     "name": "ABC Training Center",
-     *     "email": "info@abc.com",
-     *     "phone": "+1234567890"
-     *   },
-     *   "instructor": {
-     *     "id": 1,
-     *     "first_name": "John",
-     *     "last_name": "Doe",
-     *     "email": "john@example.com"
-     *   }
-     * }
-     */
+    #[OA\Get(
+        path: "/acc/classes/{id}",
+        summary: "Get class details",
+        description: "Get detailed information about a specific class. Only shows classes from authorized training centers.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Class retrieved successfully",
+                content: new OA\JsonContent(type: "object")
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found or not authorized")
+        ]
+    )]
     public function show(Request $request, $id)
     {
         $user = $request->user();

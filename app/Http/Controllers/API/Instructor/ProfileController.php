@@ -8,43 +8,30 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use OpenApi\Attributes as OA;
 
 class ProfileController extends Controller
 {
-    /**
-     * Get instructor profile
-     * 
-     * Get the authenticated instructor's profile information including personal details and training center.
-     * 
-     * @group Instructor Profile
-     * @authenticated
-     * 
-     * @response 200 {
-     *   "profile": {
-     *     "id": 1,
-     *     "first_name": "John",
-     *     "last_name": "Doe",
-     *     "email": "john@example.com",
-     *     "phone": "+1234567890",
-     *     "id_number": "ID123456",
-     *     "cv_url": "/api/storage/instructors/cv/cv.pdf",
-     *     "certificates": [...],
-     *     "specializations": ["Fire Safety", "First Aid"],
-     *     "status": "active",
-     *     "training_center": {
-     *       "id": 1,
-     *       "name": "ABC Training Center"
-     *     },
-     *     "user": {
-     *       "id": 5,
-     *       "name": "John Doe",
-     *       "email": "john@example.com",
-     *       "role": "instructor",
-     *       "status": "active"
-     *     }
-     *   }
-     * }
-     */
+    #[OA\Get(
+        path: "/instructor/profile",
+        summary: "Get instructor profile",
+        description: "Get the authenticated instructor's profile information including personal details and training center.",
+        tags: ["Instructor"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Profile retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "profile", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found")
+        ]
+    )]
     public function show(Request $request)
     {
         $user = $request->user();
@@ -67,6 +54,8 @@ class ProfileController extends Controller
                 'email' => $instructor->email,
                 'phone' => $instructor->phone,
                 'id_number' => $instructor->id_number,
+                'country' => $instructor->country,
+                'city' => $instructor->city,
                 'cv_url' => $instructor->cv_url,
                 'certificates' => $instructor->certificates_json ?? [],
                 'specializations' => $instructor->specializations ?? [],
@@ -83,26 +72,46 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * Update instructor profile
-     * 
-     * Update the authenticated instructor's profile information.
-     * 
-     * @group Instructor Profile
-     * @authenticated
-     * 
-     * @bodyParam first_name string optional Instructor's first name. Example: John
-     * @bodyParam last_name string optional Instructor's last name. Example: Doe
-     * @bodyParam phone string optional Phone number. Example: +1234567890
-     * @bodyParam cv file optional CV file (PDF, max 10MB)
-     * @bodyParam certificates_json array optional Certificates array (JSON format)
-     * @bodyParam specializations array optional Specializations array
-     * 
-     * @response 200 {
-     *   "message": "Profile updated successfully",
-     *   "profile": {...}
-     * }
-     */
+    #[OA\Put(
+        path: "/instructor/profile",
+        summary: "Update instructor profile",
+        description: "Update the authenticated instructor's profile information.",
+        tags: ["Instructor"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: "first_name", type: "string", nullable: true, example: "John"),
+                        new OA\Property(property: "last_name", type: "string", nullable: true, example: "Doe"),
+                        new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890"),
+                        new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
+                        new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo"),
+                        new OA\Property(property: "cv", type: "string", format: "binary", nullable: true, description: "CV file (PDF, max 10MB)"),
+                        new OA\Property(property: "certificates_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
+                        new OA\Property(property: "specializations", type: "array", nullable: true, items: new OA\Items(type: "string"))
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Profile updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Profile updated successfully"),
+                        new OA\Property(property: "profile", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request)
     {
         $user = $request->user();
@@ -116,13 +125,15 @@ class ProfileController extends Controller
             'first_name' => 'sometimes|string|max:255',
             'last_name' => 'sometimes|string|max:255',
             'phone' => 'sometimes|string',
+            'country' => 'sometimes|string|max:255',
+            'city' => 'sometimes|string|max:255',
             'cv' => 'nullable|file|mimes:pdf|max:10240',
             'certificates_json' => 'nullable|array',
             'specializations' => 'nullable|array',
         ]);
 
         $updateData = $request->only([
-            'first_name', 'last_name', 'phone', 'specializations'
+            'first_name', 'last_name', 'phone', 'country', 'city', 'specializations'
         ]);
 
         // Handle CV file upload
@@ -162,9 +173,29 @@ class ProfileController extends Controller
             }
         }
 
+        $instructor->refresh();
+        
         return response()->json([
             'message' => 'Profile updated successfully',
-            'profile' => $instructor->fresh()->load('trainingCenter:id,name,email,phone,country,city')
+            'profile' => [
+                'id' => $instructor->id,
+                'first_name' => $instructor->first_name,
+                'last_name' => $instructor->last_name,
+                'email' => $instructor->email,
+                'phone' => $instructor->phone,
+                'id_number' => $instructor->id_number,
+                'country' => $instructor->country,
+                'city' => $instructor->city,
+                'cv_url' => $instructor->cv_url,
+                'certificates_json' => $instructor->certificates_json,
+                'specializations' => $instructor->specializations ?? [],
+                'status' => $instructor->status,
+                'is_assessor' => $instructor->is_assessor,
+                'training_center_id' => $instructor->training_center_id,
+                'training_center' => $instructor->trainingCenter,
+                'created_at' => $instructor->created_at,
+                'updated_at' => $instructor->updated_at,
+            ]
         ]);
     }
 }

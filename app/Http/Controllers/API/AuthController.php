@@ -19,7 +19,7 @@ use OpenApi\Attributes as OA;
 class AuthController extends Controller
 {
     #[OA\Post(
-        path: "/api/auth/register",
+        path: "/auth/register",
         summary: "Register a new user",
         description: "Register a new user (Training Center or ACC Admin). Training centers are active immediately, ACCs require approval.",
         tags: ["Authentication"],
@@ -122,7 +122,7 @@ class AuthController extends Controller
     }
 
     #[OA\Post(
-        path: "/api/auth/login",
+        path: "/auth/login",
         summary: "User login",
         description: "Authenticate user with email and password. Returns authentication token.",
         tags: ["Authentication"],
@@ -182,7 +182,7 @@ class AuthController extends Controller
     }
 
     #[OA\Post(
-        path: "/api/auth/logout",
+        path: "/auth/logout",
         summary: "User logout",
         description: "Logout the authenticated user and invalidate the current token.",
         tags: ["Authentication"],
@@ -208,7 +208,7 @@ class AuthController extends Controller
     }
 
     #[OA\Get(
-        path: "/api/auth/profile",
+        path: "/auth/profile",
         summary: "Get user profile",
         description: "Get the authenticated user's profile information.",
         tags: ["Authentication"],
@@ -232,7 +232,7 @@ class AuthController extends Controller
     }
 
     #[OA\Put(
-        path: "/api/auth/profile",
+        path: "/auth/profile",
         summary: "Update user profile",
         description: "Update the authenticated user's profile information.",
         tags: ["Authentication"],
@@ -274,7 +274,7 @@ class AuthController extends Controller
     }
 
     #[OA\Put(
-        path: "/api/auth/change-password",
+        path: "/auth/change-password",
         summary: "Change password",
         description: "Change the authenticated user's password.",
         tags: ["Authentication"],
@@ -321,7 +321,7 @@ class AuthController extends Controller
     }
 
     #[OA\Post(
-        path: "/api/auth/forgot-password",
+        path: "/auth/forgot-password",
         summary: "Forgot password",
         description: "Request a password reset link to be sent to the user's email.",
         tags: ["Authentication"],
@@ -393,7 +393,7 @@ class AuthController extends Controller
     }
 
     #[OA\Post(
-        path: "/api/auth/reset-password",
+        path: "/auth/reset-password",
         summary: "Reset password",
         description: "Reset user password using the token from the password reset email.",
         tags: ["Authentication"],
@@ -481,7 +481,7 @@ class AuthController extends Controller
     }
 
     #[OA\Get(
-        path: "/api/auth/verify-email/{token}",
+        path: "/auth/verify-email/{token}",
         summary: "Verify email",
         description: "Verify user email address using the verification token.",
         tags: ["Authentication"],

@@ -7,12 +7,33 @@ use App\Models\ACC;
 use App\Models\Category;
 use App\Models\SubCategory;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class CategoryController extends Controller
 {
-    /**
-     * Get categories assigned to ACC or created by ACC
-     */
+    #[OA\Get(
+        path: "/acc/categories",
+        summary: "List ACC categories",
+        description: "Get categories assigned to ACC or created by ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Categories retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "categories", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -49,9 +70,29 @@ class CategoryController extends Controller
         return response()->json(['categories' => $categories]);
     }
 
-    /**
-     * Get a specific category (only if assigned to ACC or created by ACC)
-     */
+    #[OA\Get(
+        path: "/acc/categories/{id}",
+        summary: "Get category details",
+        description: "Get a specific category. Only accessible if assigned to ACC or created by ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Category retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Category not found or not accessible")
+        ]
+    )]
     public function show(Request $request, $id)
     {
         $user = $request->user();
@@ -82,9 +123,41 @@ class CategoryController extends Controller
         return response()->json(['category' => $category]);
     }
 
-    /**
-     * Create a new category
-     */
+    #[OA\Post(
+        path: "/acc/categories",
+        summary: "Create category",
+        description: "Create a new category.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["name", "status"],
+                properties: [
+                    new OA\Property(property: "name", type: "string", example: "Fire Safety"),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true, example: "السلامة من الحرائق"),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "icon_url", type: "string", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Category created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Category created successfully"),
+                        new OA\Property(property: "category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function store(Request $request)
     {
         $request->validate([
@@ -110,6 +183,43 @@ class CategoryController extends Controller
     /**
      * Update a category (only if created by this ACC)
      */
+    #[OA\Put(
+        path: "/acc/categories/{id}",
+        summary: "Update category",
+        description: "Update a category. Only accessible if assigned to ACC or created by ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "name", type: "string", nullable: true),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "icon_url", type: "string", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], nullable: true)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Category updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Category updated successfully"),
+                        new OA\Property(property: "category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Category not found or not accessible"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $category = Category::findOrFail($id);
@@ -140,6 +250,30 @@ class CategoryController extends Controller
     /**
      * Delete a category (only if created by this ACC)
      */
+    #[OA\Delete(
+        path: "/acc/categories/{id}",
+        summary: "Delete category",
+        description: "Delete a category. Only accessible if created by ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Category deleted successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Category deleted successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Cannot delete category - not created by ACC"),
+            new OA\Response(response: 404, description: "Category not found")
+        ]
+    )]
     public function destroy(Request $request, $id)
     {
         $category = Category::findOrFail($id);

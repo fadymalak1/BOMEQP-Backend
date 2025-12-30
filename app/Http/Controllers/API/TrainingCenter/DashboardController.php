@@ -13,7 +13,7 @@ use OpenApi\Attributes as OA;
 class DashboardController extends Controller
 {
     #[OA\Get(
-        path: "/api/training-center/dashboard",
+        path: "/training-center/dashboard",
         summary: "Get Training Center dashboard data",
         description: "Get dashboard statistics and data for the authenticated training center admin.",
         tags: ["Training Center"],

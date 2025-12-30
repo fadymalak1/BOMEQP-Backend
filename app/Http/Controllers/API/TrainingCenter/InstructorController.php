@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use OpenApi\Attributes as OA;
 
 class InstructorController extends Controller
 {
@@ -25,6 +26,27 @@ class InstructorController extends Controller
     {
         $this->stripeService = $stripeService;
     }
+
+    #[OA\Get(
+        path: "/training-center/instructors",
+        summary: "List instructors",
+        description: "Get all instructors for the authenticated training center.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Instructors retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "instructors", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -38,6 +60,48 @@ class InstructorController extends Controller
         return response()->json(['instructors' => $instructors]);
     }
 
+    #[OA\Post(
+        path: "/training-center/instructors",
+        summary: "Create instructor",
+        description: "Create a new instructor. An email with login credentials will be sent to the instructor.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["first_name", "last_name", "email", "phone", "id_number"],
+                    properties: [
+                        new OA\Property(property: "first_name", type: "string", example: "John"),
+                        new OA\Property(property: "last_name", type: "string", example: "Doe"),
+                        new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
+                        new OA\Property(property: "phone", type: "string", example: "+1234567890"),
+                        new OA\Property(property: "id_number", type: "string", example: "ID123456"),
+                        new OA\Property(property: "cv", type: "string", format: "binary", description: "CV file (PDF, max 10MB)"),
+                        new OA\Property(property: "certificates_json", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "specializations", type: "array", items: new OA\Items(type: "string")),
+                        new OA\Property(property: "is_assessor", type: "boolean", example: false)
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Instructor created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Instructor created successfully"),
+                        new OA\Property(property: "instructor", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function store(Request $request)
     {
         $request->validate([
@@ -117,12 +181,77 @@ class InstructorController extends Controller
         ], 201);
     }
 
+    #[OA\Get(
+        path: "/training-center/instructors/{id}",
+        summary: "Get instructor details",
+        description: "Get detailed information about a specific instructor.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Instructor retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "instructor", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found")
+        ]
+    )]
     public function show($id)
     {
         $instructor = Instructor::with('trainingCenter')->findOrFail($id);
         return response()->json(['instructor' => $instructor]);
     }
 
+    #[OA\Put(
+        path: "/training-center/instructors/{id}",
+        summary: "Update instructor",
+        description: "Update instructor information.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: "first_name", type: "string", nullable: true),
+                        new OA\Property(property: "last_name", type: "string", nullable: true),
+                        new OA\Property(property: "phone", type: "string", nullable: true),
+                        new OA\Property(property: "cv", type: "string", format: "binary", nullable: true),
+                        new OA\Property(property: "certificates_json", type: "array", nullable: true),
+                        new OA\Property(property: "specializations", type: "array", nullable: true),
+                        new OA\Property(property: "is_assessor", type: "boolean", nullable: true)
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Instructor updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Instructor updated successfully"),
+                        new OA\Property(property: "instructor", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $user = $request->user();

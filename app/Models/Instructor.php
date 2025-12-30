@@ -18,6 +18,8 @@ class Instructor extends Model
         'email',
         'phone',
         'id_number',
+        'country',
+        'city',
         'cv_url',
         'certificates_json',
         'specializations',

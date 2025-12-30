@@ -10,7 +10,7 @@ use OpenApi\Attributes as OA;
 class CertificateController extends Controller
 {
     #[OA\Get(
-        path: "/api/certificates/verify/{code}",
+        path: "/certificates/verify/{code}",
         summary: "Verify certificate",
         description: "Verify a certificate using its verification code. This is a public endpoint.",
         tags: ["Certificates"],

@@ -13,7 +13,7 @@ use OpenApi\Attributes as OA;
 class CourseController extends Controller
 {
     #[OA\Get(
-        path: "/api/acc/courses",
+        path: "/acc/courses",
         summary: "List ACC courses",
         description: "Get all courses for the authenticated ACC with optional filtering.",
         tags: ["ACC"],
@@ -96,7 +96,7 @@ class CourseController extends Controller
     }
 
     #[OA\Post(
-        path: "/api/acc/courses",
+        path: "/acc/courses",
         summary: "Create a new course",
         description: "Create a new course with optional pricing. If pricing is provided, it will be set for the course.",
         tags: ["ACC"],
@@ -241,52 +241,86 @@ class CourseController extends Controller
         ], 201);
     }
 
+    #[OA\Get(
+        path: "/acc/courses/{id}",
+        summary: "Get course details",
+        description: "Get detailed information about a specific course including pricing.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Course retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "course", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Course not found")
+        ]
+    )]
     public function show($id)
     {
         $course = Course::with(['subCategory.category', 'certificatePricing'])->findOrFail($id);
         return response()->json(['course' => $course]);
     }
 
-    /**
-     * Update a course
-     * 
-     * Update course details and optionally update or set pricing. If pricing is provided and there's an active pricing,
-     * it will be updated. If no active pricing exists, a new one will be created.
-     * 
-     * @group ACC Courses
-     * @authenticated
-     * 
-     * @urlParam id integer required Course ID. Example: 1
-     * 
-     * @bodyParam sub_category_id integer optional Sub category ID. Example: 1
-     * @bodyParam name string optional Course name. Example: Advanced Fire Safety
-     * @bodyParam name_ar string optional Course name in Arabic. Example: السلامة من الحرائق المتقدمة
-     * @bodyParam code string optional Unique course code. Example: AFS-001
-     * @bodyParam description string optional Course description. Example: Advanced fire safety training course
-     * @bodyParam duration_hours integer optional Course duration in hours. Example: 40
-     * @bodyParam max_capacity integer optional Maximum capacity for classes of this course. Example: 25
-     * @bodyParam assessor_required boolean optional Whether an assessor is required for this course. Example: true
-     * @bodyParam level string optional Course level. Example: advanced
-     * @bodyParam status string optional Course status. Example: active
-     * @bodyParam pricing array optional Pricing information.
-     * @bodyParam pricing.base_price number required Base price. Example: 550.00
-     * @bodyParam pricing.currency string required Currency code (3 characters). Example: USD
-     * 
-     * @response 200 {
-     *   "message": "Course updated successfully and pricing updated",
-     *   "course": {
-     *     "id": 1,
-     *     "name": "Advanced Fire Safety",
-     *     "code": "AFS-001",
-     *     "current_price": {
-     *       "base_price": 550.00,
-     *       "currency": "USD"
-     *       "effective_from": "2024-01-01",
-     *       "effective_to": null
-     *     }
-     *   }
-     * }
-     */
+    #[OA\Put(
+        path: "/acc/courses/{id}",
+        summary: "Update course",
+        description: "Update course details and optionally update or set pricing. If pricing is provided, it will be updated or created.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "sub_category_id", type: "integer", nullable: true),
+                    new OA\Property(property: "name", type: "string", nullable: true, example: "Advanced Fire Safety"),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true),
+                    new OA\Property(property: "code", type: "string", nullable: true, example: "AFS-001"),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "duration_hours", type: "integer", nullable: true, example: 40),
+                    new OA\Property(property: "max_capacity", type: "integer", nullable: true, example: 25),
+                    new OA\Property(property: "assessor_required", type: "boolean", nullable: true, example: true),
+                    new OA\Property(property: "level", type: "string", enum: ["beginner", "intermediate", "advanced"], nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive", "archived"], nullable: true),
+                    new OA\Property(
+                        property: "pricing",
+                        type: "object",
+                        nullable: true,
+                        properties: [
+                            new OA\Property(property: "base_price", type: "number", format: "float", example: 550.00),
+                            new OA\Property(property: "currency", type: "string", example: "USD")
+                        ]
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Course updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Course updated successfully and pricing updated"),
+                        new OA\Property(property: "course", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Course not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $user = $request->user();
@@ -387,6 +421,29 @@ class CourseController extends Controller
         ]);
     }
 
+    #[OA\Delete(
+        path: "/acc/courses/{id}",
+        summary: "Delete course",
+        description: "Delete a course. This action cannot be undone.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Course deleted successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Course deleted successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Course not found")
+        ]
+    )]
     public function destroy($id)
     {
         $user = request()->user();
@@ -402,40 +459,41 @@ class CourseController extends Controller
         return response()->json(['message' => 'Course deleted successfully']);
     }
 
-    /**
-     * Set course pricing
-     * 
-     * Set base price and commission percentages for a course. If there's an active pricing,
-     * it will be ended (effective_to set) before creating the new one.
-     * 
-     * @group ACC Courses
-     * @authenticated
-     * 
-     * @urlParam id integer required Course ID. Example: 1
-     * 
-     * @bodyParam base_price number required Base price for the course. Example: 500.00
-     * @bodyParam currency string required Currency code (3 characters). Example: USD
-     * @bodyParam group_commission_percentage number required Group commission percentage (0-100). Example: 10.0
-     * @bodyParam training_center_commission_percentage number required Training center commission percentage (0-100). Example: 5.0
-     * @bodyParam instructor_commission_percentage number required Instructor commission percentage (0-100). Example: 3.0
-     * @bodyParam effective_from date required Date from which this pricing is effective. Example: 2024-01-01
-     * @bodyParam effective_to date optional Date until which this pricing is effective. Example: 2024-12-31
-     * 
-     * @response 200 {
-     *   "message": "Pricing set successfully",
-     *   "pricing": {
-     *     "id": 1,
-     *     "course_id": 5,
-     *     "base_price": 500.00,
-     *     "currency": "USD",
-     *     "group_commission_percentage": 10.0,
-     *     "training_center_commission_percentage": 5.0,
-     *     "instructor_commission_percentage": 3.0,
-     *     "effective_from": "2024-01-01",
-     *     "effective_to": null
-     *   }
-     * }
-     */
+    #[OA\Post(
+        path: "/acc/courses/{id}/pricing",
+        summary: "Set course pricing",
+        description: "Set base price and commission percentages for a course. Pricing is always effective.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["base_price", "currency"],
+                properties: [
+                    new OA\Property(property: "base_price", type: "number", format: "float", example: 500.00),
+                    new OA\Property(property: "currency", type: "string", example: "USD")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Pricing set successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Pricing set successfully"),
+                        new OA\Property(property: "pricing", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Course not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function setPricing(Request $request, $id)
     {
         $request->validate([
@@ -514,42 +572,40 @@ class CourseController extends Controller
         ]);
     }
 
-    /**
-     * Update course pricing
-     * 
-     * Update the active pricing for a course. Updates the most recent active pricing record.
-     * 
-     * @group ACC Courses
-     * @authenticated
-     * 
-     * @urlParam id integer required Course ID. Example: 1
-     * 
-     * @bodyParam base_price number optional Base price for the course. Example: 550.00
-     * @bodyParam currency string optional Currency code (3 characters). Example: USD
-     * @bodyParam group_commission_percentage number optional Group commission percentage (0-100). Example: 10.0
-     * @bodyParam training_center_commission_percentage number optional Training center commission percentage (0-100). Example: 5.0
-     * @bodyParam instructor_commission_percentage number optional Instructor commission percentage (0-100). Example: 3.0
-     * @bodyParam effective_from date optional Date from which this pricing is effective. Example: 2024-01-01
-     * @bodyParam effective_to date optional Date until which this pricing is effective. Example: 2024-12-31
-     * 
-     * @response 200 {
-     *   "message": "Pricing updated successfully",
-     *   "pricing": {
-     *     "id": 1,
-     *     "course_id": 5,
-     *     "base_price": 550.00,
-     *     "currency": "USD",
-     *     "group_commission_percentage": 10.0,
-     *     "training_center_commission_percentage": 5.0,
-     *     "instructor_commission_percentage": 3.0,
-     *     "effective_from": "2024-01-01",
-     *     "effective_to": null
-     *   }
-     * }
-     * @response 404 {
-     *   "message": "Pricing not found"
-     * }
-     */
+    #[OA\Put(
+        path: "/acc/courses/{id}/pricing",
+        summary: "Update course pricing",
+        description: "Update the active pricing for a course. Pricing is always effective.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "base_price", type: "number", format: "float", nullable: true, example: 550.00),
+                    new OA\Property(property: "currency", type: "string", nullable: true, example: "USD")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Pricing updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Pricing updated successfully"),
+                        new OA\Property(property: "pricing", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Pricing not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function updatePricing(Request $request, $id)
     {
         $request->validate([

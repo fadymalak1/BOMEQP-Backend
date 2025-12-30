@@ -11,7 +11,7 @@ use OpenApi\Attributes as OA;
 class NotificationController extends Controller
 {
     #[OA\Get(
-        path: "/api/notifications",
+        path: "/notifications",
         summary: "Get all notifications",
         description: "Get all notifications for the authenticated user with optional filtering and pagination.",
         tags: ["Notifications"],
@@ -72,7 +72,7 @@ class NotificationController extends Controller
     }
 
     #[OA\Get(
-        path: "/api/notifications/unread-count",
+        path: "/notifications/unread-count",
         summary: "Get unread notifications count",
         description: "Get the count of unread notifications for the authenticated user.",
         tags: ["Notifications"],
@@ -103,7 +103,7 @@ class NotificationController extends Controller
     }
 
     #[OA\Get(
-        path: "/api/notifications/{id}",
+        path: "/notifications/{id}",
         summary: "Get notification",
         description: "Get a specific notification by ID.",
         tags: ["Notifications"],
@@ -138,7 +138,7 @@ class NotificationController extends Controller
     }
 
     #[OA\Put(
-        path: "/api/notifications/{id}/read",
+        path: "/notifications/{id}/read",
         summary: "Mark notification as read",
         description: "Mark a specific notification as read.",
         tags: ["Notifications"],
@@ -177,7 +177,7 @@ class NotificationController extends Controller
     }
 
     #[OA\Put(
-        path: "/api/notifications/{id}/unread",
+        path: "/notifications/{id}/unread",
         summary: "Mark notification as unread",
         description: "Mark a specific notification as unread.",
         tags: ["Notifications"],
@@ -216,7 +216,7 @@ class NotificationController extends Controller
     }
 
     #[OA\Post(
-        path: "/api/notifications/mark-all-read",
+        path: "/notifications/mark-all-read",
         summary: "Mark all notifications as read",
         description: "Mark all notifications for the authenticated user as read.",
         tags: ["Notifications"],
@@ -252,7 +252,7 @@ class NotificationController extends Controller
     }
 
     #[OA\Delete(
-        path: "/api/notifications/{id}",
+        path: "/notifications/{id}",
         summary: "Delete notification",
         description: "Delete a specific notification.",
         tags: ["Notifications"],
@@ -289,7 +289,7 @@ class NotificationController extends Controller
     }
 
     #[OA\Delete(
-        path: "/api/notifications/read",
+        path: "/notifications/read",
         summary: "Delete all read notifications",
         description: "Delete all read notifications for the authenticated user.",
         tags: ["Notifications"],

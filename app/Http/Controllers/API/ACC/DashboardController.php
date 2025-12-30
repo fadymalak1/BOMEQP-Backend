@@ -12,7 +12,7 @@ use OpenApi\Attributes as OA;
 class DashboardController extends Controller
 {
     #[OA\Get(
-        path: "/api/acc/dashboard",
+        path: "/acc/dashboard",
         summary: "Get ACC dashboard data",
         description: "Get dashboard statistics and data for the authenticated ACC admin.",
         tags: ["ACC"],

@@ -7,9 +7,30 @@ use App\Models\TrainingClass;
 use App\Models\ClassCompletion;
 use App\Models\User;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class ClassController extends Controller
 {
+    #[OA\Get(
+        path: "/training-center/classes",
+        summary: "List training classes",
+        description: "Get all training classes for the authenticated training center.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Classes retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "classes", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -26,6 +47,44 @@ class ClassController extends Controller
         return response()->json(['classes' => $classes]);
     }
 
+    #[OA\Post(
+        path: "/training-center/classes",
+        summary: "Create training class",
+        description: "Create a new training class. The course must belong to an ACC that has authorized the training center.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["course_id", "class_id", "instructor_id", "start_date", "end_date", "location"],
+                properties: [
+                    new OA\Property(property: "course_id", type: "integer", example: 1),
+                    new OA\Property(property: "class_id", type: "integer", example: 1),
+                    new OA\Property(property: "instructor_id", type: "integer", example: 1),
+                    new OA\Property(property: "start_date", type: "string", format: "date", example: "2024-01-15"),
+                    new OA\Property(property: "end_date", type: "string", format: "date", example: "2024-01-20"),
+                    new OA\Property(property: "schedule_json", type: "array", nullable: true),
+                    new OA\Property(property: "location", type: "string", enum: ["physical", "online"], example: "physical"),
+                    new OA\Property(property: "location_details", type: "string", nullable: true, example: "Room 101")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Class created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "class", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Course not available - ACC authorization required"),
+            new OA\Response(response: 404, description: "Training center not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function store(Request $request)
     {
         $request->validate([
@@ -73,6 +132,29 @@ class ClassController extends Controller
         return response()->json(['class' => $class->load(['course', 'instructor'])], 201);
     }
 
+    #[OA\Get(
+        path: "/training-center/classes/{id}",
+        summary: "Get class details",
+        description: "Get detailed information about a specific training class.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Class retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "class", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found")
+        ]
+    )]
     public function show($id)
     {
         $class = TrainingClass::with(['course', 'instructor', 'trainingCenter', 'classModel', 'completion'])
@@ -80,6 +162,46 @@ class ClassController extends Controller
         return response()->json(['class' => $class]);
     }
 
+    #[OA\Put(
+        path: "/training-center/classes/{id}",
+        summary: "Update training class",
+        description: "Update training class information.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "course_id", type: "integer", nullable: true),
+                    new OA\Property(property: "instructor_id", type: "integer", nullable: true),
+                    new OA\Property(property: "start_date", type: "string", format: "date", nullable: true),
+                    new OA\Property(property: "end_date", type: "string", format: "date", nullable: true),
+                    new OA\Property(property: "schedule_json", type: "array", nullable: true),
+                    new OA\Property(property: "location", type: "string", enum: ["physical", "online"], nullable: true),
+                    new OA\Property(property: "location_details", type: "string", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], nullable: true)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Class updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Class updated successfully"),
+                        new OA\Property(property: "class", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $user = $request->user();
@@ -117,6 +239,29 @@ class ClassController extends Controller
         return response()->json(['message' => 'Class updated successfully', 'class' => $class]);
     }
 
+    #[OA\Delete(
+        path: "/training-center/classes/{id}",
+        summary: "Delete training class",
+        description: "Delete a training class. This action cannot be undone.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Class deleted successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Class deleted successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found")
+        ]
+    )]
     public function destroy($id)
     {
         $user = request()->user();
@@ -132,6 +277,29 @@ class ClassController extends Controller
         return response()->json(['message' => 'Class deleted successfully']);
     }
 
+    #[OA\Post(
+        path: "/training-center/classes/{id}/complete",
+        summary: "Mark class as completed",
+        description: "Mark a training class as completed and create a completion record.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Class marked as completed",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Class marked as completed")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found")
+        ]
+    )]
     public function complete(Request $request, $id)
     {
         $user = $request->user();
