@@ -314,25 +314,50 @@ class InstructorController extends Controller
 
                 // Upload new CV file
                 $cvFile = $request->file('cv');
-                $fileName = time() . '_' . $trainingCenter->id . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $cvFile->getClientOriginalName());
-                // Store file in public disk
-                $cvPath = $cvFile->storeAs('instructors/cv', $fileName, 'public');
+                $originalName = $cvFile->getClientOriginalName();
+                $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+                $fileName = time() . '_' . $trainingCenter->id . '_' . $sanitizedName;
                 
-                if ($cvPath) {
+                // Ensure the directory exists
+                $directory = 'instructors/cv';
+                if (!Storage::disk('public')->exists($directory)) {
+                    Storage::disk('public')->makeDirectory($directory);
+                }
+                
+                // Store file in public disk
+                $cvPath = $cvFile->storeAs($directory, $fileName, 'public');
+                
+                // Verify file was actually stored
+                $fullPath = Storage::disk('public')->path($cvPath);
+                $fileExists = file_exists($fullPath);
+                $fileSize = $fileExists ? filesize($fullPath) : 0;
+                
+                if ($cvPath && $fileExists && $fileSize > 0) {
                     // Generate URL using the API route (route is /storage/instructors/cv/{filename} in api.php, so it becomes /api/storage/instructors/cv/{filename})
                     $newCvUrl = url('/api/storage/instructors/cv/' . $fileName);
                     $updateData['cv_url'] = $newCvUrl;
                     \Log::info('CV file uploaded successfully', [
                         'instructor_id' => $instructor->id,
+                        'original_name' => $originalName,
                         'file_name' => $fileName,
                         'cv_url' => $newCvUrl,
-                        'storage_path' => $cvPath
+                        'storage_path' => $cvPath,
+                        'full_path' => $fullPath,
+                        'file_size' => $fileSize,
+                        'file_exists' => $fileExists
                     ]);
                 } else {
-                    \Log::error('Failed to store CV file', ['instructor_id' => $instructor->id, 'file_name' => $fileName]);
+                    \Log::error('Failed to store CV file', [
+                        'instructor_id' => $instructor->id,
+                        'file_name' => $fileName,
+                        'cv_path' => $cvPath,
+                        'file_exists' => $fileExists,
+                        'file_size' => $fileSize,
+                        'full_path' => $fullPath ?? 'N/A'
+                    ]);
                     return response()->json([
                         'message' => 'Failed to store CV file',
-                        'error' => 'File storage failed'
+                        'error' => 'File storage failed or file not found after upload'
                     ], 500);
                 }
             } catch (\Exception $e) {
@@ -357,27 +382,57 @@ class InstructorController extends Controller
             'instructor_id' => $instructor->id,
             'update_data' => $updateData,
             'has_cv_url' => isset($updateData['cv_url']),
-            'cv_url_value' => $updateData['cv_url'] ?? 'NOT SET'
+            'cv_url_value' => $updateData['cv_url'] ?? 'NOT SET',
+            'old_cv_url' => $instructor->cv_url
         ]);
         
-        // Ensure cv_url is saved if it was set
-        if (isset($updateData['cv_url'])) {
-            $instructor->cv_url = $updateData['cv_url'];
+        // Update all fields including cv_url - use direct assignment to ensure cv_url is saved
+        if (!empty($updateData)) {
+            foreach ($updateData as $key => $value) {
+                if ($key === 'cv_url' || in_array($key, $instructor->getFillable())) {
+                    $instructor->$key = $value;
+                }
+            }
         }
         
-        // Update all fields
-        $instructor->fill($updateData);
-        $instructor->save();
+        // Save the model
+        $saved = $instructor->save();
+        
+        if (!$saved) {
+            \Log::error('Failed to save instructor', ['instructor_id' => $instructor->id]);
+            return response()->json([
+                'message' => 'Failed to update instructor',
+                'error' => 'Database update failed'
+            ], 500);
+        }
         
         // Refresh the model to get the latest data
         $instructor->refresh();
         
+        // Verify cv_url was actually saved
+        $instructorFromDb = Instructor::find($instructor->id);
+        $actualCvUrl = $instructorFromDb ? $instructorFromDb->cv_url : null;
+        
         // Log after update to verify
         \Log::info('Instructor updated', [
             'instructor_id' => $instructor->id,
-            'cv_url' => $instructor->cv_url,
-            'cv_url_from_db' => $instructor->getOriginal('cv_url') ?? 'NULL'
+            'cv_url_in_model' => $instructor->cv_url,
+            'cv_url_from_db' => $actualCvUrl,
+            'was_saved' => $saved,
+            'update_data_cv_url' => $updateData['cv_url'] ?? 'NOT IN UPDATE DATA'
         ]);
+        
+        // If cv_url was supposed to be updated but wasn't, try direct DB update
+        if (isset($updateData['cv_url']) && $actualCvUrl !== $updateData['cv_url']) {
+            \Log::warning('CV URL mismatch, attempting direct DB update', [
+                'expected' => $updateData['cv_url'],
+                'actual' => $actualCvUrl
+            ]);
+            \DB::table('instructors')
+                ->where('id', $instructor->id)
+                ->update(['cv_url' => $updateData['cv_url']]);
+            $instructor->refresh();
+        }
 
         return response()->json(['message' => 'Instructor updated successfully', 'instructor' => $instructor->load('trainingCenter')]);
     }
