@@ -24,9 +24,9 @@ class DashboardController extends Controller
                 description: "Dashboard data retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "accreditation_bodies", type: "integer", example: 12, description: "Total number of ACCs"),
-                        new OA\Property(property: "training_centers", type: "integer", example: 17, description: "Total number of training centers"),
-                        new OA\Property(property: "instructors", type: "integer", example: 15, description: "Total number of instructors"),
+                        new OA\Property(property: "accreditation_bodies", type: "integer", example: 12, description: "Total number of ACCs (all statuses)"),
+                        new OA\Property(property: "training_centers", type: "integer", example: 17, description: "Total number of training centers (all statuses)"),
+                        new OA\Property(property: "instructors", type: "integer", example: 15, description: "Total number of instructors (all statuses)"),
                         new OA\Property(property: "revenue", type: "object", properties: [
                             new OA\Property(property: "monthly", type: "number", format: "float", example: 0.00, description: "Revenue for current month"),
                             new OA\Property(property: "total", type: "number", format: "float", example: 91254.00, description: "Total revenue")
@@ -39,10 +39,10 @@ class DashboardController extends Controller
     )]
     public function index(Request $request)
     {
-        // Get total counts
-        $accreditationBodies = ACC::where('status', 'approved')->count();
-        $trainingCenters = TrainingCenter::where('status', 'active')->count();
-        $instructors = Instructor::where('status', 'active')->count();
+        // Get total counts (all records regardless of status)
+        $accreditationBodies = ACC::count();
+        $trainingCenters = TrainingCenter::count();
+        $instructors = Instructor::count();
 
         // Calculate revenue
         $monthlyRevenue = Transaction::where('status', 'completed')
