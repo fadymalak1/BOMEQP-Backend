@@ -305,20 +305,6 @@ class NotificationService
     }
 
     /**
-     * Notify ACC Admin about new authorization request from Training Center
-     */
-    public function notifyTrainingCenterAuthorizationRequested(int $userId, int $authorizationId, string $trainingCenterName): void
-    {
-        $this->send(
-            $userId,
-            'training_center_authorization_requested',
-            'New Authorization Request',
-            "{$trainingCenterName} has requested authorization with your ACC.",
-            ['authorization_id' => $authorizationId, 'training_center_name' => $trainingCenterName]
-        );
-    }
-
-    /**
      * Notify Training Center about authorization approval
      */
     public function notifyTrainingCenterAuthorized(int $userId, int $authorizationId, string $accName): void
