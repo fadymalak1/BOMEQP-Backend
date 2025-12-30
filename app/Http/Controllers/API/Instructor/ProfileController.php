@@ -205,10 +205,18 @@ class ProfileController extends Controller
         \Log::info('Updating instructor profile', [
             'instructor_id' => $instructor->id,
             'update_data' => $updateData,
-            'has_cv_url' => isset($updateData['cv_url'])
+            'has_cv_url' => isset($updateData['cv_url']),
+            'cv_url_value' => $updateData['cv_url'] ?? 'NOT SET'
         ]);
         
-        $instructor->update($updateData);
+        // Ensure cv_url is saved if it was set
+        if (isset($updateData['cv_url'])) {
+            $instructor->cv_url = $updateData['cv_url'];
+        }
+        
+        // Update all fields
+        $instructor->fill($updateData);
+        $instructor->save();
         
         // Refresh to ensure we have the latest data
         $instructor->refresh();
@@ -216,7 +224,8 @@ class ProfileController extends Controller
         // Log after update to verify
         \Log::info('Instructor profile updated', [
             'instructor_id' => $instructor->id,
-            'cv_url' => $instructor->cv_url
+            'cv_url' => $instructor->cv_url,
+            'cv_url_from_db' => $instructor->getOriginal('cv_url') ?? 'NULL'
         ]);
 
         // Update user account name if first_name or last_name changed

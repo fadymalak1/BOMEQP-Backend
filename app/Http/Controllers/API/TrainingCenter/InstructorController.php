@@ -356,10 +356,18 @@ class InstructorController extends Controller
         \Log::info('Updating instructor', [
             'instructor_id' => $instructor->id,
             'update_data' => $updateData,
-            'has_cv_url' => isset($updateData['cv_url'])
+            'has_cv_url' => isset($updateData['cv_url']),
+            'cv_url_value' => $updateData['cv_url'] ?? 'NOT SET'
         ]);
         
-        $instructor->update($updateData);
+        // Ensure cv_url is saved if it was set
+        if (isset($updateData['cv_url'])) {
+            $instructor->cv_url = $updateData['cv_url'];
+        }
+        
+        // Update all fields
+        $instructor->fill($updateData);
+        $instructor->save();
         
         // Refresh the model to get the latest data
         $instructor->refresh();
@@ -367,7 +375,8 @@ class InstructorController extends Controller
         // Log after update to verify
         \Log::info('Instructor updated', [
             'instructor_id' => $instructor->id,
-            'cv_url' => $instructor->cv_url
+            'cv_url' => $instructor->cv_url,
+            'cv_url_from_db' => $instructor->getOriginal('cv_url') ?? 'NULL'
         ]);
 
         return response()->json(['message' => 'Instructor updated successfully', 'instructor' => $instructor->load('trainingCenter')]);
