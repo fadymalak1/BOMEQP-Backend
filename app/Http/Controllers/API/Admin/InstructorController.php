@@ -186,7 +186,30 @@ class InstructorController extends Controller
             $updateData['is_assessor'] = $request->boolean('is_assessor');
         }
         
+        $oldStatus = $instructor->status;
         $instructor->update($updateData);
+        $newStatus = $instructor->status;
+
+        // Notify instructor if status changed
+        if ($oldStatus !== $newStatus && in_array($newStatus, ['suspended', 'active', 'inactive'])) {
+            $instructorUser = \App\Models\User::where('email', $instructor->email)->first();
+            if ($instructorUser) {
+                $instructor->load('trainingCenter');
+                $trainingCenterName = $instructor->trainingCenter?->name ?? 'Unknown';
+                $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+                
+                $notificationService = new NotificationService();
+                $notificationService->notifyInstructorStatusChanged(
+                    $instructorUser->id,
+                    $instructor->id,
+                    $instructorName,
+                    $trainingCenterName,
+                    $oldStatus,
+                    $newStatus,
+                    $request->status_change_reason ?? null
+                );
+            }
+        }
 
         return response()->json([
             'message' => 'Instructor updated successfully',
@@ -251,8 +274,8 @@ class InstructorController extends Controller
             'group_commission_set_at' => now(),
         ]);
 
-        // Send notification to Training Center to complete payment
-        $authorization->load(['instructor', 'trainingCenter']);
+        // Send notification to Training Center to complete payment with enhanced details
+        $authorization->load(['instructor', 'trainingCenter', 'acc', 'subCategory']);
         $trainingCenter = $authorization->trainingCenter;
         if ($trainingCenter) {
             $trainingCenterUser = \App\Models\User::where('email', $trainingCenter->email)->first();
@@ -260,11 +283,20 @@ class InstructorController extends Controller
                 $notificationService = new NotificationService();
                 $instructor = $authorization->instructor;
                 $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
-                $notificationService->notifyInstructorAuthorized(
+                
+                // Get course count from documents_json
+                $documentsData = $authorization->documents_json ?? [];
+                $courseIds = $documentsData['requested_course_ids'] ?? [];
+                $coursesCount = count($courseIds);
+                
+                $notificationService->notifyInstructorCommissionSet(
                     $trainingCenterUser->id,
                     $authorization->id,
                     $instructorName,
-                    $authorization->acc->name
+                    $authorization->acc->name,
+                    $authorization->authorization_price ?? 0,
+                    $request->commission_percentage,
+                    $coursesCount
                 );
             }
         }

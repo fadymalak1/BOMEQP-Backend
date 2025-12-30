@@ -172,7 +172,8 @@ class TrainingCenterController extends Controller
             'status' => 'sometimes|in:pending,active,suspended,inactive',
         ]);
 
-        $trainingCenter->update($request->only([
+        $oldStatus = $trainingCenter->status;
+        $updateData = $request->only([
             'name',
             'legal_name',
             'registration_number',
@@ -185,7 +186,26 @@ class TrainingCenterController extends Controller
             'logo_url',
             'referred_by_group',
             'status',
-        ]));
+        ]);
+
+        $trainingCenter->update($updateData);
+        $newStatus = $trainingCenter->status;
+
+        // Notify Training Center admin if status changed
+        if ($oldStatus !== $newStatus && in_array($newStatus, ['suspended', 'active', 'inactive'])) {
+            $trainingCenterUser = User::where('email', $trainingCenter->email)->where('role', 'training_center_admin')->first();
+            if ($trainingCenterUser) {
+                $notificationService = new NotificationService();
+                $notificationService->notifyTrainingCenterStatusChanged(
+                    $trainingCenterUser->id,
+                    $trainingCenter->id,
+                    $trainingCenter->name,
+                    $oldStatus,
+                    $newStatus,
+                    $request->status_change_reason ?? null
+                );
+            }
+        }
 
         return response()->json([
             'message' => 'Training center updated successfully',

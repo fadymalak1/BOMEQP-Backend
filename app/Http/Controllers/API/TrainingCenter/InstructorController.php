@@ -287,28 +287,45 @@ class InstructorController extends Controller
         
         // Handle CV file upload
         if ($request->hasFile('cv')) {
-            // Delete old CV file if exists
-            if ($instructor->cv_url) {
-                // Extract filename from URL (format: /api/storage/instructors/cv/{filename} or full URL)
-                $urlParts = parse_url($instructor->cv_url);
-                $path = ltrim($urlParts['path'] ?? '', '/');
-                // Extract filename from path like: api/storage/instructors/cv/filename.pdf
-                if (preg_match('#instructors/cv/(.+)$#', $path, $matches)) {
-                    $oldFileName = $matches[1];
-                    $oldFilePath = 'instructors/cv/' . $oldFileName;
-                    if (Storage::disk('public')->exists($oldFilePath)) {
-                        Storage::disk('public')->delete($oldFilePath);
+            try {
+                // Delete old CV file if exists
+                if ($instructor->cv_url) {
+                    // Extract filename from URL (format: /api/storage/instructors/cv/{filename} or full URL)
+                    $urlParts = parse_url($instructor->cv_url);
+                    $path = ltrim($urlParts['path'] ?? '', '/');
+                    // Extract filename from path like: api/storage/instructors/cv/filename.pdf
+                    if (preg_match('#instructors/cv/(.+)$#', $path, $matches)) {
+                        $oldFileName = $matches[1];
+                        $oldFilePath = 'instructors/cv/' . $oldFileName;
+                        if (Storage::disk('public')->exists($oldFilePath)) {
+                            Storage::disk('public')->delete($oldFilePath);
+                        }
                     }
                 }
-            }
 
-            // Upload new CV file
-            $cvFile = $request->file('cv');
-            $fileName = time() . '_' . $trainingCenter->id . '_' . $cvFile->getClientOriginalName();
-            // Store file in public disk
-            $cvPath = $cvFile->storeAs('instructors/cv', $fileName, 'public');
-            // Generate URL using the API route
-            $updateData['cv_url'] = url('/api/storage/instructors/cv/' . $fileName);
+                // Upload new CV file
+                $cvFile = $request->file('cv');
+                $fileName = time() . '_' . $trainingCenter->id . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $cvFile->getClientOriginalName());
+                // Store file in public disk
+                $cvPath = $cvFile->storeAs('instructors/cv', $fileName, 'public');
+                
+                if ($cvPath) {
+                    // Generate URL using the API route (route is /storage/instructors/cv/{filename} in api.php, so it becomes /api/storage/instructors/cv/{filename})
+                    $updateData['cv_url'] = url('/api/storage/instructors/cv/' . $fileName);
+                } else {
+                    \Log::error('Failed to store CV file', ['instructor_id' => $instructor->id, 'file_name' => $fileName]);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error uploading CV file', [
+                    'instructor_id' => $instructor->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json([
+                    'message' => 'Failed to upload CV file',
+                    'error' => config('app.debug') ? $e->getMessage() : 'File upload failed'
+                ], 500);
+            }
         }
         
         if ($request->has('certificates_json') || $request->has('certificates')) {
@@ -316,8 +333,11 @@ class InstructorController extends Controller
         }
         
         $instructor->update($updateData);
+        
+        // Refresh the model to get the latest data
+        $instructor->refresh();
 
-        return response()->json(['message' => 'Instructor updated successfully', 'instructor' => $instructor]);
+        return response()->json(['message' => 'Instructor updated successfully', 'instructor' => $instructor->load('trainingCenter')]);
     }
 
     #[OA\Get(
@@ -533,18 +553,30 @@ class InstructorController extends Controller
         $documentsData['requested_course_ids'] = $courseIds;
         $authorization->update(['documents_json' => $documentsData]);
 
-        // Send notification to ACC admin
+        // Send notification to ACC admin with enhanced details
         $acc = \App\Models\ACC::find($request->acc_id);
         if ($acc) {
             $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
             if ($accUser) {
                 $notificationService = new NotificationService();
                 $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+                
+                // Get sub-category name if applicable
+                $subCategoryName = null;
+                if ($request->sub_category_id) {
+                    $subCategory = \App\Models\SubCategory::find($request->sub_category_id);
+                    $subCategoryName = $subCategory?->name;
+                }
+                
                 $notificationService->notifyInstructorAuthorizationRequested(
                     $accUser->id,
                     $authorization->id,
                     $instructorName,
-                    $trainingCenter->name
+                    $trainingCenter->name,
+                    $request->sub_category_id,
+                    $courseIds,
+                    $subCategoryName,
+                    count($courseIds)
                 );
             }
         }

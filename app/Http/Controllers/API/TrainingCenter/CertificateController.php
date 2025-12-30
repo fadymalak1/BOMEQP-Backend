@@ -122,6 +122,55 @@ class CertificateController extends Controller
         // Update completion count
         $completion->increment('certificates_generated_count');
 
+        // Send notifications
+        $notificationService = new \App\Services\NotificationService();
+        $certificate->load(['course', 'instructor', 'trainingCenter']);
+        $course = $certificate->course;
+        $instructor = $certificate->instructor;
+        $acc = $course->acc ?? null;
+
+        // Notify ACC Admin
+        if ($acc) {
+            $accUser = \App\Models\User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+            if ($accUser) {
+                $notificationService->notifyCertificateGenerated(
+                    $accUser->id,
+                    $certificate->id,
+                    $certificate->certificate_number,
+                    $certificate->trainee_name,
+                    $course->name,
+                    $trainingCenter->name
+                );
+            }
+        }
+
+        // Notify Instructor
+        if ($instructor) {
+            $instructorUser = \App\Models\User::where('email', $instructor->email)->first();
+            if ($instructorUser) {
+                $notificationService->notifyInstructorCertificateGenerated(
+                    $instructorUser->id,
+                    $certificate->id,
+                    $certificate->certificate_number,
+                    $certificate->trainee_name,
+                    $course->name,
+                    $trainingCenter->name
+                );
+            }
+        }
+
+        // Notify Group Admin
+        if ($acc) {
+            $notificationService->notifyAdminCertificateGenerated(
+                $certificate->id,
+                $certificate->certificate_number,
+                $certificate->trainee_name,
+                $course->name,
+                $trainingCenter->name,
+                $acc->name
+            );
+        }
+
         // TODO: Generate PDF and store it
         // TODO: Send certificate to trainee
 

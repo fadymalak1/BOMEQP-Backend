@@ -589,7 +589,8 @@ class ACCController extends Controller
             'commission_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
-        $acc->update($request->only([
+        $oldStatus = $acc->status;
+        $updateData = $request->only([
             'name',
             'legal_name',
             'registration_number',
@@ -603,7 +604,26 @@ class ACCController extends Controller
             'registration_fee_paid',
             'registration_fee_amount',
             'commission_percentage',
-        ]));
+        ]);
+
+        $acc->update($updateData);
+        $newStatus = $acc->status;
+
+        // Notify ACC admin if status changed
+        if ($oldStatus !== $newStatus && in_array($newStatus, ['suspended', 'active', 'expired'])) {
+            $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+            if ($accUser) {
+                $notificationService = new NotificationService();
+                $notificationService->notifyAccStatusChanged(
+                    $accUser->id,
+                    $acc->id,
+                    $acc->name,
+                    $oldStatus,
+                    $newStatus,
+                    $request->status_change_reason ?? null
+                );
+            }
+        }
 
         return response()->json([
             'message' => 'ACC updated successfully',

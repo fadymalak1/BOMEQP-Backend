@@ -221,14 +221,16 @@ class ACCController extends Controller
                 'documents_json' => $documents,
             ]);
 
-            // Send notification to ACC admin
+            // Send notification to ACC admin with enhanced details
             $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
             if ($accUser) {
                 $notificationService = new NotificationService();
                 $notificationService->notifyTrainingCenterAuthorizationRequested(
                     $accUser->id,
                     $authorization->id,
-                    $trainingCenter->name
+                    $trainingCenter->name,
+                    $trainingCenter->country,
+                    $trainingCenter->city
                 );
             }
 

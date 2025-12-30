@@ -163,6 +163,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/instructors/requests', [App\Http\Controllers\API\ACC\InstructorController::class, 'requests']);
         Route::put('/instructors/requests/{id}/approve', [App\Http\Controllers\API\ACC\InstructorController::class, 'approve']);
         Route::put('/instructors/requests/{id}/reject', [App\Http\Controllers\API\ACC\InstructorController::class, 'reject']);
+        Route::put('/instructors/requests/{id}/return', [App\Http\Controllers\API\ACC\InstructorController::class, 'return']);
         Route::get('/instructors', [App\Http\Controllers\API\ACC\InstructorController::class, 'index']);
 
         // Courses

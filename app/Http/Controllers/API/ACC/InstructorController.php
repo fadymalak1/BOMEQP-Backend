@@ -77,7 +77,7 @@ class InstructorController extends Controller
         }
 
         // Send notification to Group Admin to set commission percentage
-        $authorization->load(['instructor', 'acc']);
+        $authorization->load(['instructor', 'acc', 'subCategory']);
         $instructor = $authorization->instructor;
         $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
         
@@ -88,6 +88,27 @@ class InstructorController extends Controller
             $acc->name,
             $request->authorization_price
         );
+        
+        // Enhanced notification data includes course count
+        $coursesCount = count($courseIds);
+        $subCategoryName = $authorization->subCategory?->name;
+        
+        // Also notify training center with enhanced details
+        $trainingCenter = $authorization->trainingCenter;
+        if ($trainingCenter) {
+            $trainingCenterUser = User::where('email', $trainingCenter->email)->first();
+            if ($trainingCenterUser) {
+                $notificationService->notifyInstructorAuthorized(
+                    $trainingCenterUser->id,
+                    $authorization->id,
+                    $instructorName,
+                    $acc->name,
+                    $request->authorization_price,
+                    null,
+                    $coursesCount
+                );
+            }
+        }
 
         return response()->json([
             'message' => 'Instructor approved successfully. Waiting for Group Admin to set commission percentage.',
@@ -138,6 +159,51 @@ class InstructorController extends Controller
         }
 
         return response()->json(['message' => 'Instructor rejected']);
+    }
+
+    public function return(Request $request, $id)
+    {
+        $request->validate([
+            'return_comment' => 'required|string',
+        ]);
+
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $authorization = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->findOrFail($id);
+
+        $authorization->update([
+            'status' => 'returned',
+            'return_comment' => $request->return_comment,
+            'reviewed_by' => $user->id,
+            'reviewed_at' => now(),
+        ]);
+
+        // Send notification to Training Center
+        $authorization->load(['instructor', 'trainingCenter', 'acc']);
+        $trainingCenter = $authorization->trainingCenter;
+        if ($trainingCenter) {
+            $trainingCenterUser = User::where('email', $trainingCenter->email)->first();
+            if ($trainingCenterUser) {
+                $notificationService = new NotificationService();
+                $instructor = $authorization->instructor;
+                $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+                $notificationService->notifyInstructorAuthorizationReturned(
+                    $trainingCenterUser->id,
+                    $authorization->id,
+                    $instructorName,
+                    $acc->name,
+                    $request->return_comment
+                );
+            }
+        }
+
+        return response()->json(['message' => 'Request returned successfully']);
     }
 
     public function index(Request $request)

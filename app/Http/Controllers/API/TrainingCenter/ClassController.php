@@ -321,6 +321,28 @@ class ClassController extends Controller
                 'certificates_generated_count' => 0,
                 'marked_by' => $user->id,
             ]);
+
+            // Send notification to instructor
+            $class->load(['instructor', 'course']);
+            $instructor = $class->instructor;
+            if ($instructor) {
+                $instructorUser = \App\Models\User::where('email', $instructor->email)->first();
+                if ($instructorUser) {
+                    $notificationService = new \App\Services\NotificationService();
+                    $classModel = $class->classModel;
+                    $className = $classModel ? $classModel->name : "Class #{$class->id}";
+                    $courseName = $class->course ? $class->course->name : 'Unknown Course';
+                    
+                    $notificationService->notifyInstructorClassCompleted(
+                        $instructorUser->id,
+                        $class->id,
+                        $className,
+                        $courseName,
+                        $trainingCenter->name,
+                        100
+                    );
+                }
+            }
         }
 
         return response()->json(['message' => 'Class marked as completed']);

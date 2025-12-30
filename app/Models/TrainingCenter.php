@@ -72,5 +72,10 @@ class TrainingCenter extends Model
     {
         return $this->hasMany(Trainee::class, 'training_center_id');
     }
+
+    public function wallet(): HasOne
+    {
+        return $this->hasOne(TrainingCenterWallet::class, 'training_center_id');
+    }
 }
 

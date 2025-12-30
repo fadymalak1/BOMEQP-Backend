@@ -186,30 +186,79 @@ class NotificationService
     }
 
     /**
-     * Notify ACC about new instructor authorization request
+     * Notify ACC about new instructor authorization request (Enhanced with course/sub-category details)
      */
-    public function notifyInstructorAuthorizationRequested(int $userId, int $authorizationId, string $instructorName, string $trainingCenterName): void
+    public function notifyInstructorAuthorizationRequested(int $userId, int $authorizationId, string $instructorName, string $trainingCenterName, ?int $subCategoryId = null, ?array $courseIds = null, ?string $subCategoryName = null, ?int $coursesCount = null): void
     {
+        $coursesInfo = '';
+        if ($subCategoryId && $subCategoryName) {
+            $coursesInfo = " for all courses in sub-category: {$subCategoryName}";
+        } elseif ($coursesCount) {
+            $coursesInfo = " for {$coursesCount} course(s)";
+        }
+
+        $message = "{$trainingCenterName} has requested authorization for instructor: {$instructorName}{$coursesInfo}.";
+        
+        $data = [
+            'authorization_id' => $authorizationId,
+            'instructor_name' => $instructorName,
+            'training_center_name' => $trainingCenterName,
+        ];
+        
+        if ($subCategoryId) {
+            $data['sub_category_id'] = $subCategoryId;
+            $data['sub_category_name'] = $subCategoryName;
+        }
+        
+        if ($courseIds) {
+            $data['course_ids'] = $courseIds;
+            $data['courses_count'] = count($courseIds);
+        }
+
         $this->send(
             $userId,
             'instructor_authorization_requested',
             'New Instructor Authorization Request',
-            "{$trainingCenterName} has requested authorization for instructor: {$instructorName}",
-            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'training_center_name' => $trainingCenterName]
+            $message,
+            $data
         );
     }
 
     /**
-     * Notify Training Center about instructor authorization approval
+     * Notify Training Center about instructor authorization approval (Enhanced with commission details)
      */
-    public function notifyInstructorAuthorized(int $userId, int $authorizationId, string $instructorName, string $accName): void
+    public function notifyInstructorAuthorized(int $userId, int $authorizationId, string $instructorName, string $accName, ?float $authorizationPrice = null, ?float $commissionPercentage = null, ?int $coursesCount = null): void
     {
+        $priceInfo = $authorizationPrice ? " Authorization price: $" . number_format($authorizationPrice, 2) . "." : "";
+        $commissionInfo = $commissionPercentage ? " Commission: {$commissionPercentage}%." : "";
+        $coursesInfo = $coursesCount ? " Courses authorized: {$coursesCount}." : "";
+        
+        $message = "Instructor '{$instructorName}' has been authorized by {$accName}.{$priceInfo}{$commissionInfo}{$coursesInfo} You can now proceed with payment.";
+        
+        $data = [
+            'authorization_id' => $authorizationId,
+            'instructor_name' => $instructorName,
+            'acc_name' => $accName,
+        ];
+        
+        if ($authorizationPrice) {
+            $data['authorization_price'] = $authorizationPrice;
+        }
+        
+        if ($commissionPercentage) {
+            $data['commission_percentage'] = $commissionPercentage;
+        }
+        
+        if ($coursesCount) {
+            $data['courses_count'] = $coursesCount;
+        }
+
         $this->send(
             $userId,
             'instructor_authorized',
             'Instructor Authorization Approved',
-            "Instructor '{$instructorName}' has been authorized by {$accName}. You can now proceed with payment.",
-            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'acc_name' => $accName]
+            $message,
+            $data
         );
     }
 
@@ -397,6 +446,255 @@ class NotificationService
             'Training Center Application Rejected',
             "Your Training Center application for '{$trainingCenterName}' has been rejected. Reason: {$reason}",
             ['training_center_id' => $trainingCenterId, 'reason' => $reason]
+        );
+    }
+
+    /**
+     * Notify Training Center about instructor authorization return
+     */
+    public function notifyInstructorAuthorizationReturned(int $userId, int $authorizationId, string $instructorName, string $accName, string $comment): void
+    {
+        $this->send(
+            $userId,
+            'instructor_authorization_returned',
+            'Instructor Authorization Request Returned',
+            "Your authorization request for instructor '{$instructorName}' with {$accName} has been returned for revision. Comment: {$comment}",
+            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'acc_name' => $accName, 'comment' => $comment]
+        );
+    }
+
+    /**
+     * Notify Training Center about commission set (ready for payment)
+     */
+    public function notifyInstructorCommissionSet(int $userId, int $authorizationId, string $instructorName, string $accName, float $authorizationPrice, float $commissionPercentage, int $coursesCount): void
+    {
+        $this->send(
+            $userId,
+            'instructor_commission_set',
+            'Commission Set - Ready for Payment',
+            "Commission has been set for instructor '{$instructorName}' authorization with {$accName}. Authorization price: $" . number_format($authorizationPrice, 2) . ", Commission: {$commissionPercentage}%, Courses: {$coursesCount}. You can now proceed with payment.",
+            [
+                'authorization_id' => $authorizationId,
+                'instructor_name' => $instructorName,
+                'acc_name' => $accName,
+                'authorization_price' => $authorizationPrice,
+                'commission_percentage' => $commissionPercentage,
+                'courses_count' => $coursesCount
+            ]
+        );
+    }
+
+    /**
+     * Notify ACC about certificate generation
+     */
+    public function notifyCertificateGenerated(int $userId, int $certificateId, string $certificateNumber, string $traineeName, string $courseName, string $trainingCenterName): void
+    {
+        $this->send(
+            $userId,
+            'certificate_generated',
+            'Certificate Generated',
+            "A new certificate has been generated by {$trainingCenterName}. Certificate Number: {$certificateNumber}, Trainee: {$traineeName}, Course: {$courseName}.",
+            [
+                'certificate_id' => $certificateId,
+                'certificate_number' => $certificateNumber,
+                'trainee_name' => $traineeName,
+                'course_name' => $courseName,
+                'training_center_name' => $trainingCenterName
+            ]
+        );
+    }
+
+    /**
+     * Notify Instructor about certificate generation
+     */
+    public function notifyInstructorCertificateGenerated(int $userId, int $certificateId, string $certificateNumber, string $traineeName, string $courseName, string $trainingCenterName): void
+    {
+        $this->send(
+            $userId,
+            'certificate_generated_instructor',
+            'Certificate Generated for Your Class',
+            "A certificate has been generated for trainee {$traineeName} in course {$courseName} by {$trainingCenterName}. Certificate Number: {$certificateNumber}.",
+            [
+                'certificate_id' => $certificateId,
+                'certificate_number' => $certificateNumber,
+                'trainee_name' => $traineeName,
+                'course_name' => $courseName,
+                'training_center_name' => $trainingCenterName
+            ]
+        );
+    }
+
+    /**
+     * Notify Instructor about class completion
+     */
+    public function notifyInstructorClassCompleted(int $userId, int $classId, string $className, string $courseName, string $trainingCenterName, int $completionRate = 100): void
+    {
+        $this->send(
+            $userId,
+            'class_completed',
+            'Class Completed',
+            "Class '{$className}' for course '{$courseName}' has been marked as completed by {$trainingCenterName}. Completion rate: {$completionRate}%.",
+            [
+                'class_id' => $classId,
+                'class_name' => $className,
+                'course_name' => $courseName,
+                'training_center_name' => $trainingCenterName,
+                'completion_rate' => $completionRate
+            ]
+        );
+    }
+
+    /**
+     * Notify Admin about certificate generation
+     */
+    public function notifyAdminCertificateGenerated(int $certificateId, string $certificateNumber, string $traineeName, string $courseName, string $trainingCenterName, string $accName): void
+    {
+        $this->sendToRole(
+            'group_admin',
+            'certificate_generated_admin',
+            'Certificate Generated',
+            "A new certificate has been generated. Certificate Number: {$certificateNumber}, Trainee: {$traineeName}, Course: {$courseName}, Training Center: {$trainingCenterName}, ACC: {$accName}.",
+            [
+                'certificate_id' => $certificateId,
+                'certificate_number' => $certificateNumber,
+                'trainee_name' => $traineeName,
+                'course_name' => $courseName,
+                'training_center_name' => $trainingCenterName,
+                'acc_name' => $accName
+            ]
+        );
+    }
+
+    /**
+     * Notify ACC Admin about new training center authorization request (Enhanced)
+     */
+    public function notifyTrainingCenterAuthorizationRequested(int $userId, int $authorizationId, string $trainingCenterName, ?string $country = null, ?string $city = null): void
+    {
+        $locationInfo = '';
+        if ($country || $city) {
+            $locationParts = array_filter([$city, $country]);
+            $locationInfo = ' (' . implode(', ', $locationParts) . ')';
+        }
+        
+        $message = "{$trainingCenterName}{$locationInfo} has requested authorization with your ACC.";
+        
+        $data = [
+            'authorization_id' => $authorizationId,
+            'training_center_name' => $trainingCenterName,
+        ];
+        
+        if ($country) {
+            $data['country'] = $country;
+        }
+        
+        if ($city) {
+            $data['city'] = $city;
+        }
+
+        $this->send(
+            $userId,
+            'training_center_authorization_requested',
+            'New Authorization Request',
+            $message,
+            $data
+        );
+    }
+
+    /**
+     * Notify ACC about status change
+     */
+    public function notifyAccStatusChanged(int $userId, int $accId, string $accName, string $oldStatus, string $newStatus, ?string $reason = null): void
+    {
+        $statusMessages = [
+            'suspended' => 'suspended',
+            'active' => 'reactivated',
+            'expired' => 'expired',
+            'rejected' => 'rejected',
+        ];
+        
+        $action = $statusMessages[$newStatus] ?? $newStatus;
+        $message = "Your ACC '{$accName}' has been {$action}.";
+        if ($reason) {
+            $message .= " Reason: {$reason}";
+        }
+        
+        $this->send(
+            $userId,
+            'acc_status_changed',
+            'ACC Status Changed',
+            $message,
+            [
+                'acc_id' => $accId,
+                'acc_name' => $accName,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'reason' => $reason
+            ]
+        );
+    }
+
+    /**
+     * Notify Training Center about status change
+     */
+    public function notifyTrainingCenterStatusChanged(int $userId, int $trainingCenterId, string $trainingCenterName, string $oldStatus, string $newStatus, ?string $reason = null): void
+    {
+        $statusMessages = [
+            'suspended' => 'suspended',
+            'active' => 'reactivated',
+            'inactive' => 'deactivated',
+        ];
+        
+        $action = $statusMessages[$newStatus] ?? $newStatus;
+        $message = "Your Training Center '{$trainingCenterName}' has been {$action}.";
+        if ($reason) {
+            $message .= " Reason: {$reason}";
+        }
+        
+        $this->send(
+            $userId,
+            'training_center_status_changed',
+            'Training Center Status Changed',
+            $message,
+            [
+                'training_center_id' => $trainingCenterId,
+                'training_center_name' => $trainingCenterName,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'reason' => $reason
+            ]
+        );
+    }
+
+    /**
+     * Notify Instructor about status change
+     */
+    public function notifyInstructorStatusChanged(int $userId, int $instructorId, string $instructorName, string $trainingCenterName, string $oldStatus, string $newStatus, ?string $reason = null): void
+    {
+        $statusMessages = [
+            'suspended' => 'suspended',
+            'active' => 'reactivated',
+            'inactive' => 'deactivated',
+        ];
+        
+        $action = $statusMessages[$newStatus] ?? $newStatus;
+        $message = "Your instructor account '{$instructorName}' at {$trainingCenterName} has been {$action}.";
+        if ($reason) {
+            $message .= " Reason: {$reason}";
+        }
+        
+        $this->send(
+            $userId,
+            'instructor_status_changed',
+            'Instructor Status Changed',
+            $message,
+            [
+                'instructor_id' => $instructorId,
+                'instructor_name' => $instructorName,
+                'training_center_name' => $trainingCenterName,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'reason' => $reason
+            ]
         );
     }
 }
