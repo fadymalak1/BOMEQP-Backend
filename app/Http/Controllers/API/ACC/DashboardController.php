@@ -24,8 +24,8 @@ class DashboardController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "pending_requests", type: "integer", example: 2, description: "Total pending requests (training centers + instructors)"),
-                        new OA\Property(property: "active_training_centers", type: "integer", example: 1, description: "Number of active training centers"),
-                        new OA\Property(property: "active_instructors", type: "integer", example: 9, description: "Number of active instructors"),
+                        new OA\Property(property: "active_training_centers", type: "integer", example: 1, description: "Total number of training center authorizations (all statuses)"),
+                        new OA\Property(property: "active_instructors", type: "integer", example: 9, description: "Total number of instructor authorizations (all statuses)"),
                         new OA\Property(property: "certificates_generated", type: "integer", example: 0, description: "Total certificates generated"),
                         new OA\Property(property: "revenue", type: "object", properties: [
                             new OA\Property(property: "monthly", type: "number", format: "float", example: 46700.00, description: "Revenue for current month"),
@@ -53,7 +53,6 @@ class DashboardController extends Controller
             ->count();
 
         $activeTrainingCenters = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
-            ->where('status', 'approved')
             ->count();
 
         $revenueThisMonth = Transaction::where('payee_type', 'acc')
@@ -68,7 +67,6 @@ class DashboardController extends Controller
             ->count();
 
         $activeInstructors = \App\Models\InstructorAccAuthorization::where('acc_id', $acc->id)
-            ->where('status', 'approved')
             ->count();
 
         $totalRevenue = Transaction::where('payee_type', 'acc')

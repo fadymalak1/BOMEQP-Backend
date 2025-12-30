@@ -24,10 +24,10 @@ class DashboardController extends Controller
                 description: "Dashboard data retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "authorized_accreditations", type: "integer", example: 3, description: "Number of authorized ACCs"),
-                        new OA\Property(property: "classes", type: "integer", example: 4, description: "Total number of classes"),
-                        new OA\Property(property: "instructors", type: "integer", example: 10, description: "Total number of instructors"),
-                        new OA\Property(property: "certificates", type: "integer", example: 0, description: "Total number of certificates"),
+                        new OA\Property(property: "authorized_accreditations", type: "integer", example: 3, description: "Total number of ACC authorizations (all statuses)"),
+                        new OA\Property(property: "classes", type: "integer", example: 4, description: "Total number of classes (all statuses)"),
+                        new OA\Property(property: "instructors", type: "integer", example: 10, description: "Total number of instructors (all statuses)"),
+                        new OA\Property(property: "certificates", type: "integer", example: 0, description: "Total number of certificates (all statuses)"),
                         new OA\Property(property: "training_center_state", type: "object", properties: [
                             new OA\Property(property: "status", type: "string", example: "active", description: "Training center status"),
                             new OA\Property(property: "registration_date", type: "string", format: "date", nullable: true, example: "2024-01-15", description: "Registration date"),
@@ -49,9 +49,8 @@ class DashboardController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        // Get authorized accreditations count
+        // Get authorized accreditations count (all statuses)
         $authorizedAccreditations = TrainingCenterAccAuthorization::where('training_center_id', $trainingCenter->id)
-            ->where('status', 'approved')
             ->count();
 
         // Get total classes

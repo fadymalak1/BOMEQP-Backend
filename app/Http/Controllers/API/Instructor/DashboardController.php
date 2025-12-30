@@ -24,7 +24,11 @@ class DashboardController extends Controller
                 description: "Dashboard data retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "profile", type: "object"),
+                        new OA\Property(property: "profile", type: "object", properties: [
+                            new OA\Property(property: "name", type: "string", nullable: true),
+                            new OA\Property(property: "email", type: "string", nullable: true),
+                            new OA\Property(property: "is_assessor", type: "boolean", example: false, description: "Whether the instructor is an assessor")
+                        ]),
                         new OA\Property(property: "statistics", type: "object"),
                         new OA\Property(property: "recent_classes", type: "array", items: new OA\Items(type: "object")),
                         new OA\Property(property: "earnings", type: "object"),
@@ -53,6 +57,7 @@ class DashboardController extends Controller
         $profile = [
             'name' => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
             'email' => $instructor->email ?? null,
+            'is_assessor' => $instructor->is_assessor ?? false,
         ];
 
         // If name is empty, set to null
