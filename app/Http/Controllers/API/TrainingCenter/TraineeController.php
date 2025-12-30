@@ -474,9 +474,29 @@ class TraineeController extends Controller
         ], 200);
     }
 
-    /**
-     * Delete trainee
-     */
+    #[OA\Delete(
+        path: "/training-center/trainees/{id}",
+        summary: "Delete trainee",
+        description: "Delete a trainee and associated files. This action cannot be undone.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Trainee deleted successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Trainee deleted successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Trainee not found")
+        ]
+    )]
     public function destroy($id)
     {
         $user = request()->user();

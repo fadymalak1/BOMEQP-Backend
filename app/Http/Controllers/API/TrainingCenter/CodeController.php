@@ -14,6 +14,7 @@ use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use OpenApi\Attributes as OA;
 
 class CodeController extends Controller
 {
@@ -24,9 +25,47 @@ class CodeController extends Controller
         $this->stripeService = $stripeService;
     }
 
-    /**
-     * Create payment intent for code purchase (Stripe)
-     */
+    #[OA\Post(
+        path: "/training-center/codes/create-payment-intent",
+        summary: "Create payment intent for code purchase",
+        description: "Create a Stripe payment intent for purchasing certificate codes. Calculates pricing including discounts.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["acc_id", "course_id", "quantity"],
+                properties: [
+                    new OA\Property(property: "acc_id", type: "integer", example: 1),
+                    new OA\Property(property: "course_id", type: "integer", example: 1),
+                    new OA\Property(property: "quantity", type: "integer", example: 10, minimum: 1),
+                    new OA\Property(property: "discount_code", type: "string", nullable: true, example: "DISCOUNT10")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Payment intent created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "success", type: "boolean", example: true),
+                        new OA\Property(property: "client_secret", type: "string", example: "pi_xxx_secret_xxx"),
+                        new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx"),
+                        new OA\Property(property: "amount", type: "number", example: 1000.00),
+                        new OA\Property(property: "currency", type: "string", example: "USD"),
+                        new OA\Property(property: "total_price", type: "number", example: 1000.00),
+                        new OA\Property(property: "discount_amount", type: "number", nullable: true, example: 100.00)
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Invalid request or pricing not found"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center, ACC, or course not found"),
+            new OA\Response(response: 422, description: "Validation error"),
+            new OA\Response(response: 500, description: "Failed to create payment intent")
+        ]
+    )]
     public function createPaymentIntent(Request $request)
     {
         $request->validate([
@@ -198,6 +237,46 @@ class CodeController extends Controller
         ], 200);
     }
 
+    #[OA\Post(
+        path: "/training-center/codes/purchase",
+        summary: "Purchase certificate codes",
+        description: "Purchase certificate codes after payment intent is confirmed. Generates codes and creates batch.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["acc_id", "course_id", "quantity", "payment_method", "payment_intent_id"],
+                properties: [
+                    new OA\Property(property: "acc_id", type: "integer", example: 1),
+                    new OA\Property(property: "course_id", type: "integer", example: 1),
+                    new OA\Property(property: "quantity", type: "integer", example: 10, minimum: 1),
+                    new OA\Property(property: "discount_code", type: "string", nullable: true, example: "DISCOUNT10"),
+                    new OA\Property(property: "payment_method", type: "string", enum: ["credit_card"], example: "credit_card"),
+                    new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Codes purchased successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Codes purchased successfully"),
+                        new OA\Property(property: "batch", type: "object"),
+                        new OA\Property(property: "codes", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "transaction", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Payment verification failed or invalid request"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "ACC not active or authorization required"),
+            new OA\Response(response: 404, description: "Training center, ACC, course, or pricing not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function purchase(Request $request)
     {
         $request->validate([
@@ -504,6 +583,34 @@ class CodeController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: "/training-center/codes/inventory",
+        summary: "Get certificate codes inventory",
+        description: "Get all certificate codes owned by the training center with optional filtering.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "acc_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["available", "used", "expired"]), example: "available"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Inventory retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "codes", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "pagination", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function inventory(Request $request)
     {
         $user = $request->user();
@@ -546,6 +653,32 @@ class CodeController extends Controller
         ]);
     }
 
+    #[OA\Get(
+        path: "/training-center/codes/batches",
+        summary: "Get code purchase batches",
+        description: "Get all code purchase batches for the training center.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "acc_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Batches retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "batches", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "pagination", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function batches(Request $request)
     {
         $user = $request->user();

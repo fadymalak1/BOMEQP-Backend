@@ -96,6 +96,20 @@ class NotificationService
     }
 
     /**
+     * Notify admin about new Training Center application
+     */
+    public function notifyAdminNewTrainingCenterApplication(int $trainingCenterId, string $trainingCenterName): void
+    {
+        $this->sendToRole(
+            'group_admin',
+            'training_center_application',
+            'New Training Center Application',
+            "A new Training Center application has been submitted: {$trainingCenterName}",
+            ['training_center_id' => $trainingCenterId]
+        );
+    }
+
+    /**
      * Notify ACC about approval
      */
     public function notifyAccApproved(int $userId, int $accId, string $accName): void
@@ -355,6 +369,34 @@ class NotificationService
             'Certificate Codes Purchased',
             "{$trainingCenterName} purchased {$quantity} certificate code(s). Your commission: $" . number_format($commission, 2) . ".",
             ['batch_id' => $batchId, 'training_center_name' => $trainingCenterName, 'quantity' => $quantity, 'amount' => $amount, 'commission' => $commission]
+        );
+    }
+
+    /**
+     * Notify Training Center about approval
+     */
+    public function notifyTrainingCenterApproved(int $userId, int $trainingCenterId, string $trainingCenterName): void
+    {
+        $this->send(
+            $userId,
+            'training_center_approved',
+            'Training Center Application Approved',
+            "Your Training Center application for '{$trainingCenterName}' has been approved. You can now access your workspace.",
+            ['training_center_id' => $trainingCenterId]
+        );
+    }
+
+    /**
+     * Notify Training Center about rejection
+     */
+    public function notifyTrainingCenterRejected(int $userId, int $trainingCenterId, string $trainingCenterName, string $reason): void
+    {
+        $this->send(
+            $userId,
+            'training_center_rejected',
+            'Training Center Application Rejected',
+            "Your Training Center application for '{$trainingCenterName}' has been rejected. Reason: {$reason}",
+            ['training_center_id' => $trainingCenterId, 'reason' => $reason]
         );
     }
 }

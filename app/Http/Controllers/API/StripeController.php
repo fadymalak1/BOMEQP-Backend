@@ -490,9 +490,39 @@ class StripeController extends Controller
         }
     }
 
-    /**
-     * Refund a payment
-     */
+    #[OA\Post(
+        path: "/stripe/refund",
+        summary: "Refund payment",
+        description: "Process a refund for a Stripe payment. Can refund full or partial amount.",
+        tags: ["Stripe"],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["payment_intent_id"],
+                properties: [
+                    new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx"),
+                    new OA\Property(property: "amount", type: "number", format: "float", nullable: true, example: 50.00, minimum: 0.01, description: "Partial refund amount. If not provided, full refund will be processed.")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Refund processed successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "success", type: "boolean", example: true),
+                        new OA\Property(property: "refund_id", type: "string", example: "re_xxx"),
+                        new OA\Property(property: "amount", type: "number", example: 50.00),
+                        new OA\Property(property: "status", type: "string", example: "succeeded"),
+                        new OA\Property(property: "transaction", type: "object", nullable: true)
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: "Validation error"),
+            new OA\Response(response: 500, description: "Failed to process refund")
+        ]
+    )]
     public function refund(Request $request)
     {
         $validator = Validator::make($request->all(), [

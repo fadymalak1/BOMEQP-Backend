@@ -21,7 +21,7 @@ class AuthController extends Controller
     #[OA\Post(
         path: "/auth/register",
         summary: "Register a new user",
-        description: "Register a new user (Training Center or ACC Admin). Training centers are active immediately, ACCs require approval.",
+        description: "Register a new user (Training Center or ACC Admin). Both require group admin approval.",
         tags: ["Authentication"],
         requestBody: new OA\RequestBody(
             required: true,
@@ -68,8 +68,8 @@ class AuthController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Training centers are active by default, ACCs require approval (pending)
-        $userStatus = $request->role === 'training_center_admin' ? 'active' : 'pending';
+        // Both training centers and ACCs require approval (pending)
+        $userStatus = 'pending';
         
         $user = User::create([
             'name' => $request->name,
@@ -81,7 +81,7 @@ class AuthController extends Controller
 
         // Create Training Center record if role is training_center_admin
         if ($request->role === 'training_center_admin') {
-            \App\Models\TrainingCenter::create([
+            $trainingCenter = \App\Models\TrainingCenter::create([
                 'name' => $request->name,
                 'legal_name' => $request->name,
                 'registration_number' => 'TC-' . strtoupper(Str::random(8)),
@@ -90,8 +90,12 @@ class AuthController extends Controller
                 'address' => $request->address ?? '',
                 'phone' => $request->phone ?? '',
                 'email' => $request->email,
-                'status' => 'active', // Training centers are active immediately upon registration
+                'status' => 'pending', // Training centers require group admin approval
             ]);
+
+            // Notify admin about new training center application
+            $notificationService = new NotificationService();
+            $notificationService->notifyAdminNewTrainingCenterApplication($trainingCenter->id, $trainingCenter->name);
         }
 
         // Create ACC record if role is acc_admin

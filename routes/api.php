@@ -101,6 +101,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/accs/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'update']);
         
         // Training Centers Management
+        Route::get('/training-centers/applications', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'applications']);
+        Route::put('/training-centers/applications/{id}/approve', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'approve']);
+        Route::put('/training-centers/applications/{id}/reject', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'reject']);
         Route::get('/training-centers', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'index']);
         Route::get('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'show']);
         Route::put('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'update']);

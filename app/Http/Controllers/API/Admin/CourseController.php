@@ -5,12 +5,39 @@ namespace App\Http\Controllers\API\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Course;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class CourseController extends Controller
 {
-    /**
-     * Get all courses in the system
-     */
+    #[OA\Get(
+        path: "/admin/courses",
+        summary: "List all courses",
+        description: "Get all courses in the system with optional filtering. Includes current pricing information.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "acc_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active"),
+            new OA\Parameter(name: "sub_category_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "level", in: "query", schema: new OA\Schema(type: "string", enum: ["beginner", "intermediate", "advanced"]), example: "beginner"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "fire safety"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Courses retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "courses", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "pagination", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
     public function index(Request $request)
     {
         $query = Course::with(['acc', 'subCategory.category']);
@@ -82,9 +109,29 @@ class CourseController extends Controller
         ]);
     }
 
-    /**
-     * Get a specific course with full details
-     */
+    #[OA\Get(
+        path: "/admin/courses/{id}",
+        summary: "Get course details",
+        description: "Get detailed information about a specific course including ACC, category, pricing, classes, and certificates.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Course retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "course", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Course not found")
+        ]
+    )]
     public function show($id)
     {
         $course = Course::with([
