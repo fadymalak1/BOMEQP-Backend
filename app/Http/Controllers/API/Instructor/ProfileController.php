@@ -143,11 +143,21 @@ class ProfileController extends Controller
                 if ($instructor->cv_url) {
                     $urlParts = parse_url($instructor->cv_url);
                     $path = ltrim($urlParts['path'] ?? '', '/');
+                    // Try multiple patterns to extract filename
+                    $oldFileName = null;
                     if (preg_match('#instructors/cv/(.+)$#', $path, $matches)) {
                         $oldFileName = $matches[1];
+                    } elseif (preg_match('#storage/instructors/cv/(.+)$#', $path, $matches)) {
+                        $oldFileName = $matches[1];
+                    } elseif (preg_match('#api/storage/instructors/cv/(.+)$#', $path, $matches)) {
+                        $oldFileName = $matches[1];
+                    }
+                    
+                    if ($oldFileName) {
                         $oldFilePath = 'instructors/cv/' . $oldFileName;
                         if (Storage::disk('public')->exists($oldFilePath)) {
                             Storage::disk('public')->delete($oldFilePath);
+                            \Log::info('Deleted old CV file', ['instructor_id' => $instructor->id, 'file' => $oldFilePath]);
                         }
                     }
                 }
@@ -159,9 +169,20 @@ class ProfileController extends Controller
                 
                 if ($cvPath) {
                     // Generate URL using the API route (route is /storage/instructors/cv/{filename} in api.php, so it becomes /api/storage/instructors/cv/{filename})
-                    $updateData['cv_url'] = url('/api/storage/instructors/cv/' . $fileName);
+                    $newCvUrl = url('/api/storage/instructors/cv/' . $fileName);
+                    $updateData['cv_url'] = $newCvUrl;
+                    \Log::info('CV file uploaded successfully', [
+                        'instructor_id' => $instructor->id,
+                        'file_name' => $fileName,
+                        'cv_url' => $newCvUrl,
+                        'storage_path' => $cvPath
+                    ]);
                 } else {
                     \Log::error('Failed to store CV file', ['instructor_id' => $instructor->id, 'file_name' => $fileName]);
+                    return response()->json([
+                        'message' => 'Failed to store CV file',
+                        'error' => 'File storage failed'
+                    ], 500);
                 }
             } catch (\Exception $e) {
                 \Log::error('Error uploading CV file', [
@@ -180,7 +201,23 @@ class ProfileController extends Controller
             $updateData['certificates_json'] = $request->certificates_json ?? $request->certificates;
         }
 
+        // Log update data before saving
+        \Log::info('Updating instructor profile', [
+            'instructor_id' => $instructor->id,
+            'update_data' => $updateData,
+            'has_cv_url' => isset($updateData['cv_url'])
+        ]);
+        
         $instructor->update($updateData);
+        
+        // Refresh to ensure we have the latest data
+        $instructor->refresh();
+        
+        // Log after update to verify
+        \Log::info('Instructor profile updated', [
+            'instructor_id' => $instructor->id,
+            'cv_url' => $instructor->cv_url
+        ]);
 
         // Update user account name if first_name or last_name changed
         if ($request->has('first_name') || $request->has('last_name')) {
