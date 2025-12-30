@@ -7,12 +7,37 @@ use App\Models\Instructor;
 use App\Models\InstructorAccAuthorization;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class InstructorController extends Controller
 {
-    /**
-     * Get all instructors in the system
-     */
+    #[OA\Get(
+        path: "/admin/instructors",
+        summary: "List all instructors",
+        description: "Get all instructors in the system with optional filtering and pagination.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "active", "suspended", "inactive"]), example: "active"),
+            new OA\Parameter(name: "training_center_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John Doe"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Instructors retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "instructors", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "pagination", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
     public function index(Request $request)
     {
         $query = Instructor::with(['trainingCenter', 'authorizations', 'courseAuthorizations']);
@@ -49,9 +74,29 @@ class InstructorController extends Controller
         ]);
     }
 
-    /**
-     * Get a specific instructor with full details
-     */
+    #[OA\Get(
+        path: "/admin/instructors/{id}",
+        summary: "Get instructor details",
+        description: "Get detailed information about a specific instructor including training center, authorizations, course authorizations, classes, and certificates.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Instructor retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "instructor", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found")
+        ]
+    )]
     public function show($id)
     {
         $instructor = Instructor::with([
@@ -65,9 +110,48 @@ class InstructorController extends Controller
         return response()->json(['instructor' => $instructor]);
     }
 
-    /**
-     * Update instructor data
-     */
+    #[OA\Put(
+        path: "/admin/instructors/{id}",
+        summary: "Update instructor",
+        description: "Update instructor information.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "first_name", type: "string", nullable: true),
+                    new OA\Property(property: "last_name", type: "string", nullable: true),
+                    new OA\Property(property: "email", type: "string", format: "email", nullable: true),
+                    new OA\Property(property: "phone", type: "string", nullable: true),
+                    new OA\Property(property: "id_number", type: "string", nullable: true),
+                    new OA\Property(property: "cv_url", type: "string", nullable: true),
+                    new OA\Property(property: "certificates_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
+                    new OA\Property(property: "specializations", type: "array", nullable: true, items: new OA\Items(type: "string")),
+                    new OA\Property(property: "is_assessor", type: "boolean", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["pending", "active", "suspended", "inactive"], nullable: true)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Instructor updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Instructor updated successfully"),
+                        new OA\Property(property: "instructor", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $instructor = Instructor::findOrFail($id);
@@ -110,10 +194,41 @@ class InstructorController extends Controller
         ], 200);
     }
 
-    /**
-     * Set commission percentage for instructor authorization
-     * This is called after ACC Admin approves and sets authorization price
-     */
+    #[OA\Put(
+        path: "/admin/instructors/authorizations/{id}/set-commission",
+        summary: "Set instructor commission",
+        description: "Set commission percentage for instructor authorization. Called after ACC Admin approves and sets authorization price.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["commission_percentage"],
+                properties: [
+                    new OA\Property(property: "commission_percentage", type: "number", format: "float", example: 10.0, minimum: 0, maximum: 100)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Commission set successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Commission set successfully"),
+                        new OA\Property(property: "authorization", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Authorization must be approved by ACC Admin first"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Authorization not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function setInstructorCommission(Request $request, $id)
     {
         $request->validate([
@@ -160,9 +275,26 @@ class InstructorController extends Controller
         ], 200);
     }
 
-    /**
-     * Get instructor authorization requests waiting for commission setting
-     */
+    #[OA\Get(
+        path: "/admin/instructors/pending-commission-requests",
+        summary: "Get pending commission requests",
+        description: "Get instructor authorization requests that are approved by ACC Admin and waiting for commission setting by Group Admin.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Pending commission requests retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "authorizations", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "total", type: "integer", example: 5)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
     public function pendingCommissionRequests(Request $request)
     {
         $authorizations = InstructorAccAuthorization::where('status', 'approved')

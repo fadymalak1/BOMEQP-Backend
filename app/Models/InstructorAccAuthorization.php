@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InstructorAccAuthorization extends Model
 {
@@ -15,6 +16,7 @@ class InstructorAccAuthorization extends Model
     protected $fillable = [
         'instructor_id',
         'acc_id',
+        'sub_category_id',
         'training_center_id',
         'request_date',
         'status',
@@ -65,5 +67,15 @@ class InstructorAccAuthorization extends Model
     {
         return $this->belongsTo(User::class, 'reviewed_by');
     }
-}
+
+    public function subCategory(): BelongsTo
+    {
+        return $this->belongsTo(SubCategory::class, 'sub_category_id');
+    }
+
+    public function courseAuthorizations(): HasMany
+    {
+        return $this->hasMany(InstructorCourseAuthorization::class, 'instructor_id', 'instructor_id')
+            ->where('acc_id', $this->acc_id);
+    }
 

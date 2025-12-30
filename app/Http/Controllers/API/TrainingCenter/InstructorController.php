@@ -320,14 +320,161 @@ class InstructorController extends Controller
         return response()->json(['message' => 'Instructor updated successfully', 'instructor' => $instructor]);
     }
 
+    #[OA\Get(
+        path: "/training-center/accs/{accId}/courses",
+        summary: "Get courses by ACC and sub-category",
+        description: "Get all active courses for a specific ACC, optionally filtered by sub-category.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "accId", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "sub_category_id", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Courses retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "courses", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
+    public function getAccCourses(Request $request, $accId)
+    {
+        $acc = \App\Models\ACC::findOrFail($accId);
+        
+        $query = \App\Models\Course::where('acc_id', $accId)
+            ->where('status', 'active')
+            ->with('subCategory');
+
+        if ($request->has('sub_category_id')) {
+            $query->where('sub_category_id', $request->sub_category_id);
+        }
+
+        $courses = $query->get();
+
+        return response()->json([
+            'courses' => $courses,
+            'acc' => [
+                'id' => $acc->id,
+                'name' => $acc->name,
+            ]
+        ]);
+    }
+
+    #[OA\Get(
+        path: "/training-center/accs/{accId}/sub-categories",
+        summary: "Get sub-categories with courses for an ACC",
+        description: "Get all sub-categories that have courses in a specific ACC, with course counts.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "accId", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Sub-categories retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "sub_categories", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
+    public function getAccSubCategories($accId)
+    {
+        $acc = \App\Models\ACC::findOrFail($accId);
+        
+        $subCategories = \App\Models\SubCategory::whereHas('courses', function($query) use ($accId) {
+            $query->where('acc_id', $accId)
+                  ->where('status', 'active');
+        })
+        ->withCount(['courses' => function($query) use ($accId) {
+            $query->where('acc_id', $accId)
+                  ->where('status', 'active');
+        }])
+        ->get();
+
+        return response()->json([
+            'sub_categories' => $subCategories,
+            'acc' => [
+                'id' => $acc->id,
+                'name' => $acc->name,
+            ]
+        ]);
+    }
+
+    #[OA\Post(
+        path: "/training-center/instructors/{id}/request-authorization",
+        summary: "Request instructor authorization",
+        description: "Request authorization for an instructor to teach courses from an ACC. You can either select a sub-category (all courses in that sub-category) or select specific courses.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["acc_id"],
+                properties: [
+                    new OA\Property(property: "acc_id", type: "integer", example: 1, description: "ACC ID to request authorization from"),
+                    new OA\Property(property: "sub_category_id", type: "integer", nullable: true, example: 5, description: "Sub-category ID - authorizes instructor for all courses in this sub-category"),
+                    new OA\Property(property: "course_ids", type: "array", nullable: true, items: new OA\Items(type: "integer"), example: [1, 2, 3], description: "Array of specific course IDs to authorize"),
+                    new OA\Property(property: "documents_json", type: "array", nullable: true, items: new OA\Items(type: "object"), description: "Optional documents array")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Authorization request submitted successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Authorization request submitted successfully"),
+                        new OA\Property(property: "authorization", type: "object"),
+                        new OA\Property(property: "courses_count", type: "integer", example: 5, description: "Number of courses included in the authorization")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor or ACC not found"),
+            new OA\Response(response: 422, description: "Validation error - either sub_category_id or course_ids must be provided, but not both")
+        ]
+    )]
     public function requestAuthorization(Request $request, $id)
     {
         $request->validate([
             'acc_id' => 'required|exists:accs,id',
-            'course_ids' => 'required|array',
+            'sub_category_id' => 'nullable|exists:sub_categories,id',
+            'course_ids' => 'nullable|array',
             'course_ids.*' => 'exists:courses,id',
             'documents_json' => 'nullable|array',
         ]);
+
+        // Validate that either sub_category_id or course_ids is provided, but not both
+        if (!$request->has('sub_category_id') && !$request->has('course_ids')) {
+            return response()->json([
+                'message' => 'Either sub_category_id or course_ids must be provided',
+                'errors' => ['sub_category_id' => ['Either sub_category_id or course_ids is required']]
+            ], 422);
+        }
+
+        if ($request->has('sub_category_id') && $request->has('course_ids')) {
+            return response()->json([
+                'message' => 'Cannot provide both sub_category_id and course_ids. Please provide only one.',
+                'errors' => ['sub_category_id' => ['Cannot provide both sub_category_id and course_ids']]
+            ], 422);
+        }
 
         $user = $request->user();
         $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
@@ -338,14 +485,53 @@ class InstructorController extends Controller
 
         $instructor = Instructor::where('training_center_id', $trainingCenter->id)->findOrFail($id);
 
+        // Get course IDs based on selection type
+        $courseIds = [];
+        if ($request->has('sub_category_id')) {
+            // Get all courses in the sub-category that belong to the selected ACC
+            $courseIds = \App\Models\Course::where('sub_category_id', $request->sub_category_id)
+                ->where('acc_id', $request->acc_id)
+                ->where('status', 'active')
+                ->pluck('id')
+                ->toArray();
+
+            if (empty($courseIds)) {
+                return response()->json([
+                    'message' => 'No active courses found for the selected sub-category in this ACC'
+                ], 422);
+            }
+        } else {
+            // Validate that all course_ids belong to the selected ACC
+            $accCourses = \App\Models\Course::where('acc_id', $request->acc_id)
+                ->whereIn('id', $request->course_ids)
+                ->where('status', 'active')
+                ->pluck('id')
+                ->toArray();
+
+            if (count($accCourses) !== count($request->course_ids)) {
+                return response()->json([
+                    'message' => 'Some selected courses do not belong to the selected ACC or are not active'
+                ], 422);
+            }
+
+            $courseIds = $request->course_ids;
+        }
+
         $authorization = InstructorAccAuthorization::create([
             'instructor_id' => $instructor->id,
             'acc_id' => $request->acc_id,
+            'sub_category_id' => $request->sub_category_id,
             'training_center_id' => $trainingCenter->id,
             'request_date' => now(),
             'status' => 'pending',
             'documents_json' => $request->documents_json ?? $request->documents,
         ]);
+
+        // Store course IDs in documents_json for reference (or create a separate field)
+        // For now, we'll add it to documents_json as metadata
+        $documentsData = $request->documents_json ?? $request->documents ?? [];
+        $documentsData['requested_course_ids'] = $courseIds;
+        $authorization->update(['documents_json' => $documentsData]);
 
         // Send notification to ACC admin
         $acc = \App\Models\ACC::find($request->acc_id);
@@ -365,7 +551,8 @@ class InstructorController extends Controller
 
         return response()->json([
             'message' => 'Authorization request submitted successfully',
-            'authorization' => $authorization,
+            'authorization' => $authorization->load('subCategory'),
+            'courses_count' => count($courseIds),
         ], 201);
     }
 

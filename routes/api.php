@@ -212,6 +212,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/accs', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'index']);
         Route::post('/accs/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'requestAuthorization']);
         Route::get('/authorizations', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'authorizations']);
+        
+        // ACC Courses and Sub-categories for instructor authorization
+        Route::get('/accs/{accId}/courses', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'getAccCourses']);
+        Route::get('/accs/{accId}/sub-categories', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'getAccSubCategories']);
 
         // Instructors
         // Specific routes must come before apiResource to avoid route conflicts

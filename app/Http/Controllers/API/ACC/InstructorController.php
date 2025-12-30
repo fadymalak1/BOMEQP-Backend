@@ -54,6 +54,28 @@ class InstructorController extends Controller
             'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
         ]);
 
+        // Get course IDs from documents_json
+        $documentsData = $authorization->documents_json ?? [];
+        $courseIds = $documentsData['requested_course_ids'] ?? [];
+
+        // Create InstructorCourseAuthorization records for all approved courses
+        if (!empty($courseIds)) {
+            foreach ($courseIds as $courseId) {
+                \App\Models\InstructorCourseAuthorization::updateOrCreate(
+                    [
+                        'instructor_id' => $authorization->instructor_id,
+                        'course_id' => $courseId,
+                        'acc_id' => $authorization->acc_id,
+                    ],
+                    [
+                        'authorized_at' => now(),
+                        'authorized_by' => $user->id,
+                        'status' => 'active',
+                    ]
+                );
+            }
+        }
+
         // Send notification to Group Admin to set commission percentage
         $authorization->load(['instructor', 'acc']);
         $instructor = $authorization->instructor;
@@ -69,7 +91,8 @@ class InstructorController extends Controller
 
         return response()->json([
             'message' => 'Instructor approved successfully. Waiting for Group Admin to set commission percentage.',
-            'authorization' => $authorization->fresh()
+            'authorization' => $authorization->fresh(),
+            'courses_authorized' => count($courseIds)
         ]);
     }
 
