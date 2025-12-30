@@ -63,7 +63,7 @@ class ClassController extends Controller
                     new OA\Property(property: "instructor_id", type: "integer", example: 1),
                     new OA\Property(property: "start_date", type: "string", format: "date", example: "2024-01-15"),
                     new OA\Property(property: "end_date", type: "string", format: "date", example: "2024-01-20"),
-                    new OA\Property(property: "schedule_json", type: "array", nullable: true),
+                    new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], example: "physical"),
                     new OA\Property(property: "location_details", type: "string", nullable: true, example: "Room 101")
                 ]
@@ -179,7 +179,7 @@ class ClassController extends Controller
                     new OA\Property(property: "instructor_id", type: "integer", nullable: true),
                     new OA\Property(property: "start_date", type: "string", format: "date", nullable: true),
                     new OA\Property(property: "end_date", type: "string", format: "date", nullable: true),
-                    new OA\Property(property: "schedule_json", type: "array", nullable: true),
+                    new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], nullable: true),
                     new OA\Property(property: "location_details", type: "string", nullable: true),
                     new OA\Property(property: "status", type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], nullable: true)

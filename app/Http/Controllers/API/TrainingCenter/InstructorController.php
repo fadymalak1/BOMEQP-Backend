@@ -229,8 +229,8 @@ class InstructorController extends Controller
                         new OA\Property(property: "last_name", type: "string", nullable: true),
                         new OA\Property(property: "phone", type: "string", nullable: true),
                         new OA\Property(property: "cv", type: "string", format: "binary", nullable: true),
-                        new OA\Property(property: "certificates_json", type: "array", nullable: true),
-                        new OA\Property(property: "specializations", type: "array", nullable: true),
+                        new OA\Property(property: "certificates_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
+                        new OA\Property(property: "specializations", type: "array", nullable: true, items: new OA\Items(type: "string")),
                         new OA\Property(property: "is_assessor", type: "boolean", nullable: true)
                     ]
                 )
