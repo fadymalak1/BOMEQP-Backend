@@ -8,9 +8,40 @@ use App\Models\Transaction;
 use App\Models\CommissionLedger;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use OpenApi\Attributes as OA;
 
 class EarningController extends Controller
 {
+    #[OA\Get(
+        path: "/instructor/earnings",
+        summary: "Get instructor earnings",
+        description: "Get earnings and transactions for the authenticated instructor with optional filtering by month/year.",
+        tags: ["Instructor"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "month", in: "query", schema: new OA\Schema(type: "string", format: "date", pattern: "^\\d{4}-\\d{2}$"), example: "2024-01", description: "Filter by month (YYYY-MM)"),
+            new OA\Parameter(name: "year", in: "query", schema: new OA\Schema(type: "integer"), example: 2024, description: "Filter by year")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Earnings retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "earnings", type: "object", properties: [
+                            new OA\Property(property: "total", type: "number", format: "float", example: 5000.00),
+                            new OA\Property(property: "this_month", type: "number", format: "float", example: 500.00),
+                            new OA\Property(property: "pending", type: "number", format: "float", example: 200.00),
+                            new OA\Property(property: "paid", type: "number", format: "float", example: 4800.00)
+                        ]),
+                        new OA\Property(property: "transactions", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();

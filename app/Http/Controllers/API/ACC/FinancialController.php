@@ -7,35 +7,42 @@ use App\Models\ACC;
 use App\Models\Transaction;
 use App\Models\MonthlySettlement;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class FinancialController extends Controller
 {
-    /**
-     * Get all transactions for ACC
-     * 
-     * Returns comprehensive transaction details including payer, payee, commission ledger, and reference information.
-     * 
-     * @group ACC Financial
-     * @authenticated
-     * 
-     * @queryParam type string Filter by transaction type (subscription, code_purchase, material_purchase, course_purchase, commission, settlement). Example: subscription
-     * @queryParam status string Filter by status (pending, completed, failed, refunded). Example: completed
-     * @queryParam date_from date Filter transactions from date (YYYY-MM-DD). Example: 2024-01-01
-     * @queryParam date_to date Filter transactions to date (YYYY-MM-DD). Example: 2024-12-31
-     * @queryParam per_page integer Items per page. Example: 15
-     * @queryParam page integer Page number. Example: 1
-     * 
-     * @response 200 {
-     *   "data": [...],
-     *   "summary": {
-     *     "total_transactions": 50,
-     *     "total_received": 25000.00,
-     *     "total_paid": 5000.00,
-     *     "completed_amount": 20000.00,
-     *     "pending_amount": 5000.00
-     *   }
-     * }
-     */
+    #[OA\Get(
+        path: "/acc/financial/transactions",
+        summary: "Get ACC transactions",
+        description: "Get all transactions for ACC with comprehensive details including payer, payee, commission ledger, and reference information.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "type", in: "query", schema: new OA\Schema(type: "string", enum: ["subscription", "code_purchase", "material_purchase", "course_purchase", "commission", "settlement"]), example: "subscription"),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "completed", "failed", "refunded"]), example: "completed"),
+            new OA\Parameter(name: "date_from", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-01-01"),
+            new OA\Parameter(name: "date_to", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-12-31"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Transactions retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "summary", type: "object"),
+                        new OA\Property(property: "current_page", type: "integer", example: 1),
+                        new OA\Property(property: "per_page", type: "integer", example: 15),
+                        new OA\Property(property: "total", type: "integer", example: 50)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function transactions(Request $request)
     {
         $user = $request->user();
@@ -288,6 +295,26 @@ class FinancialController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: "/acc/financial/settlements",
+        summary: "Get ACC settlements",
+        description: "Get all monthly settlements for the ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Settlements retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "settlements", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function settlements(Request $request)
     {
         $user = $request->user();

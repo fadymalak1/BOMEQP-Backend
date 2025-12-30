@@ -5,15 +5,68 @@ namespace App\Http\Controllers\API\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class CategoryController extends Controller
 {
+    #[OA\Get(
+        path: "/admin/categories",
+        summary: "List all categories",
+        description: "Get all categories with their subcategories.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Categories retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "categories", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
     public function index()
     {
         $categories = Category::with('subCategories')->get();
         return response()->json(['categories' => $categories]);
     }
 
+    #[OA\Post(
+        path: "/admin/categories",
+        summary: "Create category",
+        description: "Create a new category.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["name", "status"],
+                properties: [
+                    new OA\Property(property: "name", type: "string", example: "Fire Safety"),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true, example: "السلامة من الحرائق"),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "icon_url", type: "string", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Category created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function store(Request $request)
     {
         $request->validate([
@@ -36,12 +89,72 @@ class CategoryController extends Controller
         return response()->json(['category' => $category], 201);
     }
 
+    #[OA\Get(
+        path: "/admin/categories/{id}",
+        summary: "Get category details",
+        description: "Get detailed information about a specific category.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Category retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Category not found")
+        ]
+    )]
     public function show($id)
     {
         $category = Category::with('subCategories')->findOrFail($id);
         return response()->json(['category' => $category]);
     }
 
+    #[OA\Put(
+        path: "/admin/categories/{id}",
+        summary: "Update category",
+        description: "Update category information.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "name", type: "string", nullable: true),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "icon_url", type: "string", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], nullable: true)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Category updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Category updated successfully"),
+                        new OA\Property(property: "category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Category not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $category = Category::findOrFail($id);
@@ -59,6 +172,29 @@ class CategoryController extends Controller
         return response()->json(['message' => 'Category updated successfully', 'category' => $category]);
     }
 
+    #[OA\Delete(
+        path: "/admin/categories/{id}",
+        summary: "Delete category",
+        description: "Delete a category. This action cannot be undone.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Category deleted successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Category deleted successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Category not found")
+        ]
+    )]
     public function destroy($id)
     {
         $category = Category::findOrFail($id);

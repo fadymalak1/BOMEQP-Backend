@@ -23,13 +23,14 @@ class DashboardController extends Controller
                 description: "Dashboard data retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "subscription_status", type: "string", example: "active"),
-                        new OA\Property(property: "subscription_expires_at", type: "string", format: "date-time", nullable: true),
-                        new OA\Property(property: "pending_requests", type: "object"),
-                        new OA\Property(property: "revenue", type: "object"),
-                        new OA\Property(property: "active_training_centers", type: "integer", example: 5),
-                        new OA\Property(property: "active_instructors", type: "integer", example: 10),
-                        new OA\Property(property: "certificates_generated", type: "integer", example: 100)
+                        new OA\Property(property: "pending_requests", type: "integer", example: 2, description: "Total pending requests (training centers + instructors)"),
+                        new OA\Property(property: "active_training_centers", type: "integer", example: 1, description: "Number of active training centers"),
+                        new OA\Property(property: "active_instructors", type: "integer", example: 9, description: "Number of active instructors"),
+                        new OA\Property(property: "certificates_generated", type: "integer", example: 0, description: "Total certificates generated"),
+                        new OA\Property(property: "revenue", type: "object", properties: [
+                            new OA\Property(property: "monthly", type: "number", format: "float", example: 46700.00, description: "Revenue for current month"),
+                            new OA\Property(property: "total", type: "number", format: "float", example: 46700.00, description: "Total revenue")
+                        ])
                     ]
                 )
             ),
@@ -79,21 +80,18 @@ class DashboardController extends Controller
             $q->where('acc_id', $acc->id);
         })->count();
 
+        // Calculate total pending requests
+        $totalPendingRequests = $pendingRequests + $pendingInstructorRequests;
+
         return response()->json([
-            'subscription_status' => $subscription?->payment_status ?? 'pending',
-            'subscription_expires_at' => $subscription?->subscription_end_date,
-            'pending_requests' => [
-                'training_centers' => $pendingRequests,
-                'instructors' => $pendingInstructorRequests,
-            ],
-            'revenue' => [
-                'monthly' => $revenueThisMonth,
-                'total' => $totalRevenue,
-            ],
+            'pending_requests' => $totalPendingRequests,
             'active_training_centers' => $activeTrainingCenters,
             'active_instructors' => $activeInstructors,
             'certificates_generated' => $certificatesGenerated,
-            'recent_activity' => [],
+            'revenue' => [
+                'monthly' => (float) $revenueThisMonth,
+                'total' => (float) $totalRevenue,
+            ],
         ]);
     }
 }

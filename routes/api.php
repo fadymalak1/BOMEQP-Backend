@@ -67,6 +67,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Group Admin routes
     Route::prefix('admin')->middleware(['role:group_admin'])->group(function () {
+        // Dashboard
+        Route::get('/dashboard', [App\Http\Controllers\API\Admin\DashboardController::class, 'index']);
+        
         // ACC Management
         Route::get('/accs/applications', [App\Http\Controllers\API\Admin\ACCController::class, 'applications']);
         Route::get('/accs/applications/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'showApplication']);

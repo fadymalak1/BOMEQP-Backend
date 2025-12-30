@@ -290,9 +290,41 @@ class CategoryController extends Controller
         return response()->json(['message' => 'Category deleted successfully'], 200);
     }
 
-    /**
-     * Create a sub category
-     */
+    #[OA\Post(
+        path: "/acc/categories/sub-categories",
+        summary: "Create subcategory",
+        description: "Create a new subcategory for an accessible category.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["category_id", "name", "status"],
+                properties: [
+                    new OA\Property(property: "category_id", type: "integer", example: 1),
+                    new OA\Property(property: "name", type: "string", example: "Basic Fire Safety"),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Subcategory created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "sub_category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Category not accessible"),
+            new OA\Response(response: 404, description: "ACC or category not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function storeSubCategory(Request $request)
     {
         $request->validate([
@@ -333,9 +365,31 @@ class CategoryController extends Controller
         return response()->json(['sub_category' => $subCategory], 201);
     }
 
-    /**
-     * List sub categories (only for accessible categories)
-     */
+    #[OA\Get(
+        path: "/acc/categories/sub-categories",
+        summary: "List subcategories",
+        description: "Get subcategories for accessible categories.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "category_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Subcategories retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "sub_categories", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Category not accessible"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function indexSubCategories(Request $request)
     {
         $user = $request->user();
@@ -371,9 +425,29 @@ class CategoryController extends Controller
         return response()->json(['sub_categories' => $subCategories]);
     }
 
-    /**
-     * Get a specific sub category (only if accessible)
-     */
+    #[OA\Get(
+        path: "/acc/categories/sub-categories/{id}",
+        summary: "Get subcategory details",
+        description: "Get a specific subcategory. Only accessible if the parent category is assigned to ACC or created by ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Subcategory retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "sub_category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Subcategory not found or not accessible")
+        ]
+    )]
     public function showSubCategory(Request $request, $id)
     {
         $user = $request->user();
@@ -399,9 +473,43 @@ class CategoryController extends Controller
         return response()->json(['sub_category' => $subCategory]);
     }
 
-    /**
-     * Update a sub category (only if created by this ACC or belongs to assigned category)
-     */
+    #[OA\Put(
+        path: "/acc/categories/sub-categories/{id}",
+        summary: "Update subcategory",
+        description: "Update a subcategory. Only accessible if created by ACC or belongs to assigned category.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "name", type: "string", nullable: true),
+                    new OA\Property(property: "name_ar", type: "string", nullable: true),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], nullable: true)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Subcategory updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Subcategory updated successfully"),
+                        new OA\Property(property: "sub_category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Cannot update subcategory"),
+            new OA\Response(response: 404, description: "Subcategory not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function updateSubCategory(Request $request, $id)
     {
         $user = $request->user();
@@ -458,6 +566,30 @@ class CategoryController extends Controller
     /**
      * Delete a sub category (only if created by this ACC)
      */
+    #[OA\Delete(
+        path: "/acc/categories/sub-categories/{id}",
+        summary: "Delete subcategory",
+        description: "Delete a subcategory. Only accessible if created by ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Subcategory deleted successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Subcategory deleted successfully")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Cannot delete subcategory - not created by ACC"),
+            new OA\Response(response: 404, description: "Subcategory not found")
+        ]
+    )]
     public function destroySubCategory(Request $request, $id)
     {
         $user = $request->user();
