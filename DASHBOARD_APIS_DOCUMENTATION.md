@@ -233,3 +233,311 @@ curl -X GET "http://your-domain.com/api/training-center/dashboard" \
 
 **Last Updated:** December 29, 2025
 
+---
+
+# Countries & Cities APIs Documentation
+
+This document describes the API endpoints for retrieving countries and cities data for dropdown selections.
+
+**Base URL:** `/api`
+
+**Authentication:** These endpoints are public and do not require authentication.
+
+---
+
+## 1. Get Countries
+
+**Endpoint:** `GET /countries`
+
+**Description:** Get a list of all available countries with their ISO 3166-1 alpha-2 country codes and names.
+
+**Authorization:** Public (no authentication required)
+
+**Response (200):**
+```json
+{
+  "countries": [
+    {
+      "code": "EG",
+      "name": "Egypt"
+    },
+    {
+      "code": "SA",
+      "name": "Saudi Arabia"
+    },
+    {
+      "code": "AE",
+      "name": "United Arab Emirates"
+    }
+  ]
+}
+```
+
+**Response Fields:**
+- `countries` (array): List of countries
+  - `code` (string): ISO 3166-1 alpha-2 country code (e.g., "EG", "US", "GB")
+  - `name` (string): Full country name
+
+**Example Usage:**
+```javascript
+// Fetch countries
+const getCountries = async () => {
+  const response = await axios.get('/api/countries');
+  return response.data.countries;
+};
+
+// Use in dropdown
+countries.forEach(country => {
+  const option = document.createElement('option');
+  option.value = country.code;
+  option.textContent = country.name;
+  countrySelect.appendChild(option);
+});
+```
+
+---
+
+## 2. Get Cities
+
+**Endpoint:** `GET /cities`
+
+**Description:** Get a list of cities. Optionally filter by country code to get cities for a specific country.
+
+**Authorization:** Public (no authentication required)
+
+**Query Parameters:**
+- `country` (optional, string): Filter cities by country code (ISO 3166-1 alpha-2). Example: `?country=EG`
+
+**Response (200) - All Cities:**
+```json
+{
+  "cities": [
+    {
+      "name": "Cairo",
+      "country_code": "EG"
+    },
+    {
+      "name": "Alexandria",
+      "country_code": "EG"
+    },
+    {
+      "name": "Riyadh",
+      "country_code": "SA"
+    }
+  ]
+}
+```
+
+**Response (200) - Filtered by Country:**
+```json
+{
+  "cities": [
+    {
+      "name": "Cairo",
+      "country_code": "EG"
+    },
+    {
+      "name": "Alexandria",
+      "country_code": "EG"
+    },
+    {
+      "name": "Giza",
+      "country_code": "EG"
+    }
+  ]
+}
+```
+
+**Response Fields:**
+- `cities` (array): List of cities
+  - `name` (string): City name
+  - `country_code` (string): ISO 3166-1 alpha-2 country code
+
+**Example Usage:**
+```javascript
+// Fetch all cities
+const getAllCities = async () => {
+  const response = await axios.get('/api/cities');
+  return response.data.cities;
+};
+
+// Fetch cities for a specific country
+const getCitiesByCountry = async (countryCode) => {
+  const response = await axios.get(`/api/cities?country=${countryCode}`);
+  return response.data.cities;
+};
+
+// Cascading dropdown example
+countrySelect.addEventListener('change', async (e) => {
+  const countryCode = e.target.value;
+  if (countryCode) {
+    const cities = await getCitiesByCountry(countryCode);
+    citySelect.innerHTML = '<option value="">Select City</option>';
+    cities.forEach(city => {
+      const option = document.createElement('option');
+      option.value = city.name;
+      option.textContent = city.name;
+      citySelect.appendChild(option);
+    });
+  }
+});
+```
+
+---
+
+## Frontend Implementation Examples
+
+### React Example
+```jsx
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+
+function LocationSelector() {
+  const [countries, setCountries] = useState([]);
+  const [cities, setCities] = useState([]);
+  const [selectedCountry, setSelectedCountry] = useState('');
+
+  useEffect(() => {
+    // Load countries on mount
+    axios.get('/api/countries')
+      .then(response => setCountries(response.data.countries))
+      .catch(error => console.error('Error fetching countries:', error));
+  }, []);
+
+  useEffect(() => {
+    // Load cities when country changes
+    if (selectedCountry) {
+      axios.get(`/api/cities?country=${selectedCountry}`)
+        .then(response => setCities(response.data.cities))
+        .catch(error => console.error('Error fetching cities:', error));
+    } else {
+      setCities([]);
+    }
+  }, [selectedCountry]);
+
+  return (
+    <div>
+      <select 
+        value={selectedCountry} 
+        onChange={(e) => setSelectedCountry(e.target.value)}
+      >
+        <option value="">Select Country</option>
+        {countries.map(country => (
+          <option key={country.code} value={country.code}>
+            {country.name}
+          </option>
+        ))}
+      </select>
+
+      <select disabled={!selectedCountry}>
+        <option value="">Select City</option>
+        {cities.map((city, index) => (
+          <option key={index} value={city.name}>
+            {city.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+```
+
+### Vue.js Example
+```vue
+<template>
+  <div>
+    <select v-model="selectedCountry" @change="loadCities">
+      <option value="">Select Country</option>
+      <option v-for="country in countries" :key="country.code" :value="country.code">
+        {{ country.name }}
+      </option>
+    </select>
+
+    <select v-model="selectedCity" :disabled="!selectedCountry">
+      <option value="">Select City</option>
+      <option v-for="city in cities" :key="city.name" :value="city.name">
+        {{ city.name }}
+      </option>
+    </select>
+  </div>
+</template>
+
+<script>
+import axios from 'axios';
+
+export default {
+  data() {
+    return {
+      countries: [],
+      cities: [],
+      selectedCountry: '',
+      selectedCity: ''
+    };
+  },
+  mounted() {
+    this.loadCountries();
+  },
+  methods: {
+    async loadCountries() {
+      try {
+        const response = await axios.get('/api/countries');
+        this.countries = response.data.countries;
+      } catch (error) {
+        console.error('Error fetching countries:', error);
+      }
+    },
+    async loadCities() {
+      if (this.selectedCountry) {
+        try {
+          const response = await axios.get(`/api/cities?country=${this.selectedCountry}`);
+          this.cities = response.data.cities;
+          this.selectedCity = ''; // Reset city selection
+        } catch (error) {
+          console.error('Error fetching cities:', error);
+        }
+      } else {
+        this.cities = [];
+      }
+    }
+  }
+};
+</script>
+```
+
+---
+
+## Notes
+
+1. **Country Codes**: All country codes follow the ISO 3166-1 alpha-2 standard (2-letter codes).
+2. **City Filtering**: When a country code is provided, only cities for that country are returned.
+3. **Case Insensitive**: Country code filtering is case-insensitive.
+4. **Extensibility**: The city list can be easily extended by adding more cities to the `CityController::getCities()` method.
+5. **No Authentication Required**: These endpoints are public and can be accessed without authentication tokens.
+
+---
+
+## Testing
+
+**Example cURL:**
+```bash
+# Get all countries
+curl -X GET "http://your-domain.com/api/countries" \
+  -H "Accept: application/json"
+
+# Get all cities
+curl -X GET "http://your-domain.com/api/cities" \
+  -H "Accept: application/json"
+
+# Get cities for Egypt
+curl -X GET "http://your-domain.com/api/cities?country=EG" \
+  -H "Accept: application/json"
+
+# Get cities for Saudi Arabia
+curl -X GET "http://your-domain.com/api/cities?country=SA" \
+  -H "Accept: application/json"
+```
+
+---
+
+**Last Updated:** December 29, 2025
+

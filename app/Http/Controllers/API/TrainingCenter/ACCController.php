@@ -10,15 +10,83 @@ use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use OpenApi\Attributes as OA;
 
 class ACCController extends Controller
 {
+    #[OA\Get(
+        path: "/training-center/accs",
+        summary: "List active ACCs",
+        description: "Get all active ACCs available for authorization requests.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "ACCs retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "accs", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
     public function index()
     {
         $accs = ACC::where('status', 'active')->get();
         return response()->json(['accs' => $accs]);
     }
 
+    #[OA\Post(
+        path: "/training-center/accs/{id}/request-authorization",
+        summary: "Request ACC authorization",
+        description: "Request authorization from an ACC. Upload required documents.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["documents"],
+                    properties: [
+                        new OA\Property(
+                            property: "documents",
+                            type: "array",
+                            items: new OA\Items(
+                                type: "object",
+                                properties: [
+                                    new OA\Property(property: "file", type: "string", format: "binary", description: "Document file (PDF, DOC, DOCX, JPG, PNG, max 10MB)"),
+                                    new OA\Property(property: "type", type: "string", enum: ["license", "certificate", "registration", "other"], example: "license")
+                                ]
+                            )
+                        )
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Authorization request created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Authorization request submitted successfully"),
+                        new OA\Property(property: "authorization", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Authorization request already exists"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center or ACC not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function requestAuthorization(Request $request, $id)
     {
         try {
@@ -181,6 +249,29 @@ class ACCController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: "/training-center/accs/authorizations",
+        summary: "Get authorization requests",
+        description: "Get all authorization requests for the authenticated training center.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected"]), example: "pending")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Authorizations retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "authorizations", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function authorizations(Request $request)
     {
         $user = $request->user();

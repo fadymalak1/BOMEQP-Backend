@@ -9,6 +9,7 @@ use App\Models\TrainingClass;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use OpenApi\Attributes as OA;
 
 class TraineeController extends Controller
 {
@@ -39,9 +40,33 @@ class TraineeController extends Controller
         return $baseUrl . '/app/public/' . $cleanPath;
     }
 
-    /**
-     * Get all trainees for the training center
-     */
+    #[OA\Get(
+        path: "/training-center/trainees",
+        summary: "List trainees",
+        description: "Get all trainees for the authenticated training center with optional filtering and pagination.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string"), example: "active"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Trainees retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "trainees", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "pagination", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -83,9 +108,29 @@ class TraineeController extends Controller
         ]);
     }
 
-    /**
-     * Get a specific trainee
-     */
+    #[OA\Get(
+        path: "/training-center/trainees/{id}",
+        summary: "Get trainee details",
+        description: "Get detailed information about a specific trainee.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Trainee retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "trainee", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Trainee not found")
+        ]
+    )]
     public function show($id)
     {
         $user = request()->user();
@@ -102,9 +147,48 @@ class TraineeController extends Controller
         return response()->json(['trainee' => $trainee]);
     }
 
-    /**
-     * Create a new trainee
-     */
+    #[OA\Post(
+        path: "/training-center/trainees",
+        summary: "Create trainee",
+        description: "Create a new trainee with ID and card images. Can optionally enroll in classes.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["first_name", "last_name", "email", "phone", "id_number", "id_image", "card_image"],
+                    properties: [
+                        new OA\Property(property: "first_name", type: "string", example: "John"),
+                        new OA\Property(property: "last_name", type: "string", example: "Doe"),
+                        new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
+                        new OA\Property(property: "phone", type: "string", example: "+1234567890"),
+                        new OA\Property(property: "id_number", type: "string", example: "ID123456"),
+                        new OA\Property(property: "id_image", type: "string", format: "binary", description: "ID image (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "card_image", type: "string", format: "binary", description: "Card image (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "enrolled_classes", type: "array", nullable: true, items: new OA\Items(type: "integer"), example: [1, 2]),
+                        new OA\Property(property: "status", type: "string", enum: ["active", "inactive", "suspended"], nullable: true, example: "active")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Trainee created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Trainee created successfully"),
+                        new OA\Property(property: "trainee", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function store(Request $request)
     {
         $user = $request->user();
@@ -218,9 +302,50 @@ class TraineeController extends Controller
         }
     }
 
-    /**
-     * Update trainee
-     */
+    #[OA\Put(
+        path: "/training-center/trainees/{id}",
+        summary: "Update trainee",
+        description: "Update trainee information. Can update personal details, images, and enrolled classes.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: "first_name", type: "string", nullable: true),
+                        new OA\Property(property: "last_name", type: "string", nullable: true),
+                        new OA\Property(property: "email", type: "string", format: "email", nullable: true),
+                        new OA\Property(property: "phone", type: "string", nullable: true),
+                        new OA\Property(property: "id_number", type: "string", nullable: true),
+                        new OA\Property(property: "id_image", type: "string", format: "binary", nullable: true, description: "ID image (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "card_image", type: "string", format: "binary", nullable: true, description: "Card image (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "enrolled_classes", type: "array", nullable: true, items: new OA\Items(type: "integer")),
+                        new OA\Property(property: "status", type: "string", enum: ["active", "inactive", "suspended"], nullable: true)
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Trainee updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Trainee updated successfully"),
+                        new OA\Property(property: "trainee", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Trainee not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
     public function update(Request $request, $id)
     {
         $user = $request->user();

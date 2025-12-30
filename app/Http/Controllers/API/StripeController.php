@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Stripe\Charge;
+use OpenApi\Attributes as OA;
 
 class StripeController extends Controller
 {
@@ -20,9 +21,26 @@ class StripeController extends Controller
         $this->stripeService = $stripeService;
     }
 
-    /**
-     * Get Stripe configuration (publishable key)
-     */
+    #[OA\Get(
+        path: "/stripe/config",
+        summary: "Get Stripe configuration",
+        description: "Get Stripe publishable key and configuration status.",
+        tags: ["Stripe"],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Configuration retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "success", type: "boolean", example: true),
+                        new OA\Property(property: "publishable_key", type: "string", example: "pk_test_xxx"),
+                        new OA\Property(property: "is_configured", type: "boolean", example: true)
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Stripe is not configured")
+        ]
+    )]
     public function getConfig()
     {
         $publishableKey = $this->stripeService->getPublishableKey();
@@ -41,9 +59,47 @@ class StripeController extends Controller
         ]);
     }
 
-    /**
-     * Create a payment intent
-     */
+    #[OA\Post(
+        path: "/stripe/create-payment-intent",
+        summary: "Create payment intent",
+        description: "Create a Stripe payment intent for a transaction.",
+        tags: ["Stripe"],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["amount", "currency", "transaction_type", "payer_type", "payer_id", "payee_type", "payee_id"],
+                properties: [
+                    new OA\Property(property: "amount", type: "number", format: "float", example: 100.00, minimum: 0.01),
+                    new OA\Property(property: "currency", type: "string", example: "USD", minLength: 3, maxLength: 3),
+                    new OA\Property(property: "transaction_type", type: "string", example: "subscription"),
+                    new OA\Property(property: "payer_type", type: "string", example: "acc"),
+                    new OA\Property(property: "payer_id", type: "integer", example: 1),
+                    new OA\Property(property: "payee_type", type: "string", example: "group"),
+                    new OA\Property(property: "payee_id", type: "integer", example: 1),
+                    new OA\Property(property: "description", type: "string", nullable: true),
+                    new OA\Property(property: "reference_id", type: "integer", nullable: true),
+                    new OA\Property(property: "reference_type", type: "string", nullable: true)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Payment intent created successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "success", type: "boolean", example: true),
+                        new OA\Property(property: "client_secret", type: "string", example: "pi_xxx_secret_xxx"),
+                        new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx"),
+                        new OA\Property(property: "amount", type: "number", example: 100.00),
+                        new OA\Property(property: "currency", type: "string", example: "USD")
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: "Validation error"),
+            new OA\Response(response: 500, description: "Failed to create payment intent")
+        ]
+    )]
     public function createPaymentIntent(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -125,9 +181,37 @@ class StripeController extends Controller
         ]);
     }
 
-    /**
-     * Confirm payment (webhook or manual confirmation)
-     */
+    #[OA\Post(
+        path: "/stripe/confirm-payment",
+        summary: "Confirm payment",
+        description: "Confirm a Stripe payment intent. Can be called manually or via webhook.",
+        tags: ["Stripe"],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["payment_intent_id"],
+                properties: [
+                    new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx"),
+                    new OA\Property(property: "transaction_id", type: "integer", nullable: true, example: 1)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Payment confirmed successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "success", type: "boolean", example: true),
+                        new OA\Property(property: "status", type: "string", example: "succeeded"),
+                        new OA\Property(property: "transaction", type: "object", nullable: true)
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: "Validation error"),
+            new OA\Response(response: 500, description: "Failed to confirm payment")
+        ]
+    )]
     public function confirmPayment(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -180,9 +264,31 @@ class StripeController extends Controller
         ]);
     }
 
-    /**
-     * Handle Stripe webhook
-     */
+    #[OA\Post(
+        path: "/stripe/webhook",
+        summary: "Handle Stripe webhook",
+        description: "Handle Stripe webhook events for payment status updates. This endpoint is called by Stripe.",
+        tags: ["Stripe"],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                description: "Stripe webhook event payload"
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Webhook processed successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "received", type: "boolean", example: true)
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Invalid signature or event data"),
+            new OA\Response(response: 500, description: "Webhook processing failed")
+        ]
+    )]
     public function handleWebhook(Request $request)
     {
         $payload = $request->getContent();
