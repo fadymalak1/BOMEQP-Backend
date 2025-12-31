@@ -863,7 +863,7 @@ class InstructorController extends Controller
         try {
             // Create transaction
             $transaction = Transaction::create([
-                'transaction_type' => 'commission',
+                'transaction_type' => 'instructor_authorization',
                 'payer_type' => 'training_center',
                 'payer_id' => $trainingCenter->id,
                 'payee_type' => 'acc',
@@ -874,7 +874,8 @@ class InstructorController extends Controller
                 'payment_gateway_transaction_id' => $request->payment_intent_id,
                 'status' => 'completed',
                 'completed_at' => now(),
-                'reference_type' => 'instructor_authorization',
+                'description' => 'Instructor authorization payment for ' . ($authorization->instructor->first_name ?? '') . ' ' . ($authorization->instructor->last_name ?? ''),
+                'reference_type' => 'InstructorAccAuthorization',
                 'reference_id' => $authorization->id,
             ]);
 

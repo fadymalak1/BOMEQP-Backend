@@ -17,7 +17,7 @@ class WalletController extends Controller
      * @group Training Center Financial
      * @authenticated
      * 
-     * @queryParam type string Filter by transaction type (subscription, code_purchase, material_purchase, course_purchase, commission, settlement). Example: code_purchase
+     * @queryParam type string Filter by transaction type (subscription, code_purchase, material_purchase, course_purchase, commission, settlement, instructor_authorization). Example: instructor_authorization
      * @queryParam status string Filter by status (pending, completed, failed, refunded). Example: completed
      * @queryParam date_from date Filter transactions from date (YYYY-MM-DD). Example: 2024-01-01
      * @queryParam date_to date Filter transactions to date (YYYY-MM-DD). Example: 2024-12-31
@@ -232,6 +232,8 @@ class WalletController extends Controller
                 return \App\Models\TrainingCenterPurchase::find($id);
             case 'MonthlySettlement':
                 return \App\Models\MonthlySettlement::find($id);
+            case 'InstructorAccAuthorization':
+                return \App\Models\InstructorAccAuthorization::find($id);
             default:
                 return null;
         }
@@ -278,6 +280,19 @@ class WalletController extends Controller
                         'total_revenue' => $model->total_revenue ?? null,
                         'group_commission_amount' => $model->group_commission_amount ?? null,
                         'status' => $model->status ?? null,
+                    ];
+                case 'InstructorAccAuthorization':
+                    $instructor = $model->instructor ?? null;
+                    $acc = $model->acc ?? null;
+                    return [
+                        'instructor_id' => $model->instructor_id ?? null,
+                        'instructor_name' => $instructor ? trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')) : null,
+                        'acc_id' => $model->acc_id ?? null,
+                        'acc_name' => $acc->name ?? null,
+                        'training_center_id' => $model->training_center_id ?? null,
+                        'authorization_price' => $model->authorization_price ?? null,
+                        'status' => $model->status ?? null,
+                        'payment_status' => $model->payment_status ?? null,
                     ];
                 default:
                     return [];
