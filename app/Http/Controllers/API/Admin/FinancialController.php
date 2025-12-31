@@ -108,9 +108,21 @@ class FinancialController extends Controller
     )]
     public function transactions(Request $request)
     {
+        // Admin should see transactions where:
+        // 1. Group is payee (direct payments to group)
+        // 2. Group is payer (group paid someone)
+        // 3. Commission amount > 0 (admin received commission from transaction)
+        // 4. Has commission ledger with group commission
         $query = Transaction::where(function ($q) {
             $q->where('payee_type', 'group')
-              ->orWhere('payer_type', 'group');
+              ->orWhere('payer_type', 'group')
+              ->orWhere(function ($subQ) {
+                  $subQ->whereNotNull('commission_amount')
+                       ->where('commission_amount', '>', 0);
+              })
+              ->orWhereHas('commissionLedgers', function ($ledgerQ) {
+                  $ledgerQ->where('group_commission_amount', '>', 0);
+              });
         })
         ->with(['commissionLedgers.acc', 'commissionLedgers.trainingCenter', 'commissionLedgers.instructor'])
         ->orderBy('created_at', 'desc');
@@ -142,18 +154,37 @@ class FinancialController extends Controller
 
         // Get summary statistics
         $summaryQuery = clone $query;
-        $completedTransactions = $summaryQuery->where('status', 'completed')->get();
-        $pendingTransactions = $summaryQuery->where('status', 'pending')->get();
+        $allTransactions = $summaryQuery->get();
+        $completedTransactions = $allTransactions->where('status', 'completed');
+        $pendingTransactions = $allTransactions->where('status', 'pending');
         
         $summary = [
-            'total_transactions' => $summaryQuery->count(),
-            'total_amount' => round($summaryQuery->sum('amount'), 2),
-            'total_commission' => round($completedTransactions->sum(function ($t) {
-                return $t->commission_amount ?? $t->commissionLedgers->sum('group_commission_amount') ?? 0;
+            'total_transactions' => $allTransactions->count(),
+            'total_amount' => round($allTransactions->sum('amount'), 2),
+            'total_commission' => round($allTransactions->sum(function ($t) {
+                // Use commission_amount if available, otherwise check commission ledgers
+                if ($t->commission_amount && $t->commission_amount > 0) {
+                    return $t->commission_amount;
+                }
+                // If payee is group, use amount as commission
+                if ($t->payee_type === 'group') {
+                    return $t->amount;
+                }
+                // Check commission ledgers
+                return $t->commissionLedgers->sum('group_commission_amount') ?? 0;
             }), 2),
             'completed_amount' => round($completedTransactions->sum('amount'), 2),
             'completed_commission' => round($completedTransactions->sum(function ($t) {
-                return $t->commission_amount ?? $t->commissionLedgers->sum('group_commission_amount') ?? 0;
+                // Use commission_amount if available, otherwise check commission ledgers
+                if ($t->commission_amount && $t->commission_amount > 0) {
+                    return $t->commission_amount;
+                }
+                // If payee is group, use amount as commission
+                if ($t->payee_type === 'group') {
+                    return $t->amount;
+                }
+                // Check commission ledgers
+                return $t->commissionLedgers->sum('group_commission_amount') ?? 0;
             }), 2),
             'pending_amount' => round($pendingTransactions->sum('amount'), 2),
         ];
