@@ -481,6 +481,29 @@ class CodeController extends Controller
 
         DB::beginTransaction();
         try {
+            // Determine payment type and amounts
+            $paymentType = 'standard';
+            $commissionAmount = null;
+            $providerAmount = null;
+            
+            // Check if destination charge was used (check payment intent metadata)
+            try {
+                $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                if ($paymentIntent && isset($paymentIntent->metadata->payment_type) && $paymentIntent->metadata->payment_type === 'destination_charge') {
+                    $paymentType = 'destination_charge';
+                    $commissionAmount = $groupCommissionAmount;
+                    $providerAmount = $finalAmount - $groupCommissionAmount;
+                } else {
+                    // Standard payment - commission handled through ledger
+                    $commissionAmount = $groupCommissionAmount;
+                    $providerAmount = $accCommissionAmount;
+                }
+            } catch (\Exception $e) {
+                // If can't retrieve payment intent, use calculated amounts
+                $commissionAmount = $groupCommissionAmount;
+                $providerAmount = $accCommissionAmount;
+            }
+            
             // Create transaction
             $transaction = Transaction::create([
                 'transaction_type' => 'code_purchase',
@@ -489,8 +512,11 @@ class CodeController extends Controller
                 'payee_type' => 'acc',
                 'payee_id' => $request->acc_id,
                 'amount' => $finalAmount,
+                'commission_amount' => $commissionAmount,
+                'provider_amount' => $providerAmount,
                 'currency' => 'USD',
                 'payment_method' => $request->payment_method,
+                'payment_type' => $paymentType,
                 'payment_gateway_transaction_id' => $request->payment_intent_id,
                 'status' => 'completed',
                 'completed_at' => now(),

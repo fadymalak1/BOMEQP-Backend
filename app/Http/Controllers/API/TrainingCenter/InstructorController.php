@@ -906,6 +906,34 @@ class InstructorController extends Controller
 
         DB::beginTransaction();
         try {
+            // Calculate commission amounts
+            $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
+            $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
+            $accCommissionAmount = $authorization->authorization_price - $groupCommissionAmount;
+            
+            // Determine payment type and amounts
+            $paymentType = 'standard';
+            $commissionAmount = null;
+            $providerAmount = null;
+            
+            // Check if destination charge was used (check payment intent metadata)
+            try {
+                $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                if ($paymentIntent && isset($paymentIntent->metadata->payment_type) && $paymentIntent->metadata->payment_type === 'destination_charge') {
+                    $paymentType = 'destination_charge';
+                    $commissionAmount = $groupCommissionAmount;
+                    $providerAmount = $authorization->authorization_price - $groupCommissionAmount;
+                } else {
+                    // Standard payment - commission handled through ledger
+                    $commissionAmount = $groupCommissionAmount;
+                    $providerAmount = $accCommissionAmount;
+                }
+            } catch (\Exception $e) {
+                // If can't retrieve payment intent, use calculated amounts
+                $commissionAmount = $groupCommissionAmount;
+                $providerAmount = $accCommissionAmount;
+            }
+            
             // Create transaction
             $transaction = Transaction::create([
                 'transaction_type' => 'instructor_authorization',
@@ -914,8 +942,11 @@ class InstructorController extends Controller
                 'payee_type' => 'acc',
                 'payee_id' => $authorization->acc_id,
                 'amount' => $authorization->authorization_price,
+                'commission_amount' => $commissionAmount,
+                'provider_amount' => $providerAmount,
                 'currency' => 'USD',
                 'payment_method' => $request->payment_method,
+                'payment_type' => $paymentType,
                 'payment_gateway_transaction_id' => $request->payment_intent_id,
                 'status' => 'completed',
                 'completed_at' => now(),

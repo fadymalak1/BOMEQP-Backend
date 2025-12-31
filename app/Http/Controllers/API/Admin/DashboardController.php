@@ -44,14 +44,30 @@ class DashboardController extends Controller
         $trainingCenters = TrainingCenter::count();
         $instructors = Instructor::count();
 
-        // Calculate revenue
+        // Calculate revenue: Use commission_amount if available (destination charge), otherwise use amount for group transactions
         $monthlyRevenue = Transaction::where('status', 'completed')
             ->whereMonth('completed_at', now()->month)
             ->whereYear('completed_at', now()->year)
-            ->sum('amount');
+            ->get()
+            ->sum(function ($transaction) {
+                // If transaction is to group, use commission_amount if available
+                if ($transaction->payee_type === 'group') {
+                    return $transaction->commission_amount ?? $transaction->amount;
+                }
+                // For other transactions, use commission_amount from commission ledgers or transaction
+                return $transaction->commission_amount ?? 0;
+            });
 
         $totalRevenue = Transaction::where('status', 'completed')
-            ->sum('amount');
+            ->get()
+            ->sum(function ($transaction) {
+                // If transaction is to group, use commission_amount if available
+                if ($transaction->payee_type === 'group') {
+                    return $transaction->commission_amount ?? $transaction->amount;
+                }
+                // For other transactions, use commission_amount from commission ledgers or transaction
+                return $transaction->commission_amount ?? 0;
+            });
 
         return response()->json([
             'accreditation_bodies' => $accreditationBodies,

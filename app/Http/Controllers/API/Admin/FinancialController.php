@@ -34,18 +34,34 @@ class FinancialController extends Controller
     )]
     public function dashboard()
     {
-        $totalRevenue = Transaction::where('payee_type', 'group')
-            ->where('status', 'completed')
-            ->sum('amount');
+        // Calculate total revenue: Use commission_amount if available (destination charge)
+        $totalRevenue = Transaction::where('status', 'completed')
+            ->get()
+            ->sum(function ($transaction) {
+                // Use commission_amount if available, otherwise sum from commission ledgers
+                if ($transaction->commission_amount) {
+                    return $transaction->commission_amount;
+                }
+                // Fallback: sum from commission ledgers
+                return $transaction->commissionLedgers->sum('group_commission_amount') ?? 0;
+            });
 
         $pendingSettlements = MonthlySettlement::where('status', 'pending')
             ->sum('group_commission_amount');
 
-        $thisMonthRevenue = Transaction::where('payee_type', 'group')
-            ->where('status', 'completed')
+        // Calculate this month revenue: Use commission_amount if available
+        $thisMonthRevenue = Transaction::where('status', 'completed')
             ->whereMonth('completed_at', now()->month)
             ->whereYear('completed_at', now()->year)
-            ->sum('amount');
+            ->get()
+            ->sum(function ($transaction) {
+                // Use commission_amount if available, otherwise sum from commission ledgers
+                if ($transaction->commission_amount) {
+                    return $transaction->commission_amount;
+                }
+                // Fallback: sum from commission ledgers
+                return $transaction->commissionLedgers->sum('group_commission_amount') ?? 0;
+            });
 
         $activeAccs = \App\Models\ACC::where('status', 'active')->count();
 
@@ -126,11 +142,20 @@ class FinancialController extends Controller
 
         // Get summary statistics
         $summaryQuery = clone $query;
+        $completedTransactions = $summaryQuery->where('status', 'completed')->get();
+        $pendingTransactions = $summaryQuery->where('status', 'pending')->get();
+        
         $summary = [
             'total_transactions' => $summaryQuery->count(),
             'total_amount' => round($summaryQuery->sum('amount'), 2),
-            'completed_amount' => round($summaryQuery->where('status', 'completed')->sum('amount'), 2),
-            'pending_amount' => round($summaryQuery->where('status', 'pending')->sum('amount'), 2),
+            'total_commission' => round($completedTransactions->sum(function ($t) {
+                return $t->commission_amount ?? $t->commissionLedgers->sum('group_commission_amount') ?? 0;
+            }), 2),
+            'completed_amount' => round($completedTransactions->sum('amount'), 2),
+            'completed_commission' => round($completedTransactions->sum(function ($t) {
+                return $t->commission_amount ?? $t->commissionLedgers->sum('group_commission_amount') ?? 0;
+            }), 2),
+            'pending_amount' => round($pendingTransactions->sum('amount'), 2),
         ];
 
         $perPage = $request->get('per_page', 15);
@@ -241,8 +266,11 @@ class FinancialController extends Controller
             'payer' => $payer,
             'payee' => $payee,
             'amount' => round($transaction->amount, 2),
+            'commission_amount' => $transaction->commission_amount ? round($transaction->commission_amount, 2) : null,
+            'provider_amount' => $transaction->provider_amount ? round($transaction->provider_amount, 2) : null,
             'currency' => $transaction->currency,
             'payment_method' => $transaction->payment_method,
+            'payment_type' => $transaction->payment_type,
             'payment_gateway_transaction_id' => $transaction->payment_gateway_transaction_id,
             'status' => $transaction->status,
             'description' => $transaction->description,

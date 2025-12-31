@@ -78,21 +78,31 @@ class FinancialController extends Controller
 
         // Get summary statistics
         $summaryQuery = clone $query;
+        $receivedTransactions = $summaryQuery->where('payee_type', 'acc')->where('payee_id', $acc->id)->get();
+        $paidTransactions = $summaryQuery->where('payer_type', 'acc')->where('payer_id', $acc->id)->get();
+        $completedTransactions = $summaryQuery->where('status', 'completed')->get();
+        $pendingTransactions = $summaryQuery->where('status', 'pending')->get();
+        
         $summary = [
             'total_transactions' => $summaryQuery->count(),
-            'total_received' => round($summaryQuery->where('payee_type', 'acc')->where('payee_id', $acc->id)->sum('amount'), 2),
-            'total_paid' => round($summaryQuery->where('payer_type', 'acc')->where('payer_id', $acc->id)->sum('amount'), 2),
-            'completed_amount' => round($summaryQuery->where('status', 'completed')->sum('amount'), 2),
-            'pending_amount' => round($summaryQuery->where('status', 'pending')->sum('amount'), 2),
+            'total_received' => round($receivedTransactions->sum(function ($t) {
+                return $t->provider_amount ?? $t->amount;
+            }), 2),
+            'total_paid' => round($paidTransactions->sum('amount'), 2),
+            'completed_amount' => round($completedTransactions->sum('amount'), 2),
+            'completed_received' => round($completedTransactions->where('payee_type', 'acc')->where('payee_id', $acc->id)->sum(function ($t) {
+                return $t->provider_amount ?? $t->amount;
+            }), 2),
+            'pending_amount' => round($pendingTransactions->sum('amount'), 2),
         ];
 
         $perPage = $request->get('per_page', 15);
         $transactions = $query->paginate($perPage);
 
         // Format transactions with detailed information
-        $formattedTransactions = $transactions->getCollection()->map(function ($transaction) {
+        $formattedTransactions = $transactions->getCollection()->map(function ($transaction) use ($acc) {
             try {
-                return $this->formatTransaction($transaction);
+                return $this->formatTransaction($transaction, $acc);
             } catch (\Exception $e) {
                 \Log::error('Error formatting transaction: ' . $e->getMessage(), [
                     'transaction_id' => $transaction->id ?? null,
@@ -123,7 +133,7 @@ class FinancialController extends Controller
     /**
      * Format transaction with all details
      */
-    private function formatTransaction($transaction)
+    private function formatTransaction($transaction, $acc = null)
     {
         // Get payer details
         $payer = null;
@@ -188,14 +198,24 @@ class FinancialController extends Controller
             })->toArray();
         }
 
+        // Calculate received amount: Use provider_amount if available (destination charge), otherwise use amount
+        $receivedAmount = null;
+        if ($acc && $transaction->payee_type === 'acc' && $transaction->payee_id == $acc->id) {
+            $receivedAmount = $transaction->provider_amount ?? $transaction->amount;
+        }
+        
         return [
             'id' => $transaction->id,
             'transaction_type' => $transaction->transaction_type,
             'payer' => $payer,
             'payee' => $payee,
             'amount' => round($transaction->amount, 2),
+            'commission_amount' => $transaction->commission_amount ? round($transaction->commission_amount, 2) : null,
+            'provider_amount' => $transaction->provider_amount ? round($transaction->provider_amount, 2) : null,
+            'received_amount' => $receivedAmount ? round($receivedAmount, 2) : null,
             'currency' => $transaction->currency,
             'payment_method' => $transaction->payment_method,
+            'payment_type' => $transaction->payment_type,
             'payment_gateway_transaction_id' => $transaction->payment_gateway_transaction_id,
             'status' => $transaction->status,
             'description' => $transaction->description,

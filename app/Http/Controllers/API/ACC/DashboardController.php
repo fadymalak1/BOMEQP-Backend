@@ -55,12 +55,16 @@ class DashboardController extends Controller
         $activeTrainingCenters = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
             ->count();
 
+        // Calculate revenue: Use provider_amount if available (destination charge), otherwise use amount
         $revenueThisMonth = Transaction::where('payee_type', 'acc')
             ->where('payee_id', $acc->id)
             ->where('status', 'completed')
             ->whereMonth('completed_at', now()->month)
             ->whereYear('completed_at', now()->year)
-            ->sum('amount');
+            ->get()
+            ->sum(function ($transaction) {
+                return $transaction->provider_amount ?? $transaction->amount;
+            });
 
         $pendingInstructorRequests = \App\Models\InstructorAccAuthorization::where('acc_id', $acc->id)
             ->where('status', 'pending')
@@ -72,7 +76,10 @@ class DashboardController extends Controller
         $totalRevenue = Transaction::where('payee_type', 'acc')
             ->where('payee_id', $acc->id)
             ->where('status', 'completed')
-            ->sum('amount');
+            ->get()
+            ->sum(function ($transaction) {
+                return $transaction->provider_amount ?? $transaction->amount;
+            });
 
         $certificatesGenerated = \App\Models\Certificate::whereHas('course', function($q) use ($acc) {
             $q->where('acc_id', $acc->id);

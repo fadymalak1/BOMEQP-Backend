@@ -18,8 +18,11 @@ class Transaction extends Model
         'payee_type',
         'payee_id',
         'amount',
+        'commission_amount',
+        'provider_amount',
         'currency',
         'payment_method',
+        'payment_type',
         'payment_gateway_transaction_id',
         'status',
         'description',
@@ -32,6 +35,8 @@ class Transaction extends Model
     {
         return [
             'amount' => 'decimal:2',
+            'commission_amount' => 'decimal:2',
+            'provider_amount' => 'decimal:2',
             'completed_at' => 'datetime',
         ];
     }
