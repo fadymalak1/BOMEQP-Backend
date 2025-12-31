@@ -999,12 +999,30 @@ class InstructorController extends Controller
                 $authorization->authorization_price
             );
             
-            // Notify Admin
+            // Calculate commission for notification
+            $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
+            $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
+            
+            // Notify Admin about instructor authorization payment and commission
             $notificationService->notifyInstructorAuthorizationPaid(
                 $authorization->id,
                 $instructorName,
-                $authorization->authorization_price
+                $authorization->authorization_price,
+                $groupCommissionAmount
             );
+            
+            // Notify Admin about commission received (separate notification)
+            if ($groupCommissionAmount > 0) {
+                $acc = $authorization->acc;
+                $notificationService->notifyAdminCommissionReceived(
+                    $transaction->id,
+                    'instructor_authorization',
+                    $groupCommissionAmount,
+                    $authorization->authorization_price,
+                    $trainingCenter->name,
+                    $acc ? $acc->name : null
+                );
+            }
 
             return response()->json([
                 'message' => 'Payment successful. Instructor is now officially authorized.',

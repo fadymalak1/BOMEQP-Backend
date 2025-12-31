@@ -349,28 +349,96 @@ class NotificationService
     /**
      * Notify Admin about instructor authorization payment
      */
-    public function notifyInstructorAuthorizationPaid(int $authorizationId, string $instructorName, float $amount): void
+    public function notifyInstructorAuthorizationPaid(int $authorizationId, string $instructorName, float $amount, ?float $commissionAmount = null): void
     {
+        $message = "Payment of $" . number_format($amount, 2) . " received for instructor authorization: {$instructorName}";
+        
+        if ($commissionAmount && $commissionAmount > 0) {
+            $message .= " Commission received: $" . number_format($commissionAmount, 2) . ".";
+        }
+        
         $this->sendToRole(
             'group_admin',
             'instructor_authorization_paid',
             'Instructor Authorization Payment Received',
-            "Payment of $" . number_format($amount, 2) . " received for instructor authorization: {$instructorName}",
-            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'amount' => $amount]
+            $message,
+            [
+                'authorization_id' => $authorizationId,
+                'instructor_name' => $instructorName,
+                'amount' => $amount,
+                'commission_amount' => $commissionAmount
+            ]
         );
     }
 
     /**
      * Notify Admin about code purchase
      */
-    public function notifyAdminCodePurchase(int $batchId, string $trainingCenterName, int $quantity, float $amount): void
+    public function notifyAdminCodePurchase(int $batchId, string $trainingCenterName, int $quantity, float $amount, ?float $commissionAmount = null): void
     {
+        $message = "{$trainingCenterName} purchased {$quantity} certificate code(s) for $" . number_format($amount, 2) . ".";
+        
+        if ($commissionAmount && $commissionAmount > 0) {
+            $message .= " Commission received: $" . number_format($commissionAmount, 2) . ".";
+        }
+        
         $this->sendToRole(
             'group_admin',
             'code_purchase_admin',
             'Certificate Codes Purchased',
-            "{$trainingCenterName} purchased {$quantity} certificate code(s) for $" . number_format($amount, 2) . ".",
-            ['batch_id' => $batchId, 'training_center_name' => $trainingCenterName, 'quantity' => $quantity, 'amount' => $amount]
+            $message,
+            [
+                'batch_id' => $batchId,
+                'training_center_name' => $trainingCenterName,
+                'quantity' => $quantity,
+                'amount' => $amount,
+                'commission_amount' => $commissionAmount
+            ]
+        );
+    }
+
+    /**
+     * Notify Admin about commission received
+     */
+    public function notifyAdminCommissionReceived(
+        int $transactionId,
+        string $transactionType,
+        float $commissionAmount,
+        float $totalAmount,
+        ?string $payerName = null,
+        ?string $payeeName = null
+    ): void {
+        $typeLabels = [
+            'code_purchase' => 'Code Purchase',
+            'instructor_authorization' => 'Instructor Authorization',
+            'material_purchase' => 'Material Purchase',
+            'course_purchase' => 'Course Purchase',
+        ];
+        
+        $typeLabel = $typeLabels[$transactionType] ?? ucfirst(str_replace('_', ' ', $transactionType));
+        
+        $message = "Commission of $" . number_format($commissionAmount, 2) . " received from {$typeLabel}";
+        if ($payerName) {
+            $message .= " (Paid by: {$payerName})";
+        }
+        if ($payeeName) {
+            $message .= " (Provider: {$payeeName})";
+        }
+        $message .= ". Total transaction amount: $" . number_format($totalAmount, 2) . ".";
+        
+        $this->sendToRole(
+            'group_admin',
+            'commission_received',
+            'Commission Received',
+            $message,
+            [
+                'transaction_id' => $transactionId,
+                'transaction_type' => $transactionType,
+                'commission_amount' => $commissionAmount,
+                'total_amount' => $totalAmount,
+                'payer_name' => $payerName,
+                'payee_name' => $payeeName
+            ]
         );
     }
 

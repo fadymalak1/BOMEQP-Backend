@@ -592,13 +592,27 @@ class CodeController extends Controller
                 $finalAmount
             );
             
-            // Notify Admin
+            // Notify Admin about code purchase and commission
             $notificationService->notifyAdminCodePurchase(
                 $batch->id,
                 $trainingCenter->name,
                 $request->quantity,
-                $finalAmount
+                $finalAmount,
+                $groupCommissionAmount
             );
+            
+            // Notify Admin about commission received (separate notification)
+            if ($groupCommissionAmount > 0) {
+                $acc = \App\Models\ACC::find($request->acc_id);
+                $notificationService->notifyAdminCommissionReceived(
+                    $transaction->id,
+                    'code_purchase',
+                    $groupCommissionAmount,
+                    $finalAmount,
+                    $trainingCenter->name,
+                    $acc ? $acc->name : null
+                );
+            }
             
             // Notify ACC (about commission)
             $acc = \App\Models\ACC::find($request->acc_id);
