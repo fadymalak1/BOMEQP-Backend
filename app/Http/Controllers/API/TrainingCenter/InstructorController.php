@@ -752,19 +752,44 @@ class InstructorController extends Controller
             ], 400);
         }
 
+        // Calculate commission amounts
+        $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
+        $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
+
+        // Get ACC to check for Stripe account
+        $acc = $authorization->acc;
+
+        // Prepare metadata
+        $metadata = [
+            'authorization_id' => (string)$authorization->id,
+            'training_center_id' => (string)$trainingCenter->id,
+            'acc_id' => (string)$authorization->acc_id,
+            'instructor_id' => (string)$authorization->instructor_id,
+            'type' => 'instructor_authorization',
+            'amount' => (string)$authorization->authorization_price,
+            'group_commission_percentage' => (string)$groupCommissionPercentage,
+            'group_commission_amount' => (string)$groupCommissionAmount,
+        ];
+
         try {
-            $result = $this->stripeService->createPaymentIntent(
-                $authorization->authorization_price,
-                'USD',
-                [
-                    'authorization_id' => (string)$authorization->id,
-                    'training_center_id' => (string)$trainingCenter->id,
-                    'acc_id' => (string)$authorization->acc_id,
-                    'instructor_id' => (string)$authorization->instructor_id,
-                    'type' => 'instructor_authorization',
-                    'amount' => (string)$authorization->authorization_price,
-                ]
-            );
+            // Use destination charges if ACC has Stripe account ID
+            if (!empty($acc->stripe_account_id) && $groupCommissionAmount > 0) {
+                // Destination charge: money goes to ACC, commission goes to platform
+                $result = $this->stripeService->createDestinationChargePaymentIntent(
+                    $authorization->authorization_price,
+                    $acc->stripe_account_id,
+                    $groupCommissionAmount,
+                    'usd',
+                    $metadata
+                );
+            } else {
+                // Regular payment intent (fallback if no Stripe account or no commission)
+                $result = $this->stripeService->createPaymentIntent(
+                    $authorization->authorization_price,
+                    'USD',
+                    $metadata
+                );
+            }
 
             if (!$result['success']) {
                 return response()->json([
@@ -778,7 +803,10 @@ class InstructorController extends Controller
                 'client_secret' => $result['client_secret'],
                 'payment_intent_id' => $result['payment_intent_id'],
                 'amount' => $authorization->authorization_price,
-                'currency' => $result['currency'],
+                'currency' => $result['currency'] ?? 'USD',
+                'commission_amount' => isset($result['commission_amount']) ? number_format($result['commission_amount'], 2, '.', '') : number_format($groupCommissionAmount, 2, '.', ''),
+                'provider_amount' => isset($result['provider_amount']) ? number_format($result['provider_amount'], 2, '.', '') : null,
+                'payment_type' => !empty($acc->stripe_account_id) && $groupCommissionAmount > 0 ? 'destination_charge' : 'standard',
                 'authorization' => $authorization,
             ], 200);
         } catch (\Exception $e) {

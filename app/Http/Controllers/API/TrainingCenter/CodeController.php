@@ -197,7 +197,11 @@ class CodeController extends Controller
             ], 400);
         }
 
-        // Create payment intent
+        // Calculate commission amounts
+        $groupCommissionPercentage = $acc->commission_percentage ?? 0;
+        $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
+
+        // Prepare metadata
         $metadata = [
             'transaction_type' => 'code_purchase',
             'payer_type' => 'training_center',
@@ -208,13 +212,28 @@ class CodeController extends Controller
             'quantity' => (string)$request->quantity,
             'type' => 'code_purchase',
             'discount_code' => $request->discount_code ?? '',
+            'group_commission_percentage' => (string)$groupCommissionPercentage,
+            'group_commission_amount' => (string)$groupCommissionAmount,
         ];
 
-        $result = $this->stripeService->createPaymentIntent(
-            $finalAmount,
-            $pricing->currency ?? 'USD',
-            $metadata
-        );
+        // Use destination charges if ACC has Stripe account ID
+        if (!empty($acc->stripe_account_id) && $groupCommissionAmount > 0) {
+            // Destination charge: money goes to ACC, commission goes to platform
+            $result = $this->stripeService->createDestinationChargePaymentIntent(
+                $finalAmount,
+                $acc->stripe_account_id,
+                $groupCommissionAmount,
+                strtolower($pricing->currency ?? 'usd'),
+                $metadata
+            );
+        } else {
+            // Regular payment intent (fallback if no Stripe account or no commission)
+            $result = $this->stripeService->createPaymentIntent(
+                $finalAmount,
+                $pricing->currency ?? 'USD',
+                $metadata
+            );
+        }
 
         if (!$result['success']) {
             return response()->json([
@@ -234,6 +253,9 @@ class CodeController extends Controller
             'final_amount' => number_format($finalAmount, 2, '.', ''),
             'unit_price' => number_format($unitPrice, 2, '.', ''),
             'quantity' => $request->quantity,
+            'commission_amount' => isset($result['commission_amount']) ? number_format($result['commission_amount'], 2, '.', '') : number_format($groupCommissionAmount, 2, '.', ''),
+            'provider_amount' => isset($result['provider_amount']) ? number_format($result['provider_amount'], 2, '.', '') : null,
+            'payment_type' => !empty($acc->stripe_account_id) && $groupCommissionAmount > 0 ? 'destination_charge' : 'standard',
         ], 200);
     }
 

@@ -31,6 +31,7 @@ class ACC extends Model
         'approved_at',
         'approved_by',
         'commission_percentage',
+        'stripe_account_id',
         'rejection_reason',
     ];
 

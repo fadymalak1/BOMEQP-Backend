@@ -107,6 +107,98 @@ class StripeService
     }
 
     /**
+     * Create a payment intent with destination charges (split payment)
+     * Money goes to provider account, admin commission is automatically deducted
+     * 
+     * @param float $amount Total amount in currency units (e.g., 1000.00 EGP)
+     * @param string $providerStripeAccountId Stripe Connect account ID of the provider
+     * @param float $commissionAmount Commission amount for admin/platform (e.g., 100.00 EGP)
+     * @param string $currency Currency code (default: 'egp')
+     * @param array $metadata Additional metadata
+     * @return array
+     */
+    public function createDestinationChargePaymentIntent(
+        float $amount,
+        string $providerStripeAccountId,
+        float $commissionAmount,
+        string $currency = 'egp',
+        array $metadata = []
+    ): array {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured or not active');
+        }
+
+        if (empty($providerStripeAccountId)) {
+            throw new \Exception('Provider Stripe account ID is required');
+        }
+
+        try {
+            $amountInCents = (int)($amount * 100);
+            $commissionInCents = (int)($commissionAmount * 100);
+
+            // Validate commission doesn't exceed amount
+            if ($commissionInCents >= $amountInCents) {
+                throw new \Exception('Commission amount cannot be greater than or equal to total amount');
+            }
+
+            $paymentIntent = PaymentIntent::create([
+                'amount' => $amountInCents,
+                'currency' => strtolower($currency),
+                
+                // Admin/platform commission (application fee)
+                'application_fee_amount' => $commissionInCents,
+                
+                // Money goes to provider's Stripe Connect account
+                'transfer_data' => [
+                    'destination' => $providerStripeAccountId,
+                ],
+                
+                'metadata' => array_merge($metadata, [
+                    'payment_type' => 'destination_charge',
+                    'provider_stripe_account_id' => $providerStripeAccountId,
+                    'commission_amount' => $commissionAmount,
+                ]),
+                
+                'automatic_payment_methods' => [
+                    'enabled' => true,
+                ],
+            ]);
+
+            Log::info('Stripe Destination Charge PaymentIntent created', [
+                'payment_intent_id' => $paymentIntent->id,
+                'total_amount' => $amount,
+                'commission_amount' => $commissionAmount,
+                'provider_amount' => $amount - $commissionAmount,
+                'provider_stripe_account_id' => $providerStripeAccountId,
+                'currency' => $currency,
+            ]);
+
+            return [
+                'success' => true,
+                'client_secret' => $paymentIntent->client_secret,
+                'payment_intent_id' => $paymentIntent->id,
+                'amount' => $amount,
+                'commission_amount' => $commissionAmount,
+                'provider_amount' => $amount - $commissionAmount,
+                'currency' => $currency,
+            ];
+        } catch (ApiErrorException $e) {
+            Log::error('Stripe Destination Charge PaymentIntent creation failed', [
+                'error' => $e->getMessage(),
+                'amount' => $amount,
+                'commission_amount' => $commissionAmount,
+                'provider_stripe_account_id' => $providerStripeAccountId,
+                'currency' => $currency,
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Confirm a payment intent
      */
     public function confirmPaymentIntent(string $paymentIntentId): array
