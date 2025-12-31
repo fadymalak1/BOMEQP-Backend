@@ -144,6 +144,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // ACC routes
     Route::prefix('acc')->middleware(['role:acc_admin'])->group(function () {
+        // Profile Management
+        Route::get('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'show']);
+        Route::put('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'update']);
+        
         Route::get('/dashboard', [App\Http\Controllers\API\ACC\DashboardController::class, 'index']);
         Route::get('/subscription', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'show']);
         // Payment intent endpoints must come before payment endpoints
