@@ -14,7 +14,7 @@ class ClassController extends Controller
     #[OA\Get(
         path: "/training-center/classes",
         summary: "List training classes",
-        description: "Get all training classes for the authenticated training center.",
+        description: "Get all training classes for the authenticated training center with their trainees list.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         responses: [
@@ -23,7 +23,31 @@ class ClassController extends Controller
                 description: "Classes retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "classes", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(
+                            property: "classes",
+                            type: "array",
+                            items: new OA\Items(
+                                type: "object",
+                                properties: [
+                                    new OA\Property(property: "id", type: "integer"),
+                                    new OA\Property(property: "trainees", type: "array", items: new OA\Items(
+                                        type: "object",
+                                        properties: [
+                                            new OA\Property(property: "id", type: "integer"),
+                                            new OA\Property(property: "first_name", type: "string"),
+                                            new OA\Property(property: "last_name", type: "string"),
+                                            new OA\Property(property: "email", type: "string"),
+                                            new OA\Property(property: "phone", type: "string", nullable: true),
+                                            new OA\Property(property: "id_number", type: "string", nullable: true),
+                                            new OA\Property(property: "status", type: "string", nullable: true),
+                                            new OA\Property(property: "enrolled_at", type: "string", format: "date-time", nullable: true),
+                                            new OA\Property(property: "completed_at", type: "string", format: "date-time", nullable: true),
+                                        ]
+                                    )),
+                                    new OA\Property(property: "trainees_count", type: "integer", description: "Total number of trainees in the class")
+                                ]
+                            )
+                        )
                     ]
                 )
             ),
@@ -41,8 +65,28 @@ class ClassController extends Controller
         }
 
         $classes = TrainingClass::where('training_center_id', $trainingCenter->id)
-            ->with(['course', 'instructor', 'classModel'])
-            ->get();
+            ->with(['course', 'instructor', 'classModel', 'trainees'])
+            ->get()
+            ->map(function ($class) {
+                $classData = $class->toArray();
+                // Format trainees data
+                $classData['trainees'] = $class->trainees->map(function ($trainee) {
+                    return [
+                        'id' => $trainee->id,
+                        'first_name' => $trainee->first_name,
+                        'last_name' => $trainee->last_name,
+                        'email' => $trainee->email,
+                        'phone' => $trainee->phone,
+                        'id_number' => $trainee->id_number,
+                        'status' => $trainee->pivot->status ?? null,
+                        'enrolled_at' => $trainee->pivot->enrolled_at ?? null,
+                        'completed_at' => $trainee->pivot->completed_at ?? null,
+                    ];
+                });
+                // Keep enrolled_count for backward compatibility
+                $classData['trainees_count'] = $class->trainees->count();
+                return $classData;
+            });
 
         return response()->json(['classes' => $classes]);
     }
