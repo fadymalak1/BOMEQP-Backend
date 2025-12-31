@@ -370,7 +370,20 @@ class TraineeController extends Controller
             'status' => 'sometimes|in:active,inactive,suspended',
         ]);
 
-        $updateData = $request->only(['first_name', 'last_name', 'email', 'phone', 'id_number', 'status']);
+        $updateData = [];
+
+        // Only include fields that are actually provided and not empty
+        // Use input() to handle both JSON and form data
+        $fields = ['first_name', 'last_name', 'email', 'phone', 'id_number', 'status'];
+        foreach ($fields as $field) {
+            if ($request->has($field)) {
+                $value = $request->input($field);
+                // Only add if value is not null and not empty string
+                if ($value !== null && $value !== '') {
+                    $updateData[$field] = $value;
+                }
+            }
+        }
 
         // Handle file uploads if provided
         if ($request->hasFile('id_image')) {
@@ -415,7 +428,12 @@ class TraineeController extends Controller
             $updateData['card_image_url'] = $this->getStorageUrl($cardImagePath);
         }
 
-        $trainee->update($updateData);
+        // Only update if there's data to update
+        if (!empty($updateData)) {
+            $trainee->update($updateData);
+            // Refresh the model to ensure we have the latest data
+            $trainee->refresh();
+        }
 
         // Update enrolled classes if provided
         if ($request->has('enrolled_classes')) {
