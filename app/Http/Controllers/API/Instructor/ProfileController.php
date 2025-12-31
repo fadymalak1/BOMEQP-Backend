@@ -133,9 +133,27 @@ class ProfileController extends Controller
             'specializations' => 'nullable|array',
         ]);
 
-        $updateData = $request->only([
-            'first_name', 'last_name', 'phone', 'country', 'city', 'specializations'
-        ]);
+        $updateData = [];
+
+        // Only include fields that are actually provided and not empty
+        // Use input() to handle both JSON and form data
+        $fields = ['first_name', 'last_name', 'phone', 'country', 'city', 'specializations'];
+        foreach ($fields as $field) {
+            if ($request->has($field)) {
+                $value = $request->input($field);
+                // For specializations, check if it's an array and not empty
+                if ($field === 'specializations') {
+                    if (is_array($value) && !empty($value)) {
+                        $updateData[$field] = $value;
+                    }
+                } else {
+                    // Only add if value is not null and not empty string
+                    if ($value !== null && $value !== '') {
+                        $updateData[$field] = $value;
+                    }
+                }
+            }
+        }
 
         // Handle CV file upload
         if ($request->hasFile('cv')) {
@@ -237,61 +255,19 @@ class ProfileController extends Controller
             'old_cv_url' => $instructor->cv_url
         ]);
         
-        // Use direct DB update to ensure cv_url is saved correctly
-        if (isset($updateData['cv_url'])) {
-            // Update cv_url directly in database first
-            DB::table('instructors')
-                ->where('id', $instructor->id)
-                ->update(['cv_url' => $updateData['cv_url']]);
-            \Log::info('CV URL updated directly in DB', [
-                'instructor_id' => $instructor->id,
-                'new_cv_url' => $updateData['cv_url']
-            ]);
-        }
-        
-        // Update other fields using Eloquent
+        // Only update if there's data to update
         if (!empty($updateData)) {
-            // Remove cv_url from updateData since we already updated it directly
-            $otherUpdateData = $updateData;
-            unset($otherUpdateData['cv_url']);
-            
-            if (!empty($otherUpdateData)) {
-                $instructor->update($otherUpdateData);
-            }
-        }
-        
-        // Refresh to ensure we have the latest data
-        $instructor->refresh();
-        
-        // Verify cv_url was actually saved
-        $instructorFromDb = Instructor::find($instructor->id);
-        $actualCvUrl = $instructorFromDb ? $instructorFromDb->cv_url : null;
-        
-        // Log after update to verify
-        \Log::info('Instructor profile updated', [
-            'instructor_id' => $instructor->id,
-            'cv_url_in_model' => $instructor->cv_url,
-            'cv_url_from_db' => $actualCvUrl,
-            'expected_cv_url' => $updateData['cv_url'] ?? 'NOT SET'
-        ]);
-        
-        // Final verification - if still not updated, try one more time
-        if (isset($updateData['cv_url']) && $actualCvUrl !== $updateData['cv_url']) {
-            \Log::warning('CV URL still not updated, forcing update', [
-                'expected' => $updateData['cv_url'],
-                'actual' => $actualCvUrl
-            ]);
-            DB::table('instructors')
-                ->where('id', $instructor->id)
-                ->update(['cv_url' => $updateData['cv_url'], 'updated_at' => now()]);
+            $instructor->update($updateData);
+            // Refresh the model to ensure we have the latest data
             $instructor->refresh();
         }
 
         // Update user account name if first_name or last_name changed
-        if ($request->has('first_name') || $request->has('last_name')) {
+        if (isset($updateData['first_name']) || isset($updateData['last_name'])) {
             $userAccount = User::where('email', $user->email)->first();
             if ($userAccount) {
-                $fullName = ($request->first_name ?? $instructor->first_name) . ' ' . ($request->last_name ?? $instructor->last_name);
+                // Use updated instructor data (after refresh)
+                $fullName = $instructor->first_name . ' ' . $instructor->last_name;
                 $userAccount->update(['name' => $fullName]);
             }
         }
