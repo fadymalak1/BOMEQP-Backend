@@ -23,9 +23,33 @@ class InstructorController extends Controller
         }
 
         $requests = InstructorAccAuthorization::where('acc_id', $acc->id)
-            ->with(['instructor', 'trainingCenter'])
+            ->with(['instructor', 'trainingCenter', 'subCategory.courses'])
             ->orderBy('request_date', 'desc')
-            ->get();
+            ->get()
+            ->map(function ($authorization) {
+                $data = $authorization->toArray();
+                
+                // If there is a sub_category, add sub_category name and courses
+                if ($authorization->sub_category_id && $authorization->subCategory) {
+                    $data['sub_category'] = [
+                        'id' => $authorization->subCategory->id,
+                        'name' => $authorization->subCategory->name,
+                        'name_ar' => $authorization->subCategory->name_ar,
+                        'courses' => $authorization->subCategory->courses->map(function ($course) {
+                            return [
+                                'id' => $course->id,
+                                'name' => $course->name,
+                                'name_ar' => $course->name_ar,
+                                'code' => $course->code,
+                            ];
+                        })
+                    ];
+                } else {
+                    $data['sub_category'] = null;
+                }
+                
+                return $data;
+            });
 
         return response()->json(['requests' => $requests]);
     }
