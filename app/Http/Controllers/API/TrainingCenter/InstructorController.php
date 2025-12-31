@@ -782,6 +782,22 @@ class InstructorController extends Controller
                     'usd',
                     $metadata
                 );
+                
+                // If destination charge fails, fallback to standard payment
+                if (!$result['success']) {
+                    Log::warning('Destination charge failed, falling back to standard payment', [
+                        'acc_id' => $acc->id,
+                        'stripe_account_id' => $acc->stripe_account_id,
+                        'error' => $result['error'] ?? 'Unknown error',
+                    ]);
+                    
+                    // Fallback to standard payment
+                    $result = $this->stripeService->createPaymentIntent(
+                        $authorization->authorization_price,
+                        'USD',
+                        $metadata
+                    );
+                }
             } else {
                 // Regular payment intent (fallback if no Stripe account or no commission)
                 $result = $this->stripeService->createPaymentIntent(
@@ -794,7 +810,8 @@ class InstructorController extends Controller
             if (!$result['success']) {
                 return response()->json([
                     'message' => 'Failed to create payment intent',
-                    'error' => $result['error'] ?? 'Unknown error'
+                    'error' => $result['error'] ?? 'Unknown error',
+                    'error_code' => $result['error_code'] ?? 'unknown_error'
                 ], 500);
             }
 

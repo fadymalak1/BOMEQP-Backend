@@ -147,6 +147,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Profile Management
         Route::get('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'show']);
         Route::put('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'update']);
+        Route::post('/profile/verify-stripe-account', [App\Http\Controllers\API\ACC\ProfileController::class, 'verifyStripeAccount']);
         
         Route::get('/dashboard', [App\Http\Controllers\API\ACC\DashboardController::class, 'index']);
         Route::get('/subscription', [App\Http\Controllers\API\ACC\SubscriptionController::class, 'show']);

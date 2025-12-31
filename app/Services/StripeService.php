@@ -6,6 +6,7 @@ use App\Models\StripeSetting;
 use Stripe\Stripe;
 use Stripe\PaymentIntent;
 use Stripe\Charge;
+use Stripe\Account;
 use Stripe\Exception\ApiErrorException;
 use Illuminate\Support\Facades\Log;
 
@@ -107,6 +108,58 @@ class StripeService
     }
 
     /**
+     * Verify Stripe Connect account exists and is valid
+     * 
+     * @param string $accountId Stripe Connect account ID
+     * @return array
+     */
+    public function verifyStripeAccount(string $accountId): array
+    {
+        if (!$this->isConfigured()) {
+            return [
+                'valid' => false,
+                'error' => 'Stripe is not configured',
+            ];
+        }
+
+        if (empty($accountId)) {
+            return [
+                'valid' => false,
+                'error' => 'Account ID is required',
+            ];
+        }
+
+        try {
+            // Retrieve the account to verify it exists
+            $account = Account::retrieve($accountId);
+            
+            // Check if account is active/valid
+            $isValid = $account && !empty($account->id);
+            
+            return [
+                'valid' => $isValid,
+                'account' => $isValid ? [
+                    'id' => $account->id,
+                    'type' => $account->type ?? 'unknown',
+                    'charges_enabled' => $account->charges_enabled ?? false,
+                    'payouts_enabled' => $account->payouts_enabled ?? false,
+                    'details_submitted' => $account->details_submitted ?? false,
+                ] : null,
+            ];
+        } catch (ApiErrorException $e) {
+            Log::warning('Stripe account verification failed', [
+                'account_id' => $accountId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'valid' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Create a payment intent with destination charges (split payment)
      * Money goes to provider account, admin commission is automatically deducted
      * 
@@ -130,6 +183,29 @@ class StripeService
 
         if (empty($providerStripeAccountId)) {
             throw new \Exception('Provider Stripe account ID is required');
+        }
+
+        // Verify the Stripe account exists before creating payment intent
+        $verification = $this->verifyStripeAccount($providerStripeAccountId);
+        if (!$verification['valid']) {
+            $errorMessage = $verification['error'] ?? 'Invalid Stripe account';
+            
+            // Provide more helpful error message
+            if (strpos($errorMessage, 'No such account') !== false || 
+                strpos($errorMessage, 'No such destination') !== false) {
+                $errorMessage = "Stripe account '{$providerStripeAccountId}' not found or not connected. Please verify the account ID is correct and the account is properly connected to the platform.";
+            }
+            
+            Log::error('Stripe account verification failed before payment intent creation', [
+                'account_id' => $providerStripeAccountId,
+                'error' => $errorMessage,
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $errorMessage,
+                'error_code' => 'invalid_stripe_account',
+            ];
         }
 
         try {
@@ -183,8 +259,17 @@ class StripeService
                 'currency' => $currency,
             ];
         } catch (ApiErrorException $e) {
+            $errorMessage = $e->getMessage();
+            
+            // Provide more helpful error messages
+            if (strpos($errorMessage, 'No such destination') !== false || 
+                strpos($errorMessage, 'No such account') !== false) {
+                $errorMessage = "Stripe account '{$providerStripeAccountId}' not found or not connected. Please verify the account ID is correct and the account is properly connected to the platform.";
+            }
+            
             Log::error('Stripe Destination Charge PaymentIntent creation failed', [
-                'error' => $e->getMessage(),
+                'error' => $errorMessage,
+                'stripe_error' => $e->getMessage(),
                 'amount' => $amount,
                 'commission_amount' => $commissionAmount,
                 'provider_stripe_account_id' => $providerStripeAccountId,
@@ -193,7 +278,8 @@ class StripeService
 
             return [
                 'success' => false,
-                'error' => $e->getMessage(),
+                'error' => $errorMessage,
+                'error_code' => 'stripe_api_error',
             ];
         }
     }

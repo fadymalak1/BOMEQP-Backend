@@ -5,12 +5,19 @@ namespace App\Http\Controllers\API\ACC;
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\User;
+use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 
 class ProfileController extends Controller
 {
+    protected StripeService $stripeService;
+
+    public function __construct(StripeService $stripeService)
+    {
+        $this->stripeService = $stripeService;
+    }
     #[OA\Get(
         path: "/acc/profile",
         summary: "Get ACC profile",
@@ -205,6 +212,70 @@ class ProfileController extends Controller
                 'updated_at' => $acc->updated_at,
             ]
         ]);
+    }
+
+    #[OA\Post(
+        path: "/acc/profile/verify-stripe-account",
+        summary: "Verify Stripe account ID",
+        description: "Verify if a Stripe Connect account ID is valid and connected to the platform.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "application/json",
+                schema: new OA\Schema(
+                    required: ["stripe_account_id"],
+                    properties: [
+                        new OA\Property(property: "stripe_account_id", type: "string", example: "acct_xxxxxxxxxxxxx", description: "Stripe Connect account ID to verify")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Verification result",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "valid", type: "boolean", example: true),
+                        new OA\Property(property: "account", type: "object", nullable: true),
+                        new OA\Property(property: "error", type: "string", nullable: true)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 400, description: "Stripe not configured")
+        ]
+    )]
+    public function verifyStripeAccount(Request $request)
+    {
+        $request->validate([
+            'stripe_account_id' => 'required|string|max:255',
+        ]);
+
+        if (!$this->stripeService->isConfigured()) {
+            return response()->json([
+                'valid' => false,
+                'error' => 'Stripe is not configured'
+            ], 400);
+        }
+
+        $verification = $this->stripeService->verifyStripeAccount($request->stripe_account_id);
+
+        if ($verification['valid']) {
+            return response()->json([
+                'valid' => true,
+                'account' => $verification['account'],
+                'message' => 'Stripe account is valid and connected'
+            ]);
+        } else {
+            return response()->json([
+                'valid' => false,
+                'error' => $verification['error'] ?? 'Invalid Stripe account',
+                'message' => 'Stripe account verification failed. Please check that the account ID is correct and the account is properly connected to the platform.'
+            ], 400);
+        }
     }
 }
 
