@@ -32,7 +32,66 @@ class ClassController extends Controller
                 description: "Classes retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(
+                            property: "data",
+                            type: "array",
+                            items: new OA\Items(
+                                type: "object",
+                                properties: [
+                                    new OA\Property(property: "id", type: "integer", example: 1),
+                                    new OA\Property(property: "course_id", type: "integer", example: 1),
+                                    new OA\Property(property: "training_center_id", type: "integer", example: 1),
+                                    new OA\Property(property: "instructor_id", type: "integer", example: 1),
+                                    new OA\Property(property: "start_date", type: "string", format: "date", example: "2024-01-15"),
+                                    new OA\Property(property: "end_date", type: "string", format: "date", example: "2024-01-20"),
+                                    new OA\Property(property: "status", type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], example: "in_progress"),
+                                    new OA\Property(property: "enrolled_count", type: "integer", example: 15),
+                                    new OA\Property(property: "location", type: "string", enum: ["physical", "online"], example: "physical"),
+                                    new OA\Property(
+                                        property: "course",
+                                        type: "object",
+                                        description: "Course details"
+                                    ),
+                                    new OA\Property(
+                                        property: "training_center",
+                                        type: "object",
+                                        description: "Training center details"
+                                    ),
+                                    new OA\Property(
+                                        property: "instructor",
+                                        type: "object",
+                                        description: "Instructor details"
+                                    ),
+                                    new OA\Property(
+                                        property: "trainees",
+                                        type: "array",
+                                        description: "List of trainees enrolled in this class",
+                                        items: new OA\Items(
+                                            type: "object",
+                                            properties: [
+                                                new OA\Property(property: "id", type: "integer", example: 1),
+                                                new OA\Property(property: "first_name", type: "string", example: "John"),
+                                                new OA\Property(property: "last_name", type: "string", example: "Doe"),
+                                                new OA\Property(property: "email", type: "string", example: "john.doe@example.com"),
+                                                new OA\Property(property: "phone", type: "string", example: "+1234567890"),
+                                                new OA\Property(property: "id_number", type: "string", example: "123456789"),
+                                                new OA\Property(property: "status", type: "string", example: "active"),
+                                                new OA\Property(
+                                                    property: "pivot",
+                                                    type: "object",
+                                                    description: "Enrollment details",
+                                                    properties: [
+                                                        new OA\Property(property: "status", type: "string", example: "enrolled"),
+                                                        new OA\Property(property: "enrolled_at", type: "string", format: "date-time", example: "2024-01-10T10:00:00.000000Z"),
+                                                        new OA\Property(property: "completed_at", type: "string", format: "date-time", nullable: true, example: null)
+                                                    ]
+                                                )
+                                            ]
+                                        )
+                                    )
+                                ]
+                            )
+                        ),
                         new OA\Property(property: "current_page", type: "integer", example: 1),
                         new OA\Property(property: "per_page", type: "integer", example: 15),
                         new OA\Property(property: "total", type: "integer", example: 50)
@@ -63,7 +122,7 @@ class ClassController extends Controller
                 $q->where('acc_id', $acc->id);
             })
             ->whereIn('training_center_id', $authorizedTrainingCenterIds)
-            ->with(['course', 'trainingCenter', 'instructor']);
+            ->with(['course', 'trainingCenter', 'instructor', 'trainees']);
 
         // Apply filters
         if ($request->has('status')) {
@@ -109,7 +168,62 @@ class ClassController extends Controller
             new OA\Response(
                 response: 200,
                 description: "Class retrieved successfully",
-                content: new OA\JsonContent(type: "object")
+                content: new OA\JsonContent(
+                    type: "object",
+                    properties: [
+                        new OA\Property(property: "id", type: "integer", example: 1),
+                        new OA\Property(property: "course_id", type: "integer", example: 1),
+                        new OA\Property(property: "training_center_id", type: "integer", example: 1),
+                        new OA\Property(property: "instructor_id", type: "integer", example: 1),
+                        new OA\Property(property: "start_date", type: "string", format: "date", example: "2024-01-15"),
+                        new OA\Property(property: "end_date", type: "string", format: "date", example: "2024-01-20"),
+                        new OA\Property(property: "status", type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], example: "in_progress"),
+                        new OA\Property(property: "enrolled_count", type: "integer", example: 15),
+                        new OA\Property(property: "location", type: "string", enum: ["physical", "online"], example: "physical"),
+                        new OA\Property(
+                            property: "course",
+                            type: "object",
+                            description: "Course details"
+                        ),
+                        new OA\Property(
+                            property: "training_center",
+                            type: "object",
+                            description: "Training center details"
+                        ),
+                        new OA\Property(
+                            property: "instructor",
+                            type: "object",
+                            description: "Instructor details"
+                        ),
+                        new OA\Property(
+                            property: "trainees",
+                            type: "array",
+                            description: "List of trainees enrolled in this class",
+                            items: new OA\Items(
+                                type: "object",
+                                properties: [
+                                    new OA\Property(property: "id", type: "integer", example: 1),
+                                    new OA\Property(property: "first_name", type: "string", example: "John"),
+                                    new OA\Property(property: "last_name", type: "string", example: "Doe"),
+                                    new OA\Property(property: "email", type: "string", example: "john.doe@example.com"),
+                                    new OA\Property(property: "phone", type: "string", example: "+1234567890"),
+                                    new OA\Property(property: "id_number", type: "string", example: "123456789"),
+                                    new OA\Property(property: "status", type: "string", example: "active"),
+                                    new OA\Property(
+                                        property: "pivot",
+                                        type: "object",
+                                        description: "Enrollment details",
+                                        properties: [
+                                            new OA\Property(property: "status", type: "string", example: "enrolled"),
+                                            new OA\Property(property: "enrolled_at", type: "string", format: "date-time", example: "2024-01-10T10:00:00.000000Z"),
+                                            new OA\Property(property: "completed_at", type: "string", format: "date-time", nullable: true, example: null)
+                                        ]
+                                    )
+                                ]
+                            )
+                        )
+                    ]
+                )
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
             new OA\Response(response: 404, description: "Class not found or not authorized")
@@ -134,7 +248,7 @@ class ClassController extends Controller
                 $q->where('acc_id', $acc->id);
             })
             ->whereIn('training_center_id', $authorizedTrainingCenterIds)
-            ->with(['course', 'trainingCenter', 'instructor'])
+            ->with(['course', 'trainingCenter', 'instructor', 'trainees'])
             ->find($id);
 
         if (!$class) {
