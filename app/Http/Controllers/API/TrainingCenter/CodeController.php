@@ -244,11 +244,11 @@ class CodeController extends Controller
             }
         } else {
             // Regular payment intent (fallback if no Stripe account or no commission)
-            $result = $this->stripeService->createPaymentIntent(
-                $finalAmount,
-                $pricing->currency ?? 'USD',
-                $metadata
-            );
+        $result = $this->stripeService->createPaymentIntent(
+            $finalAmount,
+            $pricing->currency ?? 'USD',
+            $metadata
+        );
         }
 
         if (!$result['success']) {
@@ -611,7 +611,7 @@ class CodeController extends Controller
                     $finalAmount,
                     $trainingCenter->name,
                     $acc ? $acc->name : null
-                );
+            );
             }
             
             // Notify ACC (about commission)

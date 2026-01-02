@@ -1,0 +1,491 @@
+================================================================================
+                    BOMEQP PROJECT - FEATURES DOCUMENTATION
+================================================================================
+
+This document contains all implemented features and remaining features to be
+developed in the BOMEQP (Business Operations Management & E-Quality Platform)
+project.
+
+================================================================================
+                          IMPLEMENTED FEATURES
+================================================================================
+
+1. AUTHENTICATION & AUTHORIZATION
+   ✓ User Registration (ACC Admin, Training Center Admin, Instructor)
+   ✓ User Login with Sanctum Authentication
+   ✓ Password Reset/Forgot Password
+   ✓ Email Verification
+   ✓ Role-based Access Control (RBAC)
+     - Group Admin
+     - ACC Admin
+     - Training Center Admin
+     - Instructor
+   ✓ Profile Management (View/Update)
+   ✓ Change Password
+
+2. ACC (ACCREDITATION BODY) MANAGEMENT
+   ✓ ACC Registration/Application
+   ✓ ACC Application Approval/Rejection by Group Admin
+   ✓ ACC Profile Management
+   ✓ ACC Dashboard with Statistics
+   ✓ ACC Subscription Management
+     - View subscription status
+     - Create payment intent for subscription
+     - Process subscription payment
+     - Renew subscription
+   ✓ ACC Stripe Account Integration
+     - Add Stripe Connect account ID
+     - Verify Stripe account
+     - Profile update with Stripe account ID
+   ✓ ACC Commission Percentage Management
+   ✓ ACC Categories & Sub-categories Management (CRUD)
+   ✓ ACC Courses Management (CRUD)
+   ✓ ACC Certificate Templates Management (CRUD)
+   ✓ ACC Certificate Template Preview
+   ✓ ACC Discount Codes Management (CRUD)
+   ✓ ACC Materials Management (CRUD)
+   ✓ ACC Financial Dashboard
+     - View transactions
+     - View settlements
+     - Revenue tracking (provider amount)
+   ✓ ACC Classes View (with trainees data)
+   ✓ ACC Certificates View
+
+3. TRAINING CENTER MANAGEMENT
+   ✓ Training Center Registration/Application
+   ✓ Training Center Application Approval/Rejection by Group Admin
+   ✓ Training Center Dashboard with Statistics
+   ✓ Training Center Profile Management
+   ✓ Training Center ACC Authorization Requests
+     - Request authorization from ACC
+     - View authorization status
+   ✓ Training Center Instructor Management (CRUD)
+   ✓ Training Center Trainee Management (CRUD)
+   ✓ Training Center Classes Management (CRUD)
+     - Create classes
+     - Update classes
+     - Complete classes
+     - View classes with trainees
+   ✓ Training Center Certificate Code Purchase
+     - Create payment intent
+     - Purchase certificate codes
+     - View code inventory
+     - View code batches
+     - Discount code support
+   ✓ Training Center Instructor Authorization
+     - Request instructor authorization from ACC
+     - Create payment intent for authorization
+     - Pay for instructor authorization
+     - View authorization requests
+   ✓ Training Center Wallet/Financial Transactions
+   ✓ Training Center Marketplace
+     - Browse materials
+     - Purchase materials
+     - View library
+   ✓ Training Center Certificates
+     - Generate certificates
+     - View certificates
+     - Certificate details
+
+4. INSTRUCTOR MANAGEMENT
+   ✓ Instructor Registration
+   ✓ Instructor Profile Management
+   ✓ Instructor Dashboard
+   ✓ Instructor Classes View
+   ✓ Instructor Mark Class Complete
+   ✓ Instructor Training Centers View
+   ✓ Instructor ACCs View
+   ✓ Instructor Materials View
+   ✓ Instructor Earnings View
+
+5. GROUP ADMIN MANAGEMENT
+   ✓ Group Admin Dashboard
+     - ACCs count
+     - Training Centers count
+     - Instructors count
+     - Revenue (commission tracking)
+   ✓ ACC Applications Management
+     - View applications
+     - Approve/Reject applications
+     - Set commission percentage
+     - Create ACC space
+     - Generate credentials
+   ✓ Training Center Applications Management
+     - View applications
+     - Approve/Reject applications
+   ✓ Categories Management (CRUD)
+   ✓ Sub-categories Management (CRUD)
+   ✓ Classes Management (CRUD)
+   ✓ Courses Management (View)
+   ✓ Instructor Management (View/Update)
+   ✓ Instructor Authorization Commission Management
+     - View pending commission requests
+     - Set instructor commission percentage
+   ✓ Financial Dashboard
+     - View transactions (with commission amounts)
+     - View settlements
+     - Revenue tracking (commission received)
+   ✓ Reports
+     - Revenue reports
+     - ACCs reports
+     - Training Centers reports
+     - Certificates reports
+   ✓ Stripe Settings Management (CRUD)
+
+6. PAYMENT & FINANCIAL SYSTEM
+   ✓ Stripe Payment Integration
+     - Payment intent creation
+     - Payment confirmation
+     - Refund processing
+     - Webhook handling
+   ✓ Stripe Destination Charges
+     - Automatic money splitting between provider and admin
+     - Commission calculation
+     - Application fee handling
+   ✓ Transaction Management
+     - Transaction creation
+     - Transaction tracking
+     - Commission amount tracking
+     - Provider amount tracking
+     - Payment type tracking (destination_charge/standard)
+   ✓ Commission Ledger
+     - Group commission tracking
+     - ACC commission tracking
+     - Settlement status
+   ✓ Monthly Settlements
+     - Settlement generation
+     - Payment request
+   ✓ Payment Methods Support
+     - Credit Card (Stripe)
+     - Wallet
+     - Bank Transfer
+
+7. CERTIFICATE SYSTEM
+   ✓ Certificate Code Generation
+   ✓ Certificate Code Purchase
+   ✓ Certificate Code Inventory Management
+   ✓ Certificate Code Batches
+   ✓ Certificate Generation
+   ✓ Certificate Verification (Public endpoint)
+   ✓ Certificate Templates
+   ✓ Certificate Pricing Management
+   ✓ Certificate Status Management (valid, revoked, expired)
+
+8. NOTIFICATION SYSTEM
+   ✓ Notification Creation
+   ✓ Notification List (Paginated)
+   ✓ Notification Read/Unread Status
+   ✓ Unread Notification Count
+   ✓ Mark All as Read
+   ✓ Delete Read Notifications
+   ✓ Notification Types:
+     - ACC application notifications
+     - Training center application notifications
+     - Instructor authorization notifications
+     - Code purchase notifications
+     - Commission received notifications
+     - Certificate generation notifications
+     - Subscription payment notifications
+
+9. COURSE & CLASS MANAGEMENT
+   ✓ Course Management (CRUD)
+   ✓ Course Pricing Management
+   ✓ Class Management (CRUD)
+   ✓ Training Class Management
+   ✓ Class Completion Tracking
+   ✓ Trainee Enrollment in Classes
+   ✓ Class Schedule Management (JSON)
+
+10. MATERIALS & MARKETPLACE
+    ✓ Materials Management (CRUD)
+    ✓ Materials Marketplace
+    ✓ Material Purchase
+    ✓ Training Center Library
+
+11. DISCOUNT SYSTEM
+    ✓ Discount Code Creation
+    ✓ Discount Code Validation
+    ✓ Discount Code Application
+    ✓ Quantity-based Discounts
+    ✓ Percentage-based Discounts
+
+12. FILE MANAGEMENT
+    ✓ File Upload System
+    ✓ File Serving (Public/Protected)
+    ✓ Instructor CV Upload
+    ✓ Trainee ID/Card Image Upload
+    ✓ ACC Logo Upload
+    ✓ Certificate PDF Storage
+
+13. LOCATION MANAGEMENT
+    ✓ Countries List (Public endpoint)
+    ✓ Cities List (Public endpoint)
+
+14. DATA FIXES & ENHANCEMENTS
+    ✓ Fixed Trainee Profile Update (PUT request)
+    ✓ Fixed Instructor Profile Update (PUT request)
+    ✓ Added Commission Amount in Transaction Data
+    ✓ Added Provider Amount in Transaction Data
+    ✓ Added Trainees Data in ACC Classes Endpoint
+    ✓ Admin Dashboard Shows Commission Revenue
+    ✓ ACC Dashboard Shows Provider Revenue
+    ✓ Commission Notifications for Admin
+    ✓ Transaction Amounts Correctly Displayed in Dashboards
+
+================================================================================
+                        REMAINING FEATURES TO BE DEVELOPED
+================================================================================
+
+1. CERTIFICATE MODULE ENHANCEMENTS
+   ⚠ Status: Needs Review and Updates
+   
+   Tasks:
+   - Review certificate table structure
+   - Add/Remove columns as needed
+   - Enhance certificate data model
+   - Update certificate generation logic
+   - Improve certificate validation
+   - Add certificate expiration handling
+   - Certificate revocation workflow improvements
+
+2. TRAINING CENTER - CERTIFICATE CODE PURCHASE ENHANCEMENT
+   ⚠ Status: New Feature to be Added
+   
+   Feature Description:
+   When a Training Center purchases certificate codes, if they have already paid
+   (via bank transfer or other offline method), they should be able to:
+   
+   a) Upload Payment Invoice
+      - Upload invoice document/image
+      - Attach invoice to code purchase request
+   
+   b) Admin Verification Process
+      - Group Admin or ACC Admin can view pending invoice verifications
+      - Admin can verify the invoice
+      - Admin can enter/confirm the payment amount
+      - Admin can approve or reject the payment
+   
+   c) Payment Status Update
+      - Once verified and approved, payment status becomes "completed"
+      - Certificate codes are then issued to the training center
+      - Transaction is marked as completed
+   
+   Implementation Requirements:
+   - Add invoice upload field to code purchase endpoint
+   - Create invoice verification table/model
+   - Add admin endpoints for invoice verification
+   - Add payment amount confirmation by admin
+   - Update code purchase workflow to handle manual verification
+   - Add notifications for invoice verification status
+   - Add invoice verification status tracking
+
+3. GENERAL PROJECT ENHANCEMENTS
+   ⚠ Status: Ongoing Improvements
+   
+   Areas for Enhancement:
+   - Performance optimization
+   - Code refactoring
+   - API response optimization
+   - Error handling improvements
+   - Logging enhancements
+   - Security improvements
+   - Database query optimization
+   - Caching implementation
+   - API documentation updates
+   - Testing coverage
+
+================================================================================
+                               TECHNICAL STACK
+================================================================================
+
+Backend Framework: Laravel
+Authentication: Laravel Sanctum
+Payment Gateway: Stripe (with Destination Charges)
+Database: MySQL/MariaDB
+File Storage: Local/Cloud Storage
+API Documentation: OpenAPI/Swagger
+
+================================================================================
+                                KEY MODULES
+================================================================================
+
+1. Authentication Module
+2. ACC Management Module
+3. Training Center Management Module
+4. Instructor Management Module
+5. Group Admin Management Module
+6. Payment & Financial Module
+7. Certificate Management Module
+8. Course & Class Management Module
+9. Notification Module
+10. File Management Module
+11. Reporting Module
+
+================================================================================
+                             DATABASE TABLES
+================================================================================
+
+Core Tables:
+- users
+- accs
+- training_centers
+- instructors
+- trainees
+- courses
+- classes
+- training_classes
+- certificates
+- certificate_codes
+- code_batches
+- certificate_templates
+- certificate_pricing
+- transactions
+- commission_ledger
+- monthly_settlements
+- notifications
+- acc_subscriptions
+- training_center_acc_authorizations
+- instructor_acc_authorizations
+- discount_codes
+- materials
+- training_center_purchases
+- class_completion
+- categories
+- sub_categories
+
+================================================================================
+                                API ENDPOINTS SUMMARY
+================================================================================
+
+Public Endpoints:
+- POST /auth/register
+- POST /auth/login
+- POST /auth/forgot-password
+- POST /auth/reset-password
+- GET /auth/verify-email/{token}
+- GET /certificates/verify/{code}
+- GET /countries
+- GET /cities
+- POST /stripe/webhook
+
+Protected Endpoints (by Role):
+- Group Admin: /admin/*
+- ACC Admin: /acc/*
+- Training Center Admin: /training-center/*
+- Instructor: /instructor/*
+
+Common Endpoints:
+- /auth/profile
+- /auth/change-password
+- /notifications/*
+- /stripe/*
+
+================================================================================
+                             PAYMENT FLOW
+================================================================================
+
+1. Standard Payment Flow:
+   User → Create Payment Intent → Confirm Payment → Transaction Created
+
+2. Destination Charge Flow:
+   User → Create Payment Intent (with destination) → Confirm Payment →
+   Money Split Automatically → Transaction Created (with commission/provider amounts)
+
+3. Manual Verification Flow (To Be Implemented):
+   User → Upload Invoice → Admin Verifies → Admin Enters Amount →
+   Admin Approves → Payment Status Updated → Codes Issued
+
+================================================================================
+                            COMMISSION SYSTEM
+================================================================================
+
+Commission Types:
+- Group Commission (Platform/Admin commission)
+- ACC Commission (ACC receives from transactions)
+
+Commission Calculation:
+- Based on commission percentage set by Group Admin
+- Automatically calculated in destination charges
+- Tracked in commission_ledger table
+- Displayed in dashboards and financial reports
+
+================================================================================
+                            NOTIFICATION TYPES
+================================================================================
+
+- acc_application
+- training_center_application
+- instructor_authorization
+- instructor_authorization_paid
+- code_purchase_admin
+- code_purchase_acc
+- commission_received
+- certificate_generated
+- subscription_paid
+- instructor_needs_commission
+
+================================================================================
+                           PROJECT STATUS
+================================================================================
+
+Overall Completion: ~85%
+
+Completed Modules:
+✓ Authentication & Authorization
+✓ ACC Management
+✓ Training Center Management
+✓ Instructor Management
+✓ Group Admin Management
+✓ Payment & Financial System
+✓ Certificate System (Basic)
+✓ Notification System
+✓ Course & Class Management
+✓ Materials & Marketplace
+✓ Discount System
+✓ File Management
+
+Pending/In Progress:
+⚠ Certificate Module Enhancements
+⚠ Certificate Code Purchase Invoice Verification
+⚠ General Project Enhancements
+
+================================================================================
+                            NEXT STEPS
+================================================================================
+
+Priority 1: Certificate Module Fixes
+- Review and update certificate table structure
+- Add/remove columns as needed
+- Test certificate generation and validation
+
+Priority 2: Certificate Code Purchase Invoice Verification
+- Design database schema for invoice verification
+- Implement invoice upload functionality
+- Create admin verification endpoints
+- Update code purchase workflow
+- Add notifications for verification status
+
+Priority 3: General Enhancements
+- Performance optimization
+- Code refactoring
+- Security improvements
+- Testing
+
+================================================================================
+                                NOTES
+================================================================================
+
+- All payment transactions support Stripe Destination Charges for automatic
+  commission splitting
+- Commission amounts are tracked separately from transaction amounts
+- Admin receives notifications when commission is received
+- ACC can set up Stripe Connect account for automatic payment splitting
+- Training centers can purchase certificate codes with discount codes
+- Certificate codes are generated in batches
+- Certificates can be verified publicly using verification code
+- All modules support role-based access control
+- File uploads are handled securely with proper validation
+
+================================================================================
+                            END OF DOCUMENT
+================================================================================

@@ -761,12 +761,12 @@ class InstructorController extends Controller
 
         // Prepare metadata
         $metadata = [
-            'authorization_id' => (string)$authorization->id,
-            'training_center_id' => (string)$trainingCenter->id,
-            'acc_id' => (string)$authorization->acc_id,
-            'instructor_id' => (string)$authorization->instructor_id,
-            'type' => 'instructor_authorization',
-            'amount' => (string)$authorization->authorization_price,
+                    'authorization_id' => (string)$authorization->id,
+                    'training_center_id' => (string)$trainingCenter->id,
+                    'acc_id' => (string)$authorization->acc_id,
+                    'instructor_id' => (string)$authorization->instructor_id,
+                    'type' => 'instructor_authorization',
+                    'amount' => (string)$authorization->authorization_price,
             'group_commission_percentage' => (string)$groupCommissionPercentage,
             'group_commission_amount' => (string)$groupCommissionAmount,
         ];
@@ -1021,7 +1021,7 @@ class InstructorController extends Controller
                     $authorization->authorization_price,
                     $trainingCenter->name,
                     $acc ? $acc->name : null
-                );
+            );
             }
 
             return response()->json([

@@ -59,7 +59,7 @@ class FileController extends Controller
     public function serveFile(Request $request, string $path)
     {
         // Security: Only allow certain paths
-        $allowedPaths = ['authorization', 'documents'];
+        $allowedPaths = ['authorization', 'documents', 'accs'];
         $pathParts = explode('/', $path);
         
         // Don't allow instructors/cv through this route (use specific route instead)
