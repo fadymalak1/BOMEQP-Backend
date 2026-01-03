@@ -477,6 +477,17 @@ class CodeController extends Controller
         $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
         $accCommissionAmount = ($finalAmount * $accCommissionPercentage) / 100;
 
+        // Validate payment method value BEFORE starting transaction
+        $validPaymentMethods = ['wallet', 'credit_card', 'manual_payment'];
+        $paymentMethodValue = $request->payment_method;
+        if (!in_array($paymentMethodValue, $validPaymentMethods)) {
+            return response()->json([
+                'message' => 'Invalid payment method. Allowed values: ' . implode(', ', $validPaymentMethods),
+                'error' => 'Invalid payment_method value: ' . ($paymentMethodValue ?? 'null'),
+                'error_code' => 'invalid_payment_method'
+            ], 422);
+        }
+
         // Handle payment based on payment method
         if ($request->payment_method === 'credit_card') {
             // Validate payment_intent_id for credit card payments
@@ -747,18 +758,6 @@ class CodeController extends Controller
                     'acc_id' => $request->acc_id ?? null,
                 ]);
                 throw new \Exception('Failed to create transaction: ' . $transactionError->getMessage());
-            }
-
-            // Validate payment method value
-            $validPaymentMethods = ['wallet', 'credit_card', 'manual_payment'];
-            $paymentMethodValue = $request->payment_method;
-            if (!in_array($paymentMethodValue, $validPaymentMethods)) {
-                DB::rollBack();
-                return response()->json([
-                    'message' => 'Invalid payment method. Allowed values: ' . implode(', ', $validPaymentMethods),
-                    'error' => 'Invalid payment_method value: ' . $paymentMethodValue,
-                    'error_code' => 'invalid_payment_method'
-                ], 422);
             }
             
             // Create batch

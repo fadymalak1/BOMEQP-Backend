@@ -34,33 +34,36 @@ Route::get('/storage/instructors/cv/{filename}', [App\Http\Controllers\API\FileC
 // General storage route (must be last to avoid conflicts)
 Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, 'serveFile'])->where('path', '.+');
 
-// Protected routes
-Route::middleware(['auth:sanctum'])->group(function () {
-    // Auth routes
-    Route::post('/auth/logout', [App\Http\Controllers\API\AuthController::class, 'logout']);
-    Route::get('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'profile']);
-    Route::put('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'updateProfile']);
-    Route::put('/auth/change-password', [App\Http\Controllers\API\AuthController::class, 'changePassword']);
+    // Protected routes
+    Route::middleware(['auth:sanctum'])->group(function () {
+        // Auth routes
+        Route::post('/auth/logout', [App\Http\Controllers\API\AuthController::class, 'logout']);
+        Route::get('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'profile']);
+        Route::put('/auth/profile', [App\Http\Controllers\API\AuthController::class, 'updateProfile']);
+        Route::put('/auth/change-password', [App\Http\Controllers\API\AuthController::class, 'changePassword']);
 
-    // Stripe Payment routes (available to all authenticated users)
-    Route::prefix('stripe')->group(function () {
-        Route::get('/config', [App\Http\Controllers\API\StripeController::class, 'getConfig']);
-        Route::post('/payment-intent', [App\Http\Controllers\API\StripeController::class, 'createPaymentIntent']);
-        Route::post('/confirm', [App\Http\Controllers\API\StripeController::class, 'confirmPayment']);
-        Route::post('/refund', [App\Http\Controllers\API\StripeController::class, 'refund']);
-    });
+        // Stripe Payment routes (available to all authenticated users)
+        Route::prefix('stripe')->group(function () {
+            Route::get('/config', [App\Http\Controllers\API\StripeController::class, 'getConfig']);
+            Route::post('/payment-intent', [App\Http\Controllers\API\StripeController::class, 'createPaymentIntent']);
+            Route::post('/confirm', [App\Http\Controllers\API\StripeController::class, 'confirmPayment']);
+            Route::post('/refund', [App\Http\Controllers\API\StripeController::class, 'refund']);
+        });
 
-    // Notifications routes (available to all authenticated users)
-    Route::prefix('notifications')->group(function () {
-        Route::get('/', [App\Http\Controllers\API\NotificationController::class, 'index']);
-        Route::get('/unread-count', [App\Http\Controllers\API\NotificationController::class, 'unreadCount']);
-        Route::post('/mark-all-read', [App\Http\Controllers\API\NotificationController::class, 'markAllAsRead']);
-        Route::delete('/read', [App\Http\Controllers\API\NotificationController::class, 'deleteRead']);
-        Route::get('/{id}', [App\Http\Controllers\API\NotificationController::class, 'show']);
-        Route::put('/{id}/read', [App\Http\Controllers\API\NotificationController::class, 'markAsRead']);
-        Route::put('/{id}/unread', [App\Http\Controllers\API\NotificationController::class, 'markAsUnread']);
-        Route::delete('/{id}', [App\Http\Controllers\API\NotificationController::class, 'destroy']);
-    });
+        // Notifications routes (available to all authenticated users)
+        Route::prefix('notifications')->group(function () {
+            Route::get('/', [App\Http\Controllers\API\NotificationController::class, 'index']);
+            Route::get('/unread-count', [App\Http\Controllers\API\NotificationController::class, 'unreadCount']);
+            Route::post('/mark-all-read', [App\Http\Controllers\API\NotificationController::class, 'markAllAsRead']);
+            Route::delete('/read', [App\Http\Controllers\API\NotificationController::class, 'deleteRead']);
+            Route::get('/{id}', [App\Http\Controllers\API\NotificationController::class, 'show']);
+            Route::put('/{id}/read', [App\Http\Controllers\API\NotificationController::class, 'markAsRead']);
+            Route::put('/{id}/unread', [App\Http\Controllers\API\NotificationController::class, 'markAsUnread']);
+            Route::delete('/{id}', [App\Http\Controllers\API\NotificationController::class, 'destroy']);
+        });
+
+        // Discount codes by ACC ID (available to all authenticated users - training centers need this)
+        Route::get('/acc/{id}/discount-codes', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'getByAccId'])->where('id', '[0-9]+');
 
     // Shared routes for both group_admin and acc_admin
     Route::prefix('admin')->middleware(['role:group_admin,acc_admin'])->group(function () {
