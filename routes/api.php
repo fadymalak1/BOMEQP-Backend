@@ -248,7 +248,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         // Certificate Codes
         // Certificate Codes - Payment intent must come before purchase
-        Route::post('/codes/payment-intent', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'createPaymentIntent']);
+        Route::post('/codes/create-payment-intent', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'createPaymentIntent']);
+        Route::post('/codes/payment-intent', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'createPaymentIntent']); // Alias for backward compatibility
         Route::post('/codes/purchase', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'purchase']);
         Route::get('/codes/inventory', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'inventory']);
         Route::get('/codes/batches', [App\Http\Controllers\API\TrainingCenter\CodeController::class, 'batches']);

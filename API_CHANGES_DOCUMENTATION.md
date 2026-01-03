@@ -497,4 +497,27 @@ php artisan route:cache
 - 500 errors caused by null values
 - 500 errors caused by notification failures
 - Potential duplicate code generation issues
+- 404 error on `/training-center/codes/create-payment-intent` route (added missing route)
+
+---
+
+## Route Fixes
+
+### Payment Intent Endpoint
+
+**Issue:** The route `/training-center/codes/create-payment-intent` was returning 404.
+
+**Solution:** Added the route to match the OpenAPI documentation and frontend expectations.
+
+**Available Routes:**
+- `POST /v1/api/training-center/codes/create-payment-intent` (Primary - matches OpenAPI docs)
+- `POST /v1/api/training-center/codes/payment-intent` (Alias for backward compatibility)
+
+Both routes point to the same controller method: `CodeController@createPaymentIntent`.
+
+**Note:** After deploying this fix, clear the route cache:
+```bash
+php artisan route:clear
+php artisan route:cache
+```
 
