@@ -28,7 +28,7 @@ class CodeController extends Controller
     #[OA\Post(
         path: "/training-center/codes/create-payment-intent",
         summary: "Create payment intent for code purchase",
-        description: "Create a Stripe payment intent for purchasing certificate codes. Calculates pricing including discounts.",
+        description: "Create a Stripe payment intent for purchasing certificate codes. Calculates pricing including discounts. Also returns information about available payment methods including manual payment option.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
@@ -54,8 +54,13 @@ class CodeController extends Controller
                         new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx"),
                         new OA\Property(property: "amount", type: "number", example: 1000.00),
                         new OA\Property(property: "currency", type: "string", example: "USD"),
-                        new OA\Property(property: "total_price", type: "number", example: 1000.00),
-                        new OA\Property(property: "discount_amount", type: "number", nullable: true, example: 100.00)
+                        new OA\Property(property: "total_amount", type: "string", example: "1000.00"),
+                        new OA\Property(property: "discount_amount", type: "string", nullable: true, example: "100.00"),
+                        new OA\Property(property: "final_amount", type: "string", example: "900.00"),
+                        new OA\Property(property: "unit_price", type: "string", example: "100.00"),
+                        new OA\Property(property: "quantity", type: "integer", example: 10),
+                        new OA\Property(property: "payment_methods_available", type: "array", items: new OA\Items(type: "string"), example: ["credit_card", "manual_payment"]),
+                        new OA\Property(property: "manual_payment_info", type: "object", description: "Information about manual payment option")
                     ]
                 )
             ),
@@ -273,6 +278,15 @@ class CodeController extends Controller
             'commission_amount' => isset($result['commission_amount']) ? number_format($result['commission_amount'], 2, '.', '') : number_format($groupCommissionAmount, 2, '.', ''),
             'provider_amount' => isset($result['provider_amount']) ? number_format($result['provider_amount'], 2, '.', '') : null,
             'payment_type' => !empty($acc->stripe_account_id) && $groupCommissionAmount > 0 ? 'destination_charge' : 'standard',
+            'payment_methods_available' => ['credit_card', 'manual_payment'], // Indicate that manual payment is available
+            'manual_payment_info' => [
+                'available' => true,
+                'requires_receipt' => true,
+                'receipt_formats' => ['pdf', 'jpg', 'jpeg', 'png'],
+                'max_receipt_size_mb' => 10,
+                'status_after_submission' => 'pending',
+                'approval_required' => true,
+            ],
         ], 200);
     }
 
@@ -323,8 +337,10 @@ class CodeController extends Controller
             'course_id' => 'required|integer|exists:courses,id',
             'quantity' => 'required|integer|min:1',
             'discount_code' => 'nullable|string|max:255',
-            'payment_method' => 'required|in:credit_card',
+            'payment_method' => 'required|in:credit_card,manual_payment',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string|max:255',
+            'payment_receipt' => 'required_if:payment_method,manual_payment|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // Max 10MB
+            'payment_amount' => 'required_if:payment_method,manual_payment|nullable|numeric|min:0',
         ]);
 
         $user = $request->user();
@@ -452,6 +468,8 @@ class CodeController extends Controller
         $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
         $accCommissionAmount = ($finalAmount * $accCommissionPercentage) / 100;
 
+        // Handle payment based on payment method
+        if ($request->payment_method === 'credit_card') {
             // Validate payment_intent_id for credit card payments
             if (!$request->payment_intent_id) {
                 return response()->json([
@@ -477,29 +495,83 @@ class CodeController extends Controller
                     'message' => 'Payment verification failed',
                     'error' => $e->getMessage()
                 ], 400);
+            }
+        } elseif ($request->payment_method === 'manual_payment') {
+            // Validate manual payment fields
+            if (!$request->hasFile('payment_receipt')) {
+                return response()->json([
+                    'message' => 'Payment receipt is required for manual payment'
+                ], 422);
+            }
+
+            if (!$request->payment_amount || $request->payment_amount <= 0) {
+                return response()->json([
+                    'message' => 'Payment amount is required and must be greater than 0'
+                ], 422);
+            }
+
+            // Validate payment amount matches calculated amount (allow small difference for rounding)
+            $amountDifference = abs($request->payment_amount - $finalAmount);
+            if ($amountDifference > 0.01) {
+                return response()->json([
+                    'message' => 'Payment amount does not match the calculated total amount',
+                    'expected_amount' => $finalAmount,
+                    'provided_amount' => $request->payment_amount
+                ], 422);
+            }
         }
 
         DB::beginTransaction();
         try {
-            // Determine payment type and amounts
+            $paymentStatus = 'completed';
+            $paymentReceiptUrl = null;
+            $paymentAmount = null;
+            
+            // Handle manual payment - upload receipt
+            if ($request->payment_method === 'manual_payment') {
+                $paymentStatus = 'pending';
+                $paymentAmount = $request->payment_amount;
+                
+                // Upload payment receipt
+                $receiptFile = $request->file('payment_receipt');
+                $originalName = $receiptFile->getClientOriginalName();
+                $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+                $fileName = time() . '_' . $trainingCenter->id . '_' . $sanitizedName;
+                
+                $directory = 'training-centers/' . $trainingCenter->id . '/payment-receipts';
+                if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($directory)) {
+                    \Illuminate\Support\Facades\Storage::disk('public')->makeDirectory($directory);
+                }
+                
+                $receiptPath = $receiptFile->storeAs($directory, $fileName, 'public');
+                $paymentReceiptUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($receiptPath);
+            }
+            
+            // Determine payment type and amounts for credit card
             $paymentType = 'standard';
             $commissionAmount = null;
             $providerAmount = null;
             
-            // Check if destination charge was used (check payment intent metadata)
-            try {
-                $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
-                if ($paymentIntent && isset($paymentIntent->metadata->payment_type) && $paymentIntent->metadata->payment_type === 'destination_charge') {
-                    $paymentType = 'destination_charge';
-                    $commissionAmount = $groupCommissionAmount;
-                    $providerAmount = $finalAmount - $groupCommissionAmount;
-                } else {
-                    // Standard payment - commission handled through ledger
+            if ($request->payment_method === 'credit_card') {
+                // Check if destination charge was used (check payment intent metadata)
+                try {
+                    $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                    if ($paymentIntent && isset($paymentIntent->metadata->payment_type) && $paymentIntent->metadata->payment_type === 'destination_charge') {
+                        $paymentType = 'destination_charge';
+                        $commissionAmount = $groupCommissionAmount;
+                        $providerAmount = $finalAmount - $groupCommissionAmount;
+                    } else {
+                        // Standard payment - commission handled through ledger
+                        $commissionAmount = $groupCommissionAmount;
+                        $providerAmount = $accCommissionAmount;
+                    }
+                } catch (\Exception $e) {
+                    // If can't retrieve payment intent, use calculated amounts
                     $commissionAmount = $groupCommissionAmount;
                     $providerAmount = $accCommissionAmount;
                 }
-            } catch (\Exception $e) {
-                // If can't retrieve payment intent, use calculated amounts
+            } else {
+                // Manual payment - amounts will be set after verification
                 $commissionAmount = $groupCommissionAmount;
                 $providerAmount = $accCommissionAmount;
             }
@@ -515,11 +587,11 @@ class CodeController extends Controller
                 'commission_amount' => $commissionAmount,
                 'provider_amount' => $providerAmount,
                 'currency' => 'USD',
-                'payment_method' => $request->payment_method,
+                'payment_method' => $request->payment_method === 'credit_card' ? 'credit_card' : 'bank_transfer',
                 'payment_type' => $paymentType,
                 'payment_gateway_transaction_id' => $request->payment_intent_id,
-                'status' => 'completed',
-                'completed_at' => now(),
+                'status' => $paymentStatus === 'pending' ? 'pending' : 'completed',
+                'completed_at' => $paymentStatus === 'completed' ? now() : null,
                 'reference_type' => 'code_batch',
                 'reference_id' => null, // Will be updated after batch creation
             ]);
@@ -528,55 +600,63 @@ class CodeController extends Controller
             $batch = CodeBatch::create([
                 'training_center_id' => $trainingCenter->id,
                 'acc_id' => $request->acc_id,
+                'course_id' => $request->course_id,
                 'quantity' => $request->quantity,
                 'total_amount' => $finalAmount,
                 'payment_method' => $request->payment_method,
                 'transaction_id' => $transaction->id,
                 'purchase_date' => now(),
+                'payment_status' => $paymentStatus,
+                'payment_receipt_url' => $paymentReceiptUrl,
+                'payment_amount' => $paymentAmount,
             ]);
 
-            // Generate codes
+            // Only generate codes if payment is completed (not manual/pending)
             $codes = [];
-            for ($i = 0; $i < $request->quantity; $i++) {
-                $code = CertificateCode::create([
-                    'code' => strtoupper(Str::random(12)),
-                    'batch_id' => $batch->id,
-                    'training_center_id' => $trainingCenter->id,
-                    'acc_id' => $request->acc_id,
-                    'course_id' => $request->course_id,
-                    'purchased_price' => $unitPrice,
-                    'discount_applied' => $discountAmount > 0,
-                    'discount_code_id' => $discountCodeId,
-                    'status' => 'available',
-                    'purchased_at' => now(),
-                ]);
-                $codes[] = $code;
+            if ($paymentStatus === 'completed') {
+                for ($i = 0; $i < $request->quantity; $i++) {
+                    $code = CertificateCode::create([
+                        'code' => strtoupper(Str::random(12)),
+                        'batch_id' => $batch->id,
+                        'training_center_id' => $trainingCenter->id,
+                        'acc_id' => $request->acc_id,
+                        'course_id' => $request->course_id,
+                        'purchased_price' => $unitPrice,
+                        'discount_applied' => $discountAmount > 0,
+                        'discount_code_id' => $discountCodeId,
+                        'status' => 'available',
+                        'purchased_at' => now(),
+                    ]);
+                    $codes[] = $code;
+                }
+
+                // Update discount code usage
+                if ($discountCodeId) {
+                    $discountCode = DiscountCode::find($discountCodeId);
+                    if ($discountCode && $discountCode->discount_type === 'quantity_based') {
+                        $discountCode->increment('used_quantity', $request->quantity);
+                        if ($discountCode->used_quantity >= $discountCode->total_quantity) {
+                            $discountCode->update(['status' => 'depleted']);
+                        }
+                    }
+                }
             }
 
             // Update transaction with batch reference
             $transaction->update(['reference_id' => $batch->id]);
 
-            // Create commission ledger entries for distribution
-            \App\Models\CommissionLedger::create([
-                'transaction_id' => $transaction->id,
-                'acc_id' => $request->acc_id,
-                'training_center_id' => $trainingCenter->id,
-                'group_commission_amount' => $groupCommissionAmount,
-                'group_commission_percentage' => $groupCommissionPercentage,
-                'acc_commission_amount' => $accCommissionAmount,
-                'acc_commission_percentage' => $accCommissionPercentage,
-                'settlement_status' => 'pending',
-            ]);
-
-            // Update discount code usage
-            if ($discountCodeId) {
-                $discountCode = DiscountCode::find($discountCodeId);
-                if ($discountCode && $discountCode->discount_type === 'quantity_based') {
-                    $discountCode->increment('used_quantity', $request->quantity);
-                    if ($discountCode->used_quantity >= $discountCode->total_quantity) {
-                        $discountCode->update(['status' => 'depleted']);
-                    }
-                }
+            // Create commission ledger entries for distribution (only if completed)
+            if ($paymentStatus === 'completed') {
+                \App\Models\CommissionLedger::create([
+                    'transaction_id' => $transaction->id,
+                    'acc_id' => $request->acc_id,
+                    'training_center_id' => $trainingCenter->id,
+                    'group_commission_amount' => $groupCommissionAmount,
+                    'group_commission_percentage' => $groupCommissionPercentage,
+                    'acc_commission_amount' => $accCommissionAmount,
+                    'acc_commission_percentage' => $accCommissionPercentage,
+                    'settlement_status' => 'pending',
+                ]);
             }
 
             DB::commit();
@@ -584,55 +664,90 @@ class CodeController extends Controller
             // Send notifications
             $notificationService = new NotificationService();
             
-            // Notify Training Center
-            $notificationService->notifyCodePurchaseSuccess(
-                $user->id,
-                $batch->id,
-                $request->quantity,
-                $finalAmount
-            );
-            
-            // Notify Admin about code purchase and commission
-            $notificationService->notifyAdminCodePurchase(
-                $batch->id,
-                $trainingCenter->name,
-                $request->quantity,
-                $finalAmount,
-                $groupCommissionAmount
-            );
-            
-            // Notify Admin about commission received (separate notification)
-            if ($groupCommissionAmount > 0) {
-                $acc = \App\Models\ACC::find($request->acc_id);
-                $notificationService->notifyAdminCommissionReceived(
-                    $transaction->id,
-                    'code_purchase',
-                    $groupCommissionAmount,
-                    $finalAmount,
+            if ($paymentStatus === 'completed') {
+                // Notify Training Center about success
+                $notificationService->notifyCodePurchaseSuccess(
+                    $user->id,
+                    $batch->id,
+                    $request->quantity,
+                    $finalAmount
+                );
+                
+                // Notify Admin about code purchase and commission
+                $notificationService->notifyAdminCodePurchase(
+                    $batch->id,
                     $trainingCenter->name,
-                    $acc ? $acc->name : null
-            );
-            }
-            
-            // Notify ACC (about commission)
-            $acc = \App\Models\ACC::find($request->acc_id);
-            if ($acc) {
-                $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
-                if ($accUser) {
-                    $notificationService->notifyAccCodePurchase(
-                        $accUser->id,
-                        $batch->id,
-                        $trainingCenter->name,
-                        $request->quantity,
+                    $request->quantity,
+                    $finalAmount,
+                    $groupCommissionAmount
+                );
+                
+                // Notify Admin about commission received
+                if ($groupCommissionAmount > 0) {
+                    $acc = \App\Models\ACC::find($request->acc_id);
+                    $notificationService->notifyAdminCommissionReceived(
+                        $transaction->id,
+                        'code_purchase',
+                        $groupCommissionAmount,
                         $finalAmount,
-                        $accCommissionAmount
+                        $trainingCenter->name,
+                        $acc ? $acc->name : null
                     );
                 }
+                
+                // Notify ACC
+                $acc = \App\Models\ACC::find($request->acc_id);
+                if ($acc) {
+                    $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+                    if ($accUser) {
+                        $notificationService->notifyAccCodePurchase(
+                            $accUser->id,
+                            $batch->id,
+                            $trainingCenter->name,
+                            $request->quantity,
+                            $finalAmount,
+                            $accCommissionAmount
+                        );
+                    }
+                }
+            } else {
+                // Manual payment - notify ACC and Admin about pending request
+                $acc = \App\Models\ACC::find($request->acc_id);
+                if ($acc) {
+                    $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+                    if ($accUser) {
+                        $notificationService->notifyManualPaymentRequest(
+                            $accUser->id,
+                            $batch->id,
+                            $trainingCenter->name,
+                            $request->quantity,
+                            $finalAmount
+                        );
+                    }
+                }
+                
+                // Notify Admin
+                $notificationService->notifyAdminManualPaymentRequest(
+                    $batch->id,
+                    $trainingCenter->name,
+                    $request->quantity,
+                    $finalAmount
+                );
+                
+                // Notify Training Center that request is pending
+                $notificationService->notifyManualPaymentPending(
+                    $user->id,
+                    $batch->id,
+                    $request->quantity,
+                    $finalAmount
+                );
             }
 
-            // Format response to match requirements
-            return response()->json([
-                'message' => 'Codes purchased successfully',
+            // Format response
+            $response = [
+                'message' => $paymentStatus === 'completed' 
+                    ? 'Codes purchased successfully' 
+                    : 'Payment request submitted successfully. Waiting for approval.',
                 'batch' => [
                     'id' => $batch->id,
                     'training_center_id' => $batch->training_center_id,
@@ -643,17 +758,22 @@ class CodeController extends Controller
                     'discount_amount' => number_format($discountAmount, 2, '.', ''),
                     'final_amount' => number_format($finalAmount, 2, '.', ''),
                     'payment_method' => $batch->payment_method,
-                    'payment_status' => 'completed',
+                    'payment_status' => $batch->payment_status,
                     'created_at' => $batch->created_at->toIso8601String(),
                 ],
-                'codes' => array_map(function($code) {
+            ];
+            
+            if ($paymentStatus === 'completed') {
+                $response['codes'] = array_map(function($code) {
                     return [
                         'id' => $code->id,
                         'code' => $code->code,
                         'status' => $code->status,
                     ];
-                }, $codes),
-            ], 200);
+                }, $codes);
+            }
+
+            return response()->json($response, 200);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([

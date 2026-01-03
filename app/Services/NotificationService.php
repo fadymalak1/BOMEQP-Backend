@@ -751,5 +751,98 @@ class NotificationService
             ]
         );
     }
+
+    /**
+     * Notify ACC about manual payment request
+     */
+    public function notifyManualPaymentRequest(int $userId, int $batchId, string $trainingCenterName, int $quantity, float $amount): void
+    {
+        $this->send(
+            $userId,
+            'manual_payment_request',
+            'Manual Payment Request',
+            "{$trainingCenterName} has submitted a manual payment request for {$quantity} certificate code(s) totaling $" . number_format($amount, 2) . ". Please review and verify the payment receipt.",
+            [
+                'batch_id' => $batchId,
+                'training_center_name' => $trainingCenterName,
+                'quantity' => $quantity,
+                'amount' => $amount
+            ]
+        );
+    }
+
+    /**
+     * Notify Admin about manual payment request
+     */
+    public function notifyAdminManualPaymentRequest(int $batchId, string $trainingCenterName, int $quantity, float $amount): void
+    {
+        $this->sendToRole(
+            'group_admin',
+            'manual_payment_request_admin',
+            'Manual Payment Request',
+            "{$trainingCenterName} has submitted a manual payment request for {$quantity} certificate code(s) totaling $" . number_format($amount, 2) . ". Please review and verify the payment receipt.",
+            [
+                'batch_id' => $batchId,
+                'training_center_name' => $trainingCenterName,
+                'quantity' => $quantity,
+                'amount' => $amount
+            ]
+        );
+    }
+
+    /**
+     * Notify Training Center that manual payment is pending
+     */
+    public function notifyManualPaymentPending(int $userId, int $batchId, int $quantity, float $amount): void
+    {
+        $this->send(
+            $userId,
+            'manual_payment_pending',
+            'Payment Request Submitted',
+            "Your payment request for {$quantity} certificate code(s) totaling $" . number_format($amount, 2) . " has been submitted and is pending approval. You will be notified once it's reviewed.",
+            [
+                'batch_id' => $batchId,
+                'quantity' => $quantity,
+                'amount' => $amount
+            ]
+        );
+    }
+
+    /**
+     * Notify Training Center that manual payment was approved
+     */
+    public function notifyManualPaymentApproved(int $userId, int $batchId, int $quantity, float $amount): void
+    {
+        $this->send(
+            $userId,
+            'manual_payment_approved',
+            'Payment Approved',
+            "Your payment request for {$quantity} certificate code(s) totaling $" . number_format($amount, 2) . " has been approved. Your codes are now available.",
+            [
+                'batch_id' => $batchId,
+                'quantity' => $quantity,
+                'amount' => $amount
+            ]
+        );
+    }
+
+    /**
+     * Notify Training Center that manual payment was rejected
+     */
+    public function notifyManualPaymentRejected(int $userId, int $batchId, int $quantity, float $amount, string $reason): void
+    {
+        $this->send(
+            $userId,
+            'manual_payment_rejected',
+            'Payment Rejected',
+            "Your payment request for {$quantity} certificate code(s) totaling $" . number_format($amount, 2) . " has been rejected. Reason: {$reason}",
+            [
+                'batch_id' => $batchId,
+                'quantity' => $quantity,
+                'amount' => $amount,
+                'reason' => $reason
+            ]
+        );
+    }
 }
 

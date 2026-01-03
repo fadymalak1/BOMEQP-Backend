@@ -140,6 +140,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Courses Management
         Route::get('/courses', [App\Http\Controllers\API\Admin\CourseController::class, 'index']);
         Route::get('/courses/{id}', [App\Http\Controllers\API\Admin\CourseController::class, 'show']);
+
+        // Code Batches - Manual Payment Management
+        Route::get('/code-batches/pending-payments', [App\Http\Controllers\API\Admin\CodeController::class, 'pendingPayments']);
+        Route::put('/code-batches/{id}/approve-payment', [App\Http\Controllers\API\Admin\CodeController::class, 'approvePayment']);
+        Route::put('/code-batches/{id}/reject-payment', [App\Http\Controllers\API\Admin\CodeController::class, 'rejectPayment']);
     });
 
     // ACC routes
@@ -196,6 +201,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Financial
         Route::get('/financial/transactions', [App\Http\Controllers\API\ACC\FinancialController::class, 'transactions']);
         Route::get('/financial/settlements', [App\Http\Controllers\API\ACC\FinancialController::class, 'settlements']);
+
+        // Code Batches - Manual Payment Management
+        Route::get('/code-batches/pending-payments', [App\Http\Controllers\API\ACC\CodeController::class, 'pendingPayments']);
+        Route::put('/code-batches/{id}/approve-payment', [App\Http\Controllers\API\ACC\CodeController::class, 'approvePayment']);
+        Route::put('/code-batches/{id}/reject-payment', [App\Http\Controllers\API\ACC\CodeController::class, 'rejectPayment']);
 
         // Categories Management (ACC can create their own categories)
         Route::get('/categories', [App\Http\Controllers\API\ACC\CategoryController::class, 'index']);
