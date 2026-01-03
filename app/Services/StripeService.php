@@ -295,13 +295,28 @@ class StripeService
 
         try {
             $paymentIntent = PaymentIntent::retrieve($paymentIntentId);
-
+            
+            // If payment intent requires confirmation and has a payment method, confirm it
+            if ($paymentIntent->status === 'requires_confirmation' && $paymentIntent->payment_method) {
+                $paymentIntent = $paymentIntent->confirm();
+            }
+            
+            // If already succeeded or processing, return success
+            if (in_array($paymentIntent->status, ['succeeded', 'processing'])) {
+                return [
+                    'success' => true,
+                    'status' => $paymentIntent->status,
+                    'amount' => $paymentIntent->amount / 100,
+                    'currency' => $paymentIntent->currency,
+                    'payment_intent_id' => $paymentIntent->id,
+                ];
+            }
+            
+            // If still requires action or payment method, return error
             return [
-                'success' => true,
+                'success' => false,
                 'status' => $paymentIntent->status,
-                'amount' => $paymentIntent->amount / 100,
-                'currency' => $paymentIntent->currency,
-                'payment_intent_id' => $paymentIntent->id,
+                'error' => 'Payment intent requires action: ' . $paymentIntent->status,
             ];
         } catch (ApiErrorException $e) {
             Log::error('Stripe PaymentIntent confirmation failed', [

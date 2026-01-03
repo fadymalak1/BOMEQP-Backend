@@ -487,6 +487,33 @@ class CodeController extends Controller
 
             // Verify payment intent with Stripe
             try {
+                // First, retrieve the payment intent to check its status
+                $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                
+                if (!$paymentIntent) {
+                    return response()->json([
+                        'message' => 'Payment intent not found',
+                        'error' => 'Invalid payment intent ID'
+                    ], 400);
+                }
+                
+                // If payment intent requires confirmation and has a payment method, try to confirm it
+                if ($paymentIntent->status === 'requires_confirmation' && $paymentIntent->payment_method) {
+                    try {
+                        $confirmResult = $this->stripeService->confirmPaymentIntent($request->payment_intent_id);
+                        if ($confirmResult['success']) {
+                            // Payment confirmed, retrieve updated payment intent
+                            $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                        }
+                    } catch (\Exception $confirmError) {
+                        \Log::warning('Failed to auto-confirm payment intent', [
+                            'payment_intent_id' => $request->payment_intent_id,
+                            'error' => $confirmError->getMessage()
+                        ]);
+                    }
+                }
+                
+                // Now verify the payment intent (will check if status is succeeded)
                 $this->stripeService->verifyPaymentIntent(
                     $request->payment_intent_id,
                     $finalAmount,
@@ -504,10 +531,17 @@ class CodeController extends Controller
                 // Provide more helpful error messages based on payment status
                 if (strpos($errorMessage, 'requires_payment_method') !== false) {
                     return response()->json([
-                        'message' => 'Payment not confirmed. Please complete the payment on the frontend before submitting the purchase.',
+                        'message' => 'Payment method not attached. Please attach a payment method and confirm the payment on the frontend before submitting the purchase.',
                         'error' => $errorMessage,
                         'error_code' => 'payment_not_confirmed',
-                        'instructions' => 'The payment intent has been created but not yet confirmed. Please use Stripe.js to confirm the payment before calling this endpoint.'
+                        'instructions' => 'The payment intent has been created but no payment method has been attached. Please use Stripe.js to attach a payment method and confirm the payment before calling this endpoint.'
+                    ], 400);
+                } elseif (strpos($errorMessage, 'requires_confirmation') !== false) {
+                    return response()->json([
+                        'message' => 'Payment requires confirmation. Please confirm the payment on the frontend before submitting the purchase.',
+                        'error' => $errorMessage,
+                        'error_code' => 'payment_requires_confirmation',
+                        'instructions' => 'The payment method has been attached but the payment needs to be confirmed. Please use Stripe.js to confirm the payment before calling this endpoint.'
                     ], 400);
                 } elseif (strpos($errorMessage, 'processing') !== false) {
                     return response()->json([
@@ -517,7 +551,7 @@ class CodeController extends Controller
                     ], 400);
                 } elseif (strpos($errorMessage, 'canceled') !== false || strpos($errorMessage, 'requires_action') !== false) {
                     return response()->json([
-                        'message' => 'Payment was canceled or requires additional action. Please try again with a new payment.',
+                        'message' => 'Payment was canceled or requires additional action (e.g., 3D Secure authentication). Please try again with a new payment.',
                         'error' => $errorMessage,
                         'error_code' => 'payment_canceled'
                     ], 400);
