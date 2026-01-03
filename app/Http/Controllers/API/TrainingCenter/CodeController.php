@@ -719,39 +719,86 @@ class CodeController extends Controller
             }
             
             // Create transaction
-            $transaction = Transaction::create([
-                'transaction_type' => 'code_purchase',
-                'payer_type' => 'training_center',
-                'payer_id' => $trainingCenter->id,
-                'payee_type' => 'acc',
-                'payee_id' => $request->acc_id,
-                'amount' => $finalAmount,
-                'commission_amount' => $commissionAmount ?? 0,
-                'provider_amount' => $providerAmount ?? 0,
-                'currency' => 'USD',
-                'payment_method' => $request->payment_method === 'credit_card' ? 'credit_card' : 'bank_transfer',
-                'payment_type' => $paymentType,
-                'payment_gateway_transaction_id' => $request->payment_intent_id ?? null,
-                'status' => $paymentStatus === 'pending' ? 'pending' : 'completed',
-                'completed_at' => $paymentStatus === 'completed' ? now() : null,
-                'reference_type' => 'code_batch',
-                'reference_id' => null, // Will be updated after batch creation
-            ]);
+            try {
+                $transaction = Transaction::create([
+                    'transaction_type' => 'code_purchase',
+                    'payer_type' => 'training_center',
+                    'payer_id' => $trainingCenter->id,
+                    'payee_type' => 'acc',
+                    'payee_id' => $request->acc_id,
+                    'amount' => $finalAmount,
+                    'commission_amount' => $commissionAmount ?? 0,
+                    'provider_amount' => $providerAmount ?? 0,
+                    'currency' => 'USD',
+                    'payment_method' => $request->payment_method === 'credit_card' ? 'credit_card' : 'bank_transfer',
+                    'payment_type' => $paymentType,
+                    'payment_gateway_transaction_id' => $request->payment_intent_id ?? null,
+                    'status' => $paymentStatus === 'pending' ? 'pending' : 'completed',
+                    'completed_at' => $paymentStatus === 'completed' ? now() : null,
+                    'reference_type' => 'code_batch',
+                    'reference_id' => null, // Will be updated after batch creation
+                ]);
+            } catch (\Exception $transactionError) {
+                DB::rollBack();
+                \Log::error('Failed to create transaction', [
+                    'error' => $transactionError->getMessage(),
+                    'trace' => $transactionError->getTraceAsString(),
+                    'training_center_id' => $trainingCenter->id ?? null,
+                    'acc_id' => $request->acc_id ?? null,
+                ]);
+                throw new \Exception('Failed to create transaction: ' . $transactionError->getMessage());
+            }
 
+            // Validate payment method value
+            $validPaymentMethods = ['wallet', 'credit_card', 'manual_payment'];
+            $paymentMethodValue = $request->payment_method;
+            if (!in_array($paymentMethodValue, $validPaymentMethods)) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Invalid payment method. Allowed values: ' . implode(', ', $validPaymentMethods),
+                    'error' => 'Invalid payment_method value: ' . $paymentMethodValue,
+                    'error_code' => 'invalid_payment_method'
+                ], 422);
+            }
+            
             // Create batch
-            $batch = CodeBatch::create([
-                'training_center_id' => $trainingCenter->id,
-                'acc_id' => $request->acc_id,
-                'course_id' => $request->course_id,
-                'quantity' => $request->quantity,
-                'total_amount' => $finalAmount,
-                'payment_method' => $request->payment_method,
-                'transaction_id' => $transaction->id,
-                'purchase_date' => now(),
-                'payment_status' => $paymentStatus,
-                'payment_receipt_url' => $paymentReceiptUrl,
-                'payment_amount' => $paymentAmount,
-            ]);
+            try {
+                $batchData = [
+                    'training_center_id' => $trainingCenter->id,
+                    'acc_id' => $request->acc_id,
+                    'course_id' => $request->course_id,
+                    'quantity' => $request->quantity,
+                    'total_amount' => $finalAmount,
+                    'payment_method' => $paymentMethodValue,
+                    'transaction_id' => (string)$transaction->id, // Convert to string as per migration
+                    'purchase_date' => now(),
+                    'payment_status' => $paymentStatus,
+                ];
+                
+                // Only add these fields if they are not null
+                if ($paymentReceiptUrl !== null) {
+                    $batchData['payment_receipt_url'] = $paymentReceiptUrl;
+                }
+                if ($paymentAmount !== null) {
+                    $batchData['payment_amount'] = $paymentAmount;
+                }
+                
+                $batch = CodeBatch::create($batchData);
+            } catch (\Exception $batchError) {
+                DB::rollBack();
+                \Log::error('Failed to create code batch', [
+                    'error' => $batchError->getMessage(),
+                    'error_class' => get_class($batchError),
+                    'trace' => $batchError->getTraceAsString(),
+                    'file' => $batchError->getFile(),
+                    'line' => $batchError->getLine(),
+                    'transaction_id' => $transaction->id ?? null,
+                    'payment_method' => $paymentMethodValue,
+                    'payment_status' => $paymentStatus,
+                    'batch_data' => $batchData ?? null,
+                ]);
+                throw new \Exception('Failed to create code batch: ' . $batchError->getMessage() . ' (File: ' . $batchError->getFile() . ', Line: ' . $batchError->getLine() . ')');
+            }
 
             // Only generate codes if payment is completed (not manual/pending)
             $codes = [];
@@ -958,7 +1005,10 @@ class CodeController extends Controller
             // Log the full error for debugging
             \Log::error('Code purchase failed', [
                 'error' => $e->getMessage(),
+                'error_class' => get_class($e),
                 'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'user_id' => $user->id ?? null,
                 'training_center_id' => $trainingCenter->id ?? null,
                 'request_data' => [
@@ -966,18 +1016,52 @@ class CodeController extends Controller
                     'course_id' => $request->course_id ?? null,
                     'quantity' => $request->quantity ?? null,
                     'payment_method' => $request->payment_method ?? null,
+                    'payment_intent_id' => $request->payment_intent_id ?? null,
+                    'payment_method_id' => $request->payment_method_id ?? null,
                 ]
             ]);
             
+            // Check for specific database errors
+            $errorMessage = $e->getMessage();
+            $errorCode = 'internal_server_error';
+            
+            // Check for enum value errors
+            if (strpos($errorMessage, 'Invalid enum value') !== false || 
+                strpos($errorMessage, 'Data truncated') !== false ||
+                strpos($errorMessage, 'payment_method') !== false) {
+                $errorCode = 'invalid_payment_method';
+                $errorMessage = 'Invalid payment method. Please ensure the payment_method enum includes the value you are trying to use.';
+            }
+            
+            // Check for foreign key errors
+            if (strpos($errorMessage, 'foreign key constraint') !== false ||
+                strpos($errorMessage, 'Cannot add or update a child row') !== false) {
+                $errorCode = 'foreign_key_error';
+                $errorMessage = 'Database constraint error. Please verify that all related records exist (ACC, Course, Training Center).';
+            }
+            
+            // Check for null constraint errors
+            if (strpos($errorMessage, 'cannot be null') !== false ||
+                strpos($errorMessage, 'Column') !== false && strpos($errorMessage, 'cannot be null') !== false) {
+                $errorCode = 'null_constraint_error';
+                $errorMessage = 'Required field is missing. Please check that all required fields are provided.';
+            }
+            
             // Return user-friendly error message
-            $errorMessage = 'Purchase failed. Please try again.';
+            $userMessage = 'Purchase failed. Please try again.';
             if (config('app.debug')) {
-                $errorMessage .= ' Error: ' . $e->getMessage();
+                $userMessage .= ' Error: ' . $errorMessage;
             }
             
             return response()->json([
-                'message' => $errorMessage,
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'message' => $userMessage,
+                'error' => config('app.debug') ? $errorMessage : 'Internal server error',
+                'error_code' => $errorCode,
+                'debug_info' => config('app.debug') ? [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'class' => get_class($e),
+                ] : null
             ], 500);
         }
     }
