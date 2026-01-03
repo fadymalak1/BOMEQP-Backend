@@ -339,6 +339,7 @@ class CodeController extends Controller
             'discount_code' => 'nullable|string|max:255',
             'payment_method' => 'required|in:credit_card,manual_payment',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string|max:255',
+            'payment_method_id' => 'nullable|string|max:255', // Stripe payment method ID (optional, can be attached on backend)
             'payment_receipt' => 'required_if:payment_method,manual_payment|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // Max 10MB
             'payment_amount' => 'required_if:payment_method,manual_payment|nullable|numeric|min:0',
         ], [
@@ -497,6 +498,40 @@ class CodeController extends Controller
                     ], 400);
                 }
                 
+                // If payment method ID is provided and payment intent requires payment method, attach it
+                if ($request->payment_method_id && $paymentIntent->status === 'requires_payment_method') {
+                    try {
+                        $paymentIntent = \Stripe\PaymentIntent::retrieve($request->payment_intent_id);
+                        $paymentIntent = $paymentIntent->update([
+                            'payment_method' => $request->payment_method_id,
+                        ]);
+                        \Log::info('Payment method attached to payment intent', [
+                            'payment_intent_id' => $request->payment_intent_id,
+                            'payment_method_id' => $request->payment_method_id,
+                            'new_status' => $paymentIntent->status
+                        ]);
+                        
+                        // After attaching payment method, status will be 'requires_confirmation'
+                        // We'll handle confirmation in the next block
+                    } catch (\Exception $attachError) {
+                        \Log::error('Failed to attach payment method', [
+                            'payment_intent_id' => $request->payment_intent_id,
+                            'payment_method_id' => $request->payment_method_id,
+                            'error' => $attachError->getMessage()
+                        ]);
+                        return response()->json([
+                            'message' => 'Failed to attach payment method to payment intent',
+                            'error' => $attachError->getMessage(),
+                            'error_code' => 'payment_method_attach_failed'
+                        ], 400);
+                    }
+                }
+                
+                // Refresh payment intent status after potential attachment
+                if ($request->payment_method_id) {
+                    $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                }
+                
                 // If payment intent requires confirmation and has a payment method, try to confirm it
                 if ($paymentIntent->status === 'requires_confirmation' && $paymentIntent->payment_method) {
                     try {
@@ -531,17 +566,17 @@ class CodeController extends Controller
                 // Provide more helpful error messages based on payment status
                 if (strpos($errorMessage, 'requires_payment_method') !== false) {
                     return response()->json([
-                        'message' => 'Payment method not attached. Please attach a payment method and confirm the payment on the frontend before submitting the purchase.',
+                        'message' => 'Payment method not attached. Please provide payment_method_id or attach a payment method on the frontend before submitting the purchase.',
                         'error' => $errorMessage,
                         'error_code' => 'payment_not_confirmed',
-                        'instructions' => 'The payment intent has been created but no payment method has been attached. Please use Stripe.js to attach a payment method and confirm the payment before calling this endpoint.'
+                        'instructions' => 'The payment intent has been created but no payment method has been attached. You can either: 1) Provide payment_method_id in the request body, or 2) Use Stripe.js to attach a payment method and confirm the payment before calling this endpoint.'
                     ], 400);
                 } elseif (strpos($errorMessage, 'requires_confirmation') !== false) {
                     return response()->json([
-                        'message' => 'Payment requires confirmation. Please confirm the payment on the frontend before submitting the purchase.',
+                        'message' => 'Payment requires confirmation. The backend will attempt to confirm automatically, but if it fails, please confirm the payment on the frontend.',
                         'error' => $errorMessage,
                         'error_code' => 'payment_requires_confirmation',
-                        'instructions' => 'The payment method has been attached but the payment needs to be confirmed. Please use Stripe.js to confirm the payment before calling this endpoint.'
+                        'instructions' => 'The payment method has been attached but the payment needs to be confirmed. The backend will attempt to confirm it automatically.'
                     ], 400);
                 } elseif (strpos($errorMessage, 'processing') !== false) {
                     return response()->json([

@@ -221,7 +221,7 @@ Error responses include detailed error information when `APP_DEBUG=true`:
 
 **Endpoint:** `POST /v1/api/training-center/codes/purchase`
 
-**Request Body (Credit Card):**
+**Request Body (Credit Card - Option 1: Payment Already Confirmed):**
 ```json
 {
   "acc_id": 6,
@@ -232,6 +232,21 @@ Error responses include detailed error information when `APP_DEBUG=true`:
   "payment_intent_id": "pi_xxx"
 }
 ```
+
+**Request Body (Credit Card - Option 2: Backend Confirms Payment):**
+```json
+{
+  "acc_id": 6,
+  "course_id": 1,
+  "quantity": 10,
+  "discount_code": "SAVE20",
+  "payment_method": "credit_card",
+  "payment_intent_id": "pi_xxx",
+  "payment_method_id": "pm_xxx"
+}
+```
+
+**Note:** If `payment_method_id` is provided, the backend will automatically attach it to the payment intent and confirm the payment. This simplifies the frontend flow.
 
 **Request Body (Manual Payment - multipart/form-data):**
 ```
@@ -346,32 +361,38 @@ payment_receipt: [file]
 }
 ```
 
-### Payment Flow
+### Payment Flow for Credit Card Payments
 
-**Important:** The payment intent must be confirmed on the frontend before calling the purchase endpoint.
+There are **two ways** to handle credit card payments:
+
+#### Option 1: Frontend Confirms Payment (Recommended)
 
 1. **Create Payment Intent:**
    ```javascript
    const response = await axios.post('/training-center/codes/create-payment-intent', {
      acc_id: 6,
      course_id: 1,
-     quantity: 10
+     quantity: 10,
+     discount_code: 'SAVE20' // optional
    });
    const { client_secret, payment_intent_id } = response.data;
    ```
 
-2. **Confirm Payment with Stripe:**
+2. **Confirm Payment with Stripe.js:**
    ```javascript
    const stripe = Stripe('pk_test_...');
    const { error, paymentIntent } = await stripe.confirmCardPayment(client_secret, {
      payment_method: {
        card: cardElement,
-       billing_details: { /* ... */ }
+       billing_details: {
+         name: 'Customer Name',
+         email: 'customer@example.com'
+       }
      }
    });
    
    if (error) {
-     // Handle error
+     console.error('Payment failed:', error.message);
    } else if (paymentIntent.status === 'succeeded') {
      // Payment confirmed, proceed to purchase
    }
@@ -379,15 +400,73 @@ payment_receipt: [file]
 
 3. **Call Purchase Endpoint:**
    ```javascript
-   // Only call this AFTER payment status is 'succeeded'
+   // Only call this AFTER paymentIntent.status === 'succeeded'
    const purchaseResponse = await axios.post('/training-center/codes/purchase', {
      acc_id: 6,
      course_id: 1,
      quantity: 10,
      payment_method: 'credit_card',
-     payment_intent_id: payment_intent_id
+     payment_intent_id: payment_intent_id,
+     discount_code: 'SAVE20' // optional, must match Step 1
    });
    ```
+
+#### Option 2: Backend Attaches and Confirms Payment Method (Simpler)
+
+1. **Create Payment Intent:**
+   ```javascript
+   const response = await axios.post('/training-center/codes/create-payment-intent', {
+     acc_id: 6,
+     course_id: 1,
+     quantity: 10,
+     discount_code: 'SAVE20' // optional
+   });
+   const { client_secret, payment_intent_id } = response.data;
+   ```
+
+2. **Create Payment Method with Stripe.js:**
+   ```javascript
+   const stripe = Stripe('pk_test_...');
+   const { error, paymentMethod } = await stripe.createPaymentMethod({
+     type: 'card',
+     card: cardElement,
+     billing_details: {
+       name: 'Customer Name',
+       email: 'customer@example.com'
+     }
+   });
+   
+   if (error) {
+     console.error('Payment method creation failed:', error.message);
+   } else {
+     const paymentMethodId = paymentMethod.id;
+     // Proceed to Step 3
+   }
+   ```
+
+3. **Call Purchase Endpoint with Payment Method ID:**
+   ```javascript
+   // Backend will attach payment method and confirm automatically
+   const purchaseResponse = await axios.post('/training-center/codes/purchase', {
+     acc_id: 6,
+     course_id: 1,
+     quantity: 10,
+     payment_method: 'credit_card',
+     payment_intent_id: payment_intent_id,
+     payment_method_id: paymentMethodId, // Provide payment method ID
+     discount_code: 'SAVE20' // optional, must match Step 1
+   });
+   ```
+
+**What the Backend Does (Option 2):**
+- Attaches the payment method to the payment intent
+- Automatically confirms the payment
+- Verifies the payment succeeded
+- Proceeds with code generation
+
+**Which Option to Use:**
+- **Option 1**: More control, handles 3D Secure and other authentication flows on frontend
+- **Option 2**: Simpler, backend handles everything automatically
 
 ---
 
