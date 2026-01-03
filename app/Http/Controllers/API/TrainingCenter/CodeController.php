@@ -826,7 +826,23 @@ class CodeController extends Controller
                             $codeCreated = true;
                         } catch (\Exception $codeError) {
                             $attempts++;
+                            \Log::warning('Failed to create certificate code (attempt ' . $attempts . ')', [
+                                'error' => $codeError->getMessage(),
+                                'error_class' => get_class($codeError),
+                                'trace' => $codeError->getTraceAsString(),
+                                'batch_id' => $batch->id,
+                                'attempt' => $attempts,
+                                'generated_code' => $generatedCode ?? null,
+                                'code_data' => [
+                                    'batch_id' => $batch->id,
+                                    'training_center_id' => $trainingCenter->id,
+                                    'acc_id' => $request->acc_id,
+                                    'course_id' => $request->course_id,
+                                    'purchased_price' => $unitPrice,
+                                ]
+                            ]);
                             if ($attempts >= $maxAttempts) {
+                                DB::rollBack();
                                 throw new \Exception('Failed to generate unique certificate code after ' . $maxAttempts . ' attempts: ' . $codeError->getMessage());
                             }
                         }
@@ -839,34 +855,77 @@ class CodeController extends Controller
 
                 // Update discount code usage
                 if ($discountCodeId) {
-                    $discountCode = DiscountCode::find($discountCodeId);
-                    if ($discountCode && $discountCode->discount_type === 'quantity_based') {
-                        $discountCode->increment('used_quantity', $request->quantity);
-                        if ($discountCode->used_quantity >= $discountCode->total_quantity) {
-                            $discountCode->update(['status' => 'depleted']);
+                    try {
+                        $discountCode = DiscountCode::find($discountCodeId);
+                        if ($discountCode && $discountCode->discount_type === 'quantity_based') {
+                            $discountCode->increment('used_quantity', $request->quantity);
+                            if ($discountCode->used_quantity >= $discountCode->total_quantity) {
+                                $discountCode->update(['status' => 'depleted']);
+                            }
                         }
+                    } catch (\Exception $discountUpdateError) {
+                        \Log::error('Failed to update discount code usage', [
+                            'error' => $discountUpdateError->getMessage(),
+                            'trace' => $discountUpdateError->getTraceAsString(),
+                            'discount_code_id' => $discountCodeId,
+                            'batch_id' => $batch->id,
+                        ]);
+                        // Do not re-throw, as discount update failure should not block purchase
                     }
                 }
             }
 
             // Update transaction with batch reference
-            $transaction->update(['reference_id' => $batch->id]);
+            try {
+                $transaction->update(['reference_id' => $batch->id]);
+            } catch (\Exception $transactionUpdateError) {
+                \Log::error('Failed to update transaction with batch reference', [
+                    'error' => $transactionUpdateError->getMessage(),
+                    'trace' => $transactionUpdateError->getTraceAsString(),
+                    'transaction_id' => $transaction->id,
+                    'batch_id' => $batch->id,
+                ]);
+                // Do not re-throw, as this is a minor update after main operations
+            }
 
             // Create commission ledger entries for distribution (only if completed)
             if ($paymentStatus === 'completed') {
-                \App\Models\CommissionLedger::create([
-                    'transaction_id' => $transaction->id,
-                    'acc_id' => $request->acc_id,
-                    'training_center_id' => $trainingCenter->id,
-                    'group_commission_amount' => $groupCommissionAmount ?? 0,
-                    'group_commission_percentage' => $groupCommissionPercentage ?? 0,
-                    'acc_commission_amount' => $accCommissionAmount ?? 0,
-                    'acc_commission_percentage' => $accCommissionPercentage ?? 0,
-                    'settlement_status' => 'pending',
-                ]);
+                try {
+                    \App\Models\CommissionLedger::create([
+                        'transaction_id' => $transaction->id,
+                        'acc_id' => $request->acc_id,
+                        'training_center_id' => $trainingCenter->id,
+                        'group_commission_amount' => $groupCommissionAmount ?? 0,
+                        'group_commission_percentage' => $groupCommissionPercentage ?? 0,
+                        'acc_commission_amount' => $accCommissionAmount ?? 0,
+                        'acc_commission_percentage' => $accCommissionPercentage ?? 0,
+                        'settlement_status' => 'pending',
+                    ]);
+                } catch (\Exception $commissionLedgerError) {
+                    \Log::error('Failed to create commission ledger entry', [
+                        'error' => $commissionLedgerError->getMessage(),
+                        'trace' => $commissionLedgerError->getTraceAsString(),
+                        'transaction_id' => $transaction->id,
+                        'batch_id' => $batch->id,
+                        'acc_id' => $request->acc_id,
+                        'training_center_id' => $trainingCenter->id,
+                    ]);
+                    // Do not re-throw, as commission ledger creation failure should not block purchase
+                }
             }
 
-            DB::commit();
+            // Commit transaction
+            try {
+                DB::commit();
+            } catch (\Exception $commitError) {
+                \Log::error('Failed to commit database transaction', [
+                    'error' => $commitError->getMessage(),
+                    'trace' => $commitError->getTraceAsString(),
+                    'transaction_id' => $transaction->id ?? null,
+                    'batch_id' => $batch->id ?? null,
+                ]);
+                throw new \Exception('Failed to commit transaction: ' . $commitError->getMessage());
+            }
 
             // Send notifications (wrap in try-catch to prevent notification failures from affecting the purchase)
             $notificationService = new NotificationService();
@@ -1056,15 +1115,34 @@ class CodeController extends Controller
                 $userMessage .= ' Error: ' . $errorMessage;
             }
             
+            // Always include some debug info in response for 500 errors to help debugging
+            $debugInfo = null;
+            if ($statusCode === 500) {
+                // Even in production, include basic error info for 500 errors
+                $debugInfo = [
+                    'error_class' => get_class($e),
+                    'error_message' => $errorMessage,
+                ];
+                
+                // Include file and line only in debug mode
+                if (config('app.debug')) {
+                    $debugInfo['file'] = $e->getFile();
+                    $debugInfo['line'] = $e->getLine();
+                    $debugInfo['trace'] = $e->getTraceAsString();
+                }
+            } elseif (config('app.debug')) {
+                $debugInfo = [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'class' => get_class($e),
+                ];
+            }
+            
             return response()->json([
                 'message' => $userMessage,
                 'error' => config('app.debug') ? $errorMessage : ($statusCode === 422 ? $errorMessage : 'Internal server error'),
                 'error_code' => $errorCode,
-                'debug_info' => config('app.debug') ? [
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                    'class' => get_class($e),
-                ] : null
+                'debug_info' => $debugInfo
             ], $statusCode);
         }
     }
