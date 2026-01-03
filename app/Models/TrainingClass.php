@@ -21,6 +21,8 @@ class TrainingClass extends Model
         'instructor_id',
         'start_date',
         'end_date',
+        'exam_date',
+        'exam_score',
         'schedule_json',
         'enrolled_count',
         'status',
@@ -33,6 +35,8 @@ class TrainingClass extends Model
         return [
             'start_date' => 'date',
             'end_date' => 'date',
+            'exam_date' => 'date',
+            'exam_score' => 'decimal:2',
             'schedule_json' => 'array',
         ];
     }

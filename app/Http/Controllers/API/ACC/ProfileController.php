@@ -46,6 +46,28 @@ class ProfileController extends Controller
                                 new OA\Property(property: "phone", type: "string", example: "+1234567890"),
                                 new OA\Property(property: "country", type: "string", example: "Egypt"),
                                 new OA\Property(property: "address", type: "string", example: "123 Main St"),
+                                new OA\Property(
+                                    property: "mailing_address",
+                                    type: "object",
+                                    description: "Mailing address information",
+                                    properties: [
+                                        new OA\Property(property: "street", type: "string", nullable: true, example: "123 Main Street"),
+                                        new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo"),
+                                        new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
+                                        new OA\Property(property: "postal_code", type: "string", nullable: true, example: "12345")
+                                    ]
+                                ),
+                                new OA\Property(
+                                    property: "physical_address",
+                                    type: "object",
+                                    description: "Physical address information",
+                                    properties: [
+                                        new OA\Property(property: "street", type: "string", nullable: true, example: "456 Business Avenue"),
+                                        new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo"),
+                                        new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
+                                        new OA\Property(property: "postal_code", type: "string", nullable: true, example: "12345")
+                                    ]
+                                ),
                                 new OA\Property(property: "website", type: "string", nullable: true, example: "https://example.com"),
                                 new OA\Property(property: "logo_url", type: "string", nullable: true),
                                 new OA\Property(property: "status", type: "string", example: "active"),
@@ -112,12 +134,21 @@ class ProfileController extends Controller
                         properties: [
                             new OA\Property(property: "name", type: "string", nullable: true, example: "ABC Accreditation Body"),
                             new OA\Property(property: "legal_name", type: "string", nullable: true, example: "ABC Accreditation Body LLC"),
-                            new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890"),
-                            new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
-                            new OA\Property(property: "address", type: "string", nullable: true, example: "123 Main St"),
-                            new OA\Property(property: "website", type: "string", nullable: true, example: "https://example.com"),
-                            new OA\Property(property: "logo_url", type: "string", nullable: true, example: "https://example.com/logo.png"),
-                            new OA\Property(property: "stripe_account_id", type: "string", nullable: true, example: "acct_xxxxxxxxxxxxx", description: "Stripe Connect account ID (starts with 'acct_')"),
+                        new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890"),
+                        new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
+                        new OA\Property(property: "address", type: "string", nullable: true, example: "123 Main St"),
+                        new OA\Property(property: "mailing_street", type: "string", nullable: true, example: "123 Main Street"),
+                        new OA\Property(property: "mailing_city", type: "string", nullable: true, example: "Cairo"),
+                        new OA\Property(property: "mailing_country", type: "string", nullable: true, example: "Egypt"),
+                        new OA\Property(property: "mailing_postal_code", type: "string", nullable: true, example: "12345"),
+                        new OA\Property(property: "physical_street", type: "string", nullable: true, example: "456 Business Avenue"),
+                        new OA\Property(property: "physical_city", type: "string", nullable: true, example: "Cairo"),
+                        new OA\Property(property: "physical_country", type: "string", nullable: true, example: "Egypt"),
+                        new OA\Property(property: "physical_postal_code", type: "string", nullable: true, example: "12345"),
+                        new OA\Property(property: "website", type: "string", nullable: true, example: "https://example.com"),
+                        new OA\Property(property: "logo_url", type: "string", nullable: true, example: "https://example.com/logo.png", description: "Logo URL (optional if logo file is uploaded)"),
+                        new OA\Property(property: "logo", type: "string", format: "binary", nullable: true, description: "Logo file to upload (image file: jpg, jpeg, png, max 5MB)"),
+                        new OA\Property(property: "stripe_account_id", type: "string", nullable: true, example: "acct_xxxxxxxxxxxxx", description: "Stripe Connect account ID (starts with 'acct_')"),
                             new OA\Property(
                                 property: "documents",
                                 type: "array",
@@ -144,8 +175,17 @@ class ProfileController extends Controller
                             new OA\Property(property: "phone", type: "string", nullable: true),
                             new OA\Property(property: "country", type: "string", nullable: true),
                             new OA\Property(property: "address", type: "string", nullable: true),
+                            new OA\Property(property: "mailing_street", type: "string", nullable: true),
+                            new OA\Property(property: "mailing_city", type: "string", nullable: true),
+                            new OA\Property(property: "mailing_country", type: "string", nullable: true),
+                            new OA\Property(property: "mailing_postal_code", type: "string", nullable: true),
+                            new OA\Property(property: "physical_street", type: "string", nullable: true),
+                            new OA\Property(property: "physical_city", type: "string", nullable: true),
+                            new OA\Property(property: "physical_country", type: "string", nullable: true),
+                            new OA\Property(property: "physical_postal_code", type: "string", nullable: true),
                             new OA\Property(property: "website", type: "string", nullable: true),
-                            new OA\Property(property: "logo_url", type: "string", nullable: true),
+                            new OA\Property(property: "logo_url", type: "string", nullable: true, description: "Logo URL (optional if logo file is uploaded)"),
+                            new OA\Property(property: "logo", type: "string", format: "binary", nullable: true, description: "Logo file to upload (image file: jpg, jpeg, png, max 5MB)"),
                             new OA\Property(property: "stripe_account_id", type: "string", nullable: true),
                             new OA\Property(property: "documents", type: "array", items: new OA\Items(type: "object"))
                         ]
@@ -179,47 +219,147 @@ class ProfileController extends Controller
         }
 
         // All fields are optional - validate only if provided
-        $request->validate([
-            'name' => 'sometimes|nullable|string|max:255',
-            'legal_name' => 'sometimes|nullable|string|max:255',
-            'phone' => 'sometimes|nullable|string|max:255',
-            'country' => 'sometimes|nullable|string|max:255',
-            'address' => 'sometimes|nullable|string',
-            'website' => 'sometimes|nullable|url|max:255',
-            'logo_url' => 'sometimes|nullable|url|max:255',
-            'stripe_account_id' => [
-                'sometimes',
-                'nullable',
-                'string',
-                'max:255',
-                function ($attribute, $value, $fail) {
-                    if ($value && !preg_match('/^acct_[a-zA-Z0-9]+$/', $value)) {
-                        $fail('The Stripe account ID must start with "acct_" and be a valid Stripe account ID.');
-                    }
-                },
-            ],
-            'documents' => 'sometimes|nullable|array',
-            'documents.*.id' => 'sometimes|nullable|integer|exists:acc_documents,id',
-            'documents.*.document_type' => 'sometimes|nullable|in:license,registration,certificate,other',
-            'documents.*.file' => 'sometimes|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // Max 10MB
-        ]);
+        // Validation happens BEFORE transaction to avoid unnecessary rollbacks
+        try {
+            $request->validate([
+                'name' => 'sometimes|nullable|string|max:255',
+                'legal_name' => 'sometimes|nullable|string|max:255',
+                'phone' => 'sometimes|nullable|string|max:255',
+                'country' => 'sometimes|nullable|string|max:255',
+                'address' => 'sometimes|nullable|string',
+                'mailing_street' => 'sometimes|nullable|string|max:255',
+                'mailing_city' => 'sometimes|nullable|string|max:255',
+                'mailing_country' => 'sometimes|nullable|string|max:255',
+                'mailing_postal_code' => 'sometimes|nullable|string|max:20',
+                'physical_street' => 'sometimes|nullable|string|max:255',
+                'physical_city' => 'sometimes|nullable|string|max:255',
+                'physical_country' => 'sometimes|nullable|string|max:255',
+                'physical_postal_code' => 'sometimes|nullable|string|max:20',
+                'website' => 'sometimes|nullable|url|max:255',
+                'logo_url' => 'sometimes|nullable|url|max:255',
+                'logo' => 'sometimes|nullable|image|mimes:jpeg,jpg,png|max:5120', // Max 5MB
+                'stripe_account_id' => [
+                    'sometimes',
+                    'nullable',
+                    'string',
+                    'max:255',
+                    function ($attribute, $value, $fail) {
+                        if ($value && !preg_match('/^acct_[a-zA-Z0-9]+$/', $value)) {
+                            $fail('The Stripe account ID must start with "acct_" and be a valid Stripe account ID.');
+                        }
+                    },
+                ],
+                'documents' => 'sometimes|nullable|array',
+                'documents.*.id' => 'sometimes|nullable|integer|exists:acc_documents,id',
+                'documents.*.document_type' => 'sometimes|nullable|in:license,registration,certificate,other',
+                'documents.*.file' => 'sometimes|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // Max 10MB
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Return validation errors without starting transaction
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        }
 
         // Track uploaded files for rollback
         $uploadedFiles = [];
         $oldFilesToDelete = [];
+        $updatedDocuments = [];
 
+        // Start transaction - all database operations will be rolled back on error
         try {
             DB::beginTransaction();
 
             $updateData = [];
 
+            // Handle logo file upload
+            if ($request->hasFile('logo')) {
+                try {
+                    // Delete old logo if exists
+                    if ($acc->logo_url) {
+                        try {
+                            // Extract path from URL
+                            $oldLogoPath = str_replace(Storage::disk('public')->url(''), '', $acc->logo_url);
+                            if (Storage::disk('public')->exists($oldLogoPath)) {
+                                Storage::disk('public')->delete($oldLogoPath);
+                            }
+                        } catch (\Exception $e) {
+                            Log::warning('Failed to delete old logo', [
+                                'acc_id' => $acc->id,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    }
+
+                    // Upload new logo file
+                    $logoFile = $request->file('logo');
+                    $originalName = $logoFile->getClientOriginalName();
+                    $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+                    $fileName = time() . '_' . $acc->id . '_' . $sanitizedName;
+                    
+                    // Ensure the directory exists
+                    $directory = 'accs/' . $acc->id . '/logo';
+                    if (!Storage::disk('public')->exists($directory)) {
+                        Storage::disk('public')->makeDirectory($directory);
+                    }
+                    
+                    // Store the file
+                    $logoPath = $logoFile->storeAs($directory, $fileName, 'public');
+                    
+                    // Verify file was actually stored
+                    $fullPath = Storage::disk('public')->path($logoPath);
+                    $fileExists = file_exists($fullPath);
+                    $fileSize = $fileExists ? filesize($fullPath) : 0;
+                    
+                    if ($logoPath && $fileExists && $fileSize > 0) {
+                        $newLogoUrl = Storage::disk('public')->url($logoPath);
+                        $updateData['logo_url'] = $newLogoUrl;
+                        $uploadedFiles[] = $logoPath; // Track for rollback
+                        Log::info('ACC logo file uploaded successfully', [
+                            'acc_id' => $acc->id,
+                            'original_name' => $originalName,
+                            'file_name' => $fileName,
+                            'logo_url' => $newLogoUrl,
+                            'storage_path' => $logoPath,
+                            'file_size' => $fileSize,
+                        ]);
+                    } else {
+                        throw new \Exception('Failed to store logo file');
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error uploading ACC logo file', [
+                        'acc_id' => $acc->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    throw new \Exception('Failed to upload logo file: ' . $e->getMessage());
+                }
+            }
+
             // Only include fields that are actually provided
-            $fields = ['name', 'legal_name', 'phone', 'country', 'address', 'website', 'logo_url', 'stripe_account_id'];
+            $fields = [
+                'name', 'legal_name', 'phone', 'country', 'address',
+                'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
+                'physical_street', 'physical_city', 'physical_country', 'physical_postal_code',
+                'website', 'logo_url', 'stripe_account_id'
+            ];
+            $logoFileUploaded = $request->hasFile('logo');
             foreach ($fields as $field) {
+                // Skip logo_url if logo file was uploaded (file upload takes precedence)
+                if ($field === 'logo_url' && $logoFileUploaded) {
+                    continue;
+                }
+                
                 if ($request->has($field)) {
                     $value = $request->input($field);
-                    // Allow null for nullable fields (website, logo_url, stripe_account_id)
-                    if (in_array($field, ['website', 'logo_url', 'stripe_account_id'])) {
+                    // Allow null for nullable fields (website, logo_url, stripe_account_id, address fields)
+                    $nullableFields = [
+                        'website', 'logo_url', 'stripe_account_id',
+                        'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
+                        'physical_street', 'physical_city', 'physical_country', 'physical_postal_code'
+                    ];
+                    if (in_array($field, $nullableFields)) {
                         $updateData[$field] = $value === '' ? null : $value;
                     } else {
                         // Only add if value is not null and not empty string
@@ -246,7 +386,7 @@ class ProfileController extends Controller
                 $acc->refresh();
             }
 
-            // Handle documents upload/update
+            // Handle documents upload/update (inside transaction)
             if ($request->has('documents') && is_array($request->input('documents'))) {
                 $documents = $request->input('documents', []);
                 
@@ -273,7 +413,7 @@ class ProfileController extends Controller
                             $directory = 'accs/' . $acc->id . '/documents';
                             $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
                             
-                            // Store file in public storage
+                            // Store file in public storage (inside transaction - will be deleted on rollback)
                             $path = $file->storeAs($directory, $fileName, 'public');
                             $url = Storage::disk('public')->url($path);
                             
@@ -284,6 +424,7 @@ class ProfileController extends Controller
                                 // Update existing document
                                 $document = ACCDocument::where('id', $documentId)
                                     ->where('acc_id', $acc->id)
+                                    ->lockForUpdate() // Lock row for update within transaction
                                     ->first();
                                 
                                 if ($document) {
@@ -303,24 +444,27 @@ class ProfileController extends Controller
                                         'verified_by' => null,
                                         'verified_at' => null,
                                     ]);
+                                    $updatedDocuments[] = $document->id;
                                 } else {
                                     throw new \Exception("Document with ID {$documentId} not found or does not belong to this ACC");
                                 }
                             } else {
                                 // Create new document
-                                ACCDocument::create([
+                                $newDocument = ACCDocument::create([
                                     'acc_id' => $acc->id,
                                     'document_type' => $documentType,
                                     'document_url' => $url,
                                     'uploaded_at' => now(),
                                     'verified' => false,
                                 ]);
+                                $updatedDocuments[] = $newDocument->id;
                             }
                         }
                     } elseif ($documentId && isset($docData['document_type'])) {
                         // Update document type only (no file upload)
                         $document = ACCDocument::where('id', $documentId)
                             ->where('acc_id', $acc->id)
+                            ->lockForUpdate() // Lock row for update within transaction
                             ->first();
                         
                         if ($document) {
@@ -332,6 +476,7 @@ class ProfileController extends Controller
                             $document->update([
                                 'document_type' => $docData['document_type'],
                             ]);
+                            $updatedDocuments[] = $document->id;
                         } else {
                             throw new \Exception("Document with ID {$documentId} not found or does not belong to this ACC");
                         }
@@ -339,18 +484,34 @@ class ProfileController extends Controller
                 }
             }
 
-            // Update user account name if name changed
+            // Update user account name if name changed (inside transaction)
             if (isset($updateData['name'])) {
-                $userAccount = User::where('email', $user->email)->first();
+                $userAccount = User::where('email', $user->email)->lockForUpdate()->first();
                 if ($userAccount) {
                     $userAccount->update(['name' => $acc->name]);
                 }
             }
 
-            // Commit transaction
+            // Check if any updates were made
+            $hasUpdates = !empty($updateData) || !empty($updatedDocuments);
+            
+            if (!$hasUpdates) {
+                // No updates to commit - rollback empty transaction
+                DB::rollBack();
+                
+                // Reload ACC with documents for response
+                $acc->load('documents.verifiedBy');
+                
+                return response()->json([
+                    'message' => 'No changes provided. Profile remains unchanged.',
+                    'profile' => $this->formatAccProfile($acc)
+                ], 200);
+            }
+
+            // All database operations completed successfully - commit transaction
             DB::commit();
 
-            // Delete old files after successful commit
+            // Delete old files after successful commit (outside transaction)
             foreach ($oldFilesToDelete as $oldPath) {
                 try {
                     if (Storage::disk('public')->exists($oldPath)) {
@@ -365,7 +526,7 @@ class ProfileController extends Controller
                 }
             }
 
-            // Reload ACC with documents
+            // Reload ACC with documents to get latest data
             $acc->load('documents.verifiedBy');
 
             return response()->json([
@@ -374,10 +535,12 @@ class ProfileController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            // Rollback transaction
-            DB::rollBack();
+            // Rollback all database changes if any error occurs
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
 
-            // Delete uploaded files on rollback
+            // Delete uploaded files on rollback (cleanup filesystem)
             foreach ($uploadedFiles as $filePath) {
                 try {
                     if (Storage::disk('public')->exists($filePath)) {
@@ -391,14 +554,24 @@ class ProfileController extends Controller
                 }
             }
 
+            // Log error with context
             Log::error('ACC profile update failed', [
                 'acc_id' => $acc->id ?? null,
+                'user_email' => $user->email ?? null,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'uploaded_files_count' => count($uploadedFiles),
+                'updated_documents_count' => count($updatedDocuments ?? [])
             ]);
 
+            // Return error response
+            $errorMessage = 'Profile update failed';
+            if (config('app.debug')) {
+                $errorMessage .= ': ' . $e->getMessage();
+            }
+
             return response()->json([
-                'message' => 'Profile update failed: ' . $e->getMessage()
+                'message' => $errorMessage
             ], 500);
         }
     }
@@ -419,6 +592,18 @@ class ProfileController extends Controller
             'phone' => $acc->phone,
             'country' => $acc->country,
             'address' => $acc->address,
+            'mailing_address' => [
+                'street' => $acc->mailing_street,
+                'city' => $acc->mailing_city,
+                'country' => $acc->mailing_country,
+                'postal_code' => $acc->mailing_postal_code,
+            ],
+            'physical_address' => [
+                'street' => $acc->physical_street,
+                'city' => $acc->physical_city,
+                'country' => $acc->physical_country,
+                'postal_code' => $acc->physical_postal_code,
+            ],
             'website' => $acc->website,
             'logo_url' => $acc->logo_url,
             'status' => $acc->status,

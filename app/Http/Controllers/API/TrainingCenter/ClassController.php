@@ -107,6 +107,8 @@ class ClassController extends Controller
                     new OA\Property(property: "instructor_id", type: "integer", example: 1),
                     new OA\Property(property: "start_date", type: "string", format: "date", example: "2024-01-15"),
                     new OA\Property(property: "end_date", type: "string", format: "date", example: "2024-01-20"),
+                    new OA\Property(property: "exam_date", type: "string", format: "date", nullable: true, example: "2024-01-25"),
+                    new OA\Property(property: "exam_score", type: "number", format: "float", nullable: true, example: 85.50),
                     new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], example: "physical"),
                     new OA\Property(property: "location_details", type: "string", nullable: true, example: "Room 101")
@@ -137,6 +139,8 @@ class ClassController extends Controller
             'instructor_id' => 'required|exists:instructors,id',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
+            'exam_date' => 'nullable|date|after_or_equal:start_date',
+            'exam_score' => 'nullable|numeric|min:0|max:100',
             'schedule_json' => 'nullable|array',
             'location' => 'required|in:physical,online',
             'location_details' => 'nullable|string',
@@ -166,6 +170,8 @@ class ClassController extends Controller
             'instructor_id' => $request->instructor_id,
             'start_date' => $request->start_date,
             'end_date' => $request->end_date,
+            'exam_date' => $request->exam_date,
+            'exam_score' => $request->exam_score,
             'schedule_json' => $request->schedule_json ?? $request->schedule,
             'enrolled_count' => 0,
             'status' => 'scheduled',
@@ -223,6 +229,8 @@ class ClassController extends Controller
                     new OA\Property(property: "instructor_id", type: "integer", nullable: true),
                     new OA\Property(property: "start_date", type: "string", format: "date", nullable: true),
                     new OA\Property(property: "end_date", type: "string", format: "date", nullable: true),
+                    new OA\Property(property: "exam_date", type: "string", format: "date", nullable: true, example: "2024-01-25"),
+                    new OA\Property(property: "exam_score", type: "number", format: "float", nullable: true, example: 85.50),
                     new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], nullable: true),
                     new OA\Property(property: "location_details", type: "string", nullable: true),
@@ -263,6 +271,8 @@ class ClassController extends Controller
             'instructor_id' => 'sometimes|exists:instructors,id',
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after:start_date',
+            'exam_date' => 'nullable|date|after_or_equal:start_date',
+            'exam_score' => 'nullable|numeric|min:0|max:100',
             'schedule_json' => 'nullable|array',
             'location' => 'sometimes|in:physical,online',
             'location_details' => 'nullable|string',
@@ -271,7 +281,7 @@ class ClassController extends Controller
 
         $updateData = $request->only([
             'course_id', 'class_id', 'instructor_id', 'start_date', 'end_date',
-            'location', 'location_details', 'status'
+            'exam_date', 'exam_score', 'location', 'location_details', 'status'
         ]);
 
         if ($request->has('schedule_json') || $request->has('schedule')) {

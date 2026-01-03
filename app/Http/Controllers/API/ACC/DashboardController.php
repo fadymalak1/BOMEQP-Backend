@@ -30,7 +30,29 @@ class DashboardController extends Controller
                         new OA\Property(property: "revenue", type: "object", properties: [
                             new OA\Property(property: "monthly", type: "number", format: "float", example: 46700.00, description: "Revenue for current month"),
                             new OA\Property(property: "total", type: "number", format: "float", example: 46700.00, description: "Total revenue")
-                        ])
+                        ]),
+                        new OA\Property(
+                            property: "mailing_address",
+                            type: "object",
+                            description: "Mailing address information",
+                            properties: [
+                                new OA\Property(property: "street", type: "string", nullable: true, example: "123 Main Street"),
+                                new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo"),
+                                new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
+                                new OA\Property(property: "postal_code", type: "string", nullable: true, example: "12345")
+                            ]
+                        ),
+                        new OA\Property(
+                            property: "physical_address",
+                            type: "object",
+                            description: "Physical address information",
+                            properties: [
+                                new OA\Property(property: "street", type: "string", nullable: true, example: "456 Business Avenue"),
+                                new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo"),
+                                new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
+                                new OA\Property(property: "postal_code", type: "string", nullable: true, example: "12345")
+                            ]
+                        )
                     ]
                 )
             ),
@@ -96,6 +118,18 @@ class DashboardController extends Controller
             'revenue' => [
                 'monthly' => (float) $revenueThisMonth,
                 'total' => (float) $totalRevenue,
+            ],
+            'mailing_address' => [
+                'street' => $acc->mailing_street,
+                'city' => $acc->mailing_city,
+                'country' => $acc->mailing_country,
+                'postal_code' => $acc->mailing_postal_code,
+            ],
+            'physical_address' => [
+                'street' => $acc->physical_street,
+                'city' => $acc->physical_city,
+                'country' => $acc->physical_country,
+                'postal_code' => $acc->physical_postal_code,
             ],
         ]);
     }
