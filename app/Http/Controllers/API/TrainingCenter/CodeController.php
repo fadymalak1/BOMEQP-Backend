@@ -499,9 +499,33 @@ class CodeController extends Controller
                     ]
                 );
             } catch (\Exception $e) {
+                $errorMessage = $e->getMessage();
+                
+                // Provide more helpful error messages based on payment status
+                if (strpos($errorMessage, 'requires_payment_method') !== false) {
+                    return response()->json([
+                        'message' => 'Payment not confirmed. Please complete the payment on the frontend before submitting the purchase.',
+                        'error' => $errorMessage,
+                        'error_code' => 'payment_not_confirmed',
+                        'instructions' => 'The payment intent has been created but not yet confirmed. Please use Stripe.js to confirm the payment before calling this endpoint.'
+                    ], 400);
+                } elseif (strpos($errorMessage, 'processing') !== false) {
+                    return response()->json([
+                        'message' => 'Payment is still processing. Please wait a moment and try again.',
+                        'error' => $errorMessage,
+                        'error_code' => 'payment_processing'
+                    ], 400);
+                } elseif (strpos($errorMessage, 'canceled') !== false || strpos($errorMessage, 'requires_action') !== false) {
+                    return response()->json([
+                        'message' => 'Payment was canceled or requires additional action. Please try again with a new payment.',
+                        'error' => $errorMessage,
+                        'error_code' => 'payment_canceled'
+                    ], 400);
+                }
+                
                 return response()->json([
                     'message' => 'Payment verification failed',
-                    'error' => $e->getMessage()
+                    'error' => $errorMessage
                 ], 400);
             }
         } elseif ($request->payment_method === 'manual_payment') {

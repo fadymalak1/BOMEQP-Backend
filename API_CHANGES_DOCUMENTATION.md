@@ -310,6 +310,34 @@ payment_receipt: [file]
 }
 ```
 
+**400 - Payment Not Confirmed:**
+```json
+{
+  "message": "Payment not confirmed. Please complete the payment on the frontend before submitting the purchase.",
+  "error": "Payment not completed. Status: requires_payment_method",
+  "error_code": "payment_not_confirmed",
+  "instructions": "The payment intent has been created but not yet confirmed. Please use Stripe.js to confirm the payment before calling this endpoint."
+}
+```
+
+**400 - Payment Processing:**
+```json
+{
+  "message": "Payment is still processing. Please wait a moment and try again.",
+  "error": "Payment not completed. Status: processing",
+  "error_code": "payment_processing"
+}
+```
+
+**400 - Payment Canceled:**
+```json
+{
+  "message": "Payment was canceled or requires additional action. Please try again with a new payment.",
+  "error": "Payment not completed. Status: canceled",
+  "error_code": "payment_canceled"
+}
+```
+
 **500 - Server Error:**
 ```json
 {
@@ -317,6 +345,49 @@ payment_receipt: [file]
   "error": "Internal server error"
 }
 ```
+
+### Payment Flow
+
+**Important:** The payment intent must be confirmed on the frontend before calling the purchase endpoint.
+
+1. **Create Payment Intent:**
+   ```javascript
+   const response = await axios.post('/training-center/codes/create-payment-intent', {
+     acc_id: 6,
+     course_id: 1,
+     quantity: 10
+   });
+   const { client_secret, payment_intent_id } = response.data;
+   ```
+
+2. **Confirm Payment with Stripe:**
+   ```javascript
+   const stripe = Stripe('pk_test_...');
+   const { error, paymentIntent } = await stripe.confirmCardPayment(client_secret, {
+     payment_method: {
+       card: cardElement,
+       billing_details: { /* ... */ }
+     }
+   });
+   
+   if (error) {
+     // Handle error
+   } else if (paymentIntent.status === 'succeeded') {
+     // Payment confirmed, proceed to purchase
+   }
+   ```
+
+3. **Call Purchase Endpoint:**
+   ```javascript
+   // Only call this AFTER payment status is 'succeeded'
+   const purchaseResponse = await axios.post('/training-center/codes/purchase', {
+     acc_id: 6,
+     course_id: 1,
+     quantity: 10,
+     payment_method: 'credit_card',
+     payment_intent_id: payment_intent_id
+   });
+   ```
 
 ---
 
@@ -498,6 +569,7 @@ php artisan route:cache
 - 500 errors caused by notification failures
 - Potential duplicate code generation issues
 - 404 error on `/training-center/codes/create-payment-intent` route (added missing route)
+- Improved error messages for payment verification failures with specific error codes and instructions
 
 ---
 
