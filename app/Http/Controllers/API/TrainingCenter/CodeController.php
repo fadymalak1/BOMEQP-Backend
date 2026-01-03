@@ -341,6 +341,14 @@ class CodeController extends Controller
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string|max:255',
             'payment_receipt' => 'required_if:payment_method,manual_payment|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // Max 10MB
             'payment_amount' => 'required_if:payment_method,manual_payment|nullable|numeric|min:0',
+        ], [
+            'payment_receipt.required_if' => 'Payment receipt is required for manual payment. Please ensure you are sending the file as multipart/form-data.',
+            'payment_receipt.file' => 'Payment receipt must be a valid file upload.',
+            'payment_receipt.mimes' => 'Payment receipt must be a PDF, JPG, JPEG, or PNG file.',
+            'payment_receipt.max' => 'Payment receipt file size must not exceed 10MB.',
+            'payment_amount.required_if' => 'Payment amount is required for manual payment.',
+            'payment_amount.numeric' => 'Payment amount must be a valid number.',
+            'payment_amount.min' => 'Payment amount must be greater than 0.',
         ]);
 
         $user = $request->user();
@@ -534,17 +542,48 @@ class CodeController extends Controller
                 
                 // Upload payment receipt
                 $receiptFile = $request->file('payment_receipt');
-                $originalName = $receiptFile->getClientOriginalName();
-                $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
-                $fileName = time() . '_' . $trainingCenter->id . '_' . $sanitizedName;
                 
-                $directory = 'training-centers/' . $trainingCenter->id . '/payment-receipts';
-                if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($directory)) {
-                    \Illuminate\Support\Facades\Storage::disk('public')->makeDirectory($directory);
+                if (!$receiptFile || !$receiptFile->isValid()) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'Payment receipt file is invalid or missing. Please ensure the request is sent as multipart/form-data with the receipt file.',
+                        'error' => 'Invalid file upload'
+                    ], 422);
                 }
                 
-                $receiptPath = $receiptFile->storeAs($directory, $fileName, 'public');
-                $paymentReceiptUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($receiptPath);
+                try {
+                    $originalName = $receiptFile->getClientOriginalName();
+                    $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+                    $fileName = time() . '_' . $trainingCenter->id . '_' . $sanitizedName;
+                    
+                    $directory = 'training-centers/' . $trainingCenter->id . '/payment-receipts';
+                    if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($directory)) {
+                        \Illuminate\Support\Facades\Storage::disk('public')->makeDirectory($directory, 0755, true);
+                    }
+                    
+                    $receiptPath = $receiptFile->storeAs($directory, $fileName, 'public');
+                    
+                    if (!$receiptPath) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => 'Failed to upload payment receipt. Please try again.',
+                            'error' => 'File upload failed'
+                        ], 500);
+                    }
+                    
+                    $paymentReceiptUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($receiptPath);
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    \Log::error('Payment receipt upload failed', [
+                        'error' => $e->getMessage(),
+                        'training_center_id' => $trainingCenter->id,
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    return response()->json([
+                        'message' => 'Failed to upload payment receipt: ' . $e->getMessage(),
+                        'error' => 'File upload error'
+                    ], 500);
+                }
             }
             
             // Determine payment type and amounts for credit card
@@ -776,8 +815,30 @@ class CodeController extends Controller
             return response()->json($response, 200);
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // Log the full error for debugging
+            \Log::error('Code purchase failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => $user->id ?? null,
+                'training_center_id' => $trainingCenter->id ?? null,
+                'request_data' => [
+                    'acc_id' => $request->acc_id ?? null,
+                    'course_id' => $request->course_id ?? null,
+                    'quantity' => $request->quantity ?? null,
+                    'payment_method' => $request->payment_method ?? null,
+                ]
+            ]);
+            
+            // Return user-friendly error message
+            $errorMessage = 'Purchase failed. Please try again.';
+            if (config('app.debug')) {
+                $errorMessage .= ' Error: ' . $e->getMessage();
+            }
+            
             return response()->json([
-                'message' => 'Purchase failed: ' . $e->getMessage()
+                'message' => $errorMessage,
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
     }
