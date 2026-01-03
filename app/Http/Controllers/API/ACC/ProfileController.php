@@ -339,7 +339,9 @@ class ProfileController extends Controller
                 }
             }
 
-            // Only include fields that are actually provided
+            // Process only fields that are actually provided in the request (partial updates supported)
+            // Works with both application/json and multipart/form-data
+            // All fields are optional - you can update just one field or multiple fields
             $fields = [
                 'name', 'legal_name', 'phone', 'country', 'address',
                 'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
@@ -347,29 +349,42 @@ class ProfileController extends Controller
                 'website', 'logo_url', 'stripe_account_id'
             ];
             $logoFileUploaded = $request->hasFile('logo');
+            
             foreach ($fields as $field) {
                 // Skip logo_url if logo file was uploaded (file upload takes precedence)
                 if ($field === 'logo_url' && $logoFileUploaded) {
                     continue;
                 }
                 
+                // Handle both JSON and multipart/form-data requests
+                // For multipart/form-data: only include fields that are actually sent in the form
+                // For JSON: only include fields that exist in the JSON payload
+                // $request->has() works for both: returns true if field exists (even if empty)
+                // This allows partial updates - fields not included are skipped
                 if ($request->has($field)) {
                     $value = $request->input($field);
-                    // Allow null for nullable fields (website, logo_url, stripe_account_id, address fields)
+                    
+                    // Define nullable fields that can be set to null (to clear them)
                     $nullableFields = [
-                        'website', 'logo_url', 'stripe_account_id',
+                        'website', 'logo_url', 'stripe_account_id', 'address',
                         'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
                         'physical_street', 'physical_city', 'physical_country', 'physical_postal_code'
                     ];
+                    
                     if (in_array($field, $nullableFields)) {
-                        $updateData[$field] = $value === '' ? null : $value;
+                        // For nullable fields: empty string becomes null (to clear the field)
+                        // This works for both JSON (null) and multipart/form-data (empty string)
+                        $updateData[$field] = ($value === '' || $value === null) ? null : $value;
                     } else {
-                        // Only add if value is not null and not empty string
+                        // For non-nullable fields: only update if value is not empty
+                        // Empty strings are ignored (field won't be updated)
+                        // This prevents accidentally clearing required fields
                         if ($value !== null && $value !== '') {
                             $updateData[$field] = $value;
                         }
                     }
                 }
+                // If field is not in request at all (not included in form-data or JSON), it's skipped
             }
 
             // Update ACC profile if there's data to update
