@@ -47,32 +47,51 @@ class CodeController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $batches = CodeBatch::where('acc_id', $acc->id)
-            ->where('payment_method', 'manual_payment')
-            ->where('payment_status', 'pending')
-            ->with(['trainingCenter', 'certificateCodes'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+        try {
+            $batches = CodeBatch::where('acc_id', $acc->id)
+                ->where('payment_method', 'manual_payment')
+                ->where('payment_status', 'pending')
+                ->with(['trainingCenter', 'certificateCodes', 'course'])
+                ->orderBy('created_at', 'desc')
+                ->get();
 
-        return response()->json([
-            'batches' => $batches->map(function ($batch) {
-                return [
-                    'id' => $batch->id,
-                    'training_center' => [
-                        'id' => $batch->trainingCenter->id,
-                        'name' => $batch->trainingCenter->name,
-                        'email' => $batch->trainingCenter->email,
-                    ],
-                    'quantity' => $batch->quantity,
-                    'total_amount' => $batch->total_amount,
-                    'payment_amount' => $batch->payment_amount,
-                    'payment_receipt_url' => $batch->payment_receipt_url,
-                    'payment_status' => $batch->payment_status,
-                    'created_at' => $batch->created_at,
-                    'updated_at' => $batch->updated_at,
-                ];
-            })
-        ]);
+            return response()->json([
+                'batches' => $batches->map(function ($batch) {
+                    return [
+                        'id' => $batch->id,
+                        'training_center' => $batch->trainingCenter ? [
+                            'id' => $batch->trainingCenter->id,
+                            'name' => $batch->trainingCenter->name,
+                            'email' => $batch->trainingCenter->email,
+                        ] : null,
+                        'course' => $batch->course ? [
+                            'id' => $batch->course->id,
+                            'name' => $batch->course->name,
+                            'title' => $batch->course->title,
+                        ] : null,
+                        'course_id' => $batch->course_id,
+                        'quantity' => $batch->quantity,
+                        'total_amount' => $batch->total_amount,
+                        'payment_amount' => $batch->payment_amount,
+                        'payment_receipt_url' => $batch->payment_receipt_url,
+                        'payment_status' => $batch->payment_status,
+                        'created_at' => $batch->created_at,
+                        'updated_at' => $batch->updated_at,
+                    ];
+                })
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to get pending payments', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'acc_id' => $acc->id ?? null,
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to retrieve pending payments',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 
     /**
@@ -181,6 +200,10 @@ class CodeController extends Controller
             ]);
 
             // Update transaction status
+            $transaction = Transaction::where('reference_type', 'code_batch')
+                ->where('reference_id', $batch->id)
+                ->first();
+                
             if ($transaction) {
                 $transaction->update([
                     'status' => 'completed',
