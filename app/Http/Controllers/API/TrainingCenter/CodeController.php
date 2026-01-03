@@ -337,7 +337,7 @@ class CodeController extends Controller
             'course_id' => 'required|integer|exists:courses,id',
             'quantity' => 'required|integer|min:1',
             'discount_code' => 'nullable|string|max:255',
-            'payment_method' => 'required|in:credit_card,manual_payment',
+            'payment_method' => 'required|in:wallet,credit_card,manual_payment',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string|max:255',
             'payment_method_id' => 'nullable|string|max:255', // Stripe payment method ID (optional, can be attached on backend)
             'payment_receipt' => 'required_if:payment_method,manual_payment|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // Max 10MB
@@ -477,16 +477,8 @@ class CodeController extends Controller
         $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
         $accCommissionAmount = ($finalAmount * $accCommissionPercentage) / 100;
 
-        // Validate payment method value BEFORE starting transaction
-        $validPaymentMethods = ['wallet', 'credit_card', 'manual_payment'];
-        $paymentMethodValue = $request->payment_method;
-        if (!in_array($paymentMethodValue, $validPaymentMethods)) {
-            return response()->json([
-                'message' => 'Invalid payment method. Allowed values: ' . implode(', ', $validPaymentMethods),
-                'error' => 'Invalid payment_method value: ' . ($paymentMethodValue ?? 'null'),
-                'error_code' => 'invalid_payment_method'
-            ], 422);
-        }
+        // Payment method already validated above, use the cleaned value
+        // Ensure we use the validated and cleaned payment method value
 
         // Handle payment based on payment method
         if ($request->payment_method === 'credit_card') {
@@ -1015,21 +1007,28 @@ class CodeController extends Controller
                     'course_id' => $request->course_id ?? null,
                     'quantity' => $request->quantity ?? null,
                     'payment_method' => $request->payment_method ?? null,
+                    'payment_method_type' => gettype($request->payment_method),
                     'payment_intent_id' => $request->payment_intent_id ?? null,
                     'payment_method_id' => $request->payment_method_id ?? null,
-                ]
+                ],
+                'valid_payment_methods' => ['wallet', 'credit_card', 'manual_payment']
             ]);
             
             // Check for specific database errors
             $errorMessage = $e->getMessage();
             $errorCode = 'internal_server_error';
+            $statusCode = 500;
             
-            // Check for enum value errors
+            // Check for enum value errors (especially payment_method)
             if (strpos($errorMessage, 'Invalid enum value') !== false || 
                 strpos($errorMessage, 'Data truncated') !== false ||
-                strpos($errorMessage, 'payment_method') !== false) {
+                (strpos($errorMessage, 'payment_method') !== false && 
+                 (strpos($errorMessage, 'wallet') !== false || 
+                  strpos($errorMessage, 'credit_card') !== false || 
+                  strpos($errorMessage, 'manual_payment') !== false))) {
                 $errorCode = 'invalid_payment_method';
-                $errorMessage = 'Invalid payment method. Please ensure the payment_method enum includes the value you are trying to use.';
+                $errorMessage = 'Invalid payment method. Allowed values: wallet, credit_card, manual_payment';
+                $statusCode = 422; // Return 422 for validation errors
             }
             
             // Check for foreign key errors
@@ -1037,31 +1036,36 @@ class CodeController extends Controller
                 strpos($errorMessage, 'Cannot add or update a child row') !== false) {
                 $errorCode = 'foreign_key_error';
                 $errorMessage = 'Database constraint error. Please verify that all related records exist (ACC, Course, Training Center).';
+                $statusCode = 422;
             }
             
             // Check for null constraint errors
             if (strpos($errorMessage, 'cannot be null') !== false ||
-                strpos($errorMessage, 'Column') !== false && strpos($errorMessage, 'cannot be null') !== false) {
+                (strpos($errorMessage, 'Column') !== false && strpos($errorMessage, 'cannot be null') !== false)) {
                 $errorCode = 'null_constraint_error';
                 $errorMessage = 'Required field is missing. Please check that all required fields are provided.';
+                $statusCode = 422;
             }
             
             // Return user-friendly error message
-            $userMessage = 'Purchase failed. Please try again.';
-            if (config('app.debug')) {
+            $userMessage = $statusCode === 422 
+                ? $errorMessage 
+                : 'Purchase failed. Please try again.';
+                
+            if (config('app.debug') && $statusCode !== 422) {
                 $userMessage .= ' Error: ' . $errorMessage;
             }
             
             return response()->json([
                 'message' => $userMessage,
-                'error' => config('app.debug') ? $errorMessage : 'Internal server error',
+                'error' => config('app.debug') ? $errorMessage : ($statusCode === 422 ? $errorMessage : 'Internal server error'),
                 'error_code' => $errorCode,
                 'debug_info' => config('app.debug') ? [
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
                     'class' => get_class($e),
                 ] : null
-            ], 500);
+            ], $statusCode);
         }
     }
 

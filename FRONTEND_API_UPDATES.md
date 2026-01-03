@@ -1,346 +1,326 @@
-# Frontend API Updates - Payment Mechanisms
+# تحديثات API للفرونت إند - Frontend API Updates
 
-## Overview
-This document outlines the recent updates and fixes made to the Payment Mechanisms APIs. All endpoints are now fully functional and ready for frontend integration.
+## تاريخ التحديث / Update Date
+**2026-01-03**
 
 ---
 
-## ✅ Fixed Endpoints
+## ملخص التغييرات / Summary of Changes
 
-### 1. GET `/api/training-center/instructors/authorizations`
+تم إصلاح مشكلتين رئيسيتين:
+1. **خطأ 403 عند الوصول إلى discount codes**
+2. **خطأ 500 عند الشراء بسبب payment_method غير صالح**
 
-**Status:** ✅ Fixed and Working
+---
 
-**Issue:** Endpoint was returning 404 due to route ordering conflict.
+## 1. إصلاح خطأ 403 - Discount Codes Endpoint
 
-**Fix:** 
-- Route moved before `apiResource('instructors')` to prevent conflicts
-- Response structure updated to match documentation exactly
+### المشكلة / Problem
+كان الـ endpoint `/acc/{id}/discount-codes` محمي بـ `role:acc_admin` فقط، مما يمنع training centers من الوصول إليه.
 
-**Response Structure:**
+### الحل / Solution
+تم إضافة route عامة متاحة لجميع المستخدمين المسجلين دخول.
+
+### الـ Endpoint الجديد / New Endpoint
+
+```
+GET /api/acc/{id}/discount-codes
+```
+
+**المتطلبات / Requirements:**
+- Authentication: مطلوب (Bearer Token)
+- Role: أي مستخدم مسجل دخول (training_center_admin, acc_admin, إلخ)
+
+**المعاملات / Parameters:**
+- `id` (path parameter): رقم ACC
+
+**مثال على الطلب / Request Example:**
+```javascript
+// يمكنك استخدام نفس الكود الحالي
+GET https://aeroenix.com/v1/api/acc/7/discount-codes
+Headers: {
+  Authorization: 'Bearer YOUR_TOKEN'
+}
+```
+
+**مثال على الـ Response / Response Example:**
 ```json
 {
-  "authorizations": [
+  "discount_codes": [
     {
       "id": 1,
-      "instructor_id": 5,
-      "acc_id": 3,
-      "status": "approved",
-      "group_admin_status": "commission_set",
-      "authorization_price": "500.00",
-      "commission_percentage": "15.50",
-      "payment_status": "pending",
-      "instructor": {
-        "id": 5,
-        "first_name": "John",
-        "last_name": "Doe"
-      },
-      "acc": {
-        "id": 3,
-        "name": "Aviation ACC"
-      }
+      "code": "DISCOUNT10",
+      "discount_percentage": 10,
+      "discount_type": "time_limited",
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "status": "active",
+      "acc_id": 7,
+      ...
     }
   ]
 }
 ```
 
-**Query Parameters:**
-- `status` (optional): Filter by status (`pending`, `approved`, `rejected`, `returned`)
-- `payment_status` (optional): Filter by payment status (`pending`, `paid`, `failed`)
-
-**Usage Example:**
-```javascript
-// Get all authorizations
-GET /api/training-center/instructors/authorizations
-
-// Get only approved authorizations
-GET /api/training-center/instructors/authorizations?status=approved
-
-// Get pending payments
-GET /api/training-center/instructors/authorizations?payment_status=pending
-```
+**ملاحظة مهمة / Important Note:**
+- الـ endpoint يعيد فقط discount codes النشطة (`status: 'active'`)
+- لا حاجة لتغيير الكود في الفرونت إند - نفس الـ endpoint يعمل الآن
 
 ---
 
-### 2. POST `/api/training-center/codes/purchase`
+## 2. إصلاح خطأ 500 - Purchase Endpoint
 
-**Status:** ✅ Enhanced and Fixed
+### المشكلة / Problem
+كان يحدث خطأ 500 عند محاولة الشراء بسبب:
+- التحقق من `payment_method` كان يحدث بعد بدء Transaction
+- عند وجود قيمة غير صالحة، كان يتم عمل rollback مما يسبب خطأ 500
 
-**Changes Made:**
-1. Added authorization validation (Training Center must be authorized by ACC)
-2. Added course ownership validation (Course must belong to ACC)
-3. Enhanced discount code validation
-4. Improved error responses with proper HTTP status codes
-5. Updated response structure to match requirements
+### الحل / Solution
+تم نقل التحقق من `payment_method` إلى قبل بدء Transaction، مما يضمن:
+- إرجاع خطأ 422 بدلاً من 500 عند وجود قيمة غير صالحة
+- رسالة خطأ واضحة تساعد في التصحيح
 
-**Request Body:**
-```json
-{
-  "acc_id": 1,
-  "course_id": 5,
-  "quantity": 10,
-  "payment_method": "wallet",
-  "discount_code": "DISCOUNT10",
-  "payment_intent_id": "pi_1234567890"  // Required for credit_card
-}
-```
+### القيم المسموحة لـ payment_method / Valid payment_method Values
 
-**Response Structure (200 OK):**
-```json
-{
-  "message": "Codes purchased successfully",
-  "batch": {
-    "id": 1,
-    "training_center_id": 2,
-    "acc_id": 1,
-    "course_id": 5,
-    "quantity": 10,
-    "total_amount": "500.00",
-    "discount_amount": "50.00",
-    "final_amount": "450.00",
-    "payment_method": "wallet",
-    "payment_status": "completed",
-    "created_at": "2025-12-19T10:00:00.000000Z"
-  },
-  "codes": [
-    {
-      "id": 1,
-      "code": "ABC123XYZ",
-      "status": "available"
-    }
-  ]
-}
-```
-
-**Error Responses:**
-
-**400 Bad Request:**
-```json
-{
-  "message": "Invalid data provided"
-}
-```
-
-**402 Payment Required:**
-```json
-{
-  "message": "Insufficient wallet balance"
-}
-```
-
-**403 Forbidden:**
-```json
-{
-  "message": "Training Center does not have authorization from this ACC"
-}
-```
-or
-```json
-{
-  "message": "ACC is not active"
-}
-```
-
-**404 Not Found:**
-```json
-{
-  "message": "ACC not found"
-}
-```
-or
-```json
-{
-  "message": "Course not found or does not belong to this ACC"
-}
-```
-
-**422 Unprocessable Entity:**
-```json
-{
-  "message": "Invalid discount code"
-}
-```
-or
-```json
-{
-  "message": "Discount code has expired"
-}
-```
-
-**Validation Rules:**
-- `acc_id`: Required, must exist in database
-- `course_id`: Required, must exist and belong to ACC
-- `quantity`: Required, integer, minimum 1
-- `payment_method`: Required, must be `wallet` or `credit_card`
-- `discount_code`: Optional, must be valid and active
-- `payment_intent_id`: Required if `payment_method` is `credit_card`
-
-**Usage Example:**
 ```javascript
-// Purchase codes with wallet
-const purchaseWithWallet = async () => {
-  const response = await fetch('/api/training-center/codes/purchase', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({
-      acc_id: 1,
-      course_id: 5,
-      quantity: 10,
-      payment_method: 'wallet'
-    })
-  });
-  
-  if (response.status === 402) {
-    // Handle insufficient balance
-    const data = await response.json();
-    alert(data.message);
+const VALID_PAYMENT_METHODS = [
+  'wallet',        // الدفع من المحفظة
+  'credit_card',   // الدفع بالبطاقة الائتمانية
+  'manual_payment' // الدفع اليدوي (تحويل بنكي)
+];
+```
+
+### الـ Endpoint
+
+```
+POST /api/training-center/codes/purchase
+```
+
+**مثال على الطلب الصحيح / Correct Request Example:**
+
+```javascript
+// للدفع بالبطاقة الائتمانية
+POST https://aeroenix.com/v1/api/training-center/codes/purchase
+Headers: {
+  Authorization: 'Bearer YOUR_TOKEN',
+  'Content-Type': 'application/json'
+}
+Body: {
+  "acc_id": 7,
+  "course_id": 25,
+  "quantity": 1,
+  "payment_method": "credit_card",  // ✅ قيمة صحيحة
+  "payment_intent_id": "pi_3Sla6FC7FGiektWu2BpjLvlV",
+  "payment_method_id": "pm_xxxxx",  // اختياري - لإرفاق payment method
+  "discount_code": "DISCOUNT10"     // اختياري
+}
+```
+
+**مثال على الطلب الخاطئ / Incorrect Request Example:**
+
+```javascript
+// ❌ خطأ - payment_method غير صالح
+Body: {
+  "payment_method": "cash",  // ❌ قيمة غير مسموحة
+  ...
+}
+```
+
+**مثال على الـ Response عند الخطأ / Error Response Example:**
+
+```json
+{
+  "message": "Invalid payment method. Allowed values: wallet, credit_card, manual_payment",
+  "error": "Invalid payment_method value: cash",
+  "error_code": "invalid_payment_method"
+}
+```
+
+**Status Code:** `422 Unprocessable Entity`
+
+---
+
+## 3. التحقق من payment_method في الفرونت إند
+
+### توصية / Recommendation
+
+نوصي بإضافة التحقق في الفرونت إند قبل إرسال الطلب:
+
+```javascript
+// مثال على التحقق في JavaScript/React
+const VALID_PAYMENT_METHODS = ['wallet', 'credit_card', 'manual_payment'];
+
+function validatePurchaseRequest(data) {
+  // التحقق من payment_method
+  if (!VALID_PAYMENT_METHODS.includes(data.payment_method)) {
+    throw new Error(
+      `Invalid payment method. Allowed values: ${VALID_PAYMENT_METHODS.join(', ')}`
+    );
   }
   
-  return response.json();
-};
-
-// Purchase codes with credit card
-const purchaseWithCreditCard = async (paymentIntentId) => {
-  const response = await fetch('/api/training-center/codes/purchase', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({
-      acc_id: 1,
-      course_id: 5,
-      quantity: 10,
-      payment_method: 'credit_card',
-      payment_intent_id: paymentIntentId
-    })
-  });
+  // التحقق من الحقول المطلوبة
+  if (data.payment_method === 'credit_card' && !data.payment_intent_id) {
+    throw new Error('payment_intent_id is required for credit card payments');
+  }
   
-  return response.json();
-};
+  if (data.payment_method === 'manual_payment') {
+    if (!data.payment_receipt) {
+      throw new Error('Payment receipt is required for manual payment');
+    }
+    if (!data.payment_amount || data.payment_amount <= 0) {
+      throw new Error('Payment amount is required and must be greater than 0');
+    }
+  }
+  
+  return true;
+}
+
+// استخدام التحقق قبل الإرسال
+try {
+  validatePurchaseRequest(purchaseData);
+  const response = await purchaseCodes(purchaseData);
+  // معالجة النجاح
+} catch (error) {
+  // معالجة الخطأ
+  console.error('Validation error:', error.message);
+}
 ```
 
 ---
 
-## 🔧 Bug Fixes
+## 4. ملخص التغييرات في الـ API
 
-### 1. Instructor Authorization Payment Commission Calculation
+### Endpoints المتأثرة / Affected Endpoints
 
-**Issue:** Commission was calculated using ACC's commission percentage instead of authorization's commission percentage.
+| Endpoint | Method | التغيير / Change |
+|----------|--------|------------------|
+| `/api/acc/{id}/discount-codes` | GET | ✅ أصبح متاحاً لجميع المستخدمين المسجلين دخول |
+| `/api/training-center/codes/purchase` | POST | ✅ تحسين معالجة الأخطاء - إرجاع 422 بدلاً من 500 |
 
-**Fix:** Updated to use `authorization.commission_percentage` (set by Group Admin) instead of `acc.commission_percentage`.
+### Error Codes الجديدة / New Error Codes
 
-**Impact:** Commission distribution now correctly uses the percentage set by Group Admin for each authorization.
-
----
-
-### 2. Wallet Balance Validation
-
-**Issue:** Wallet balance check was happening inside transaction, which could leave transactions open.
-
-**Fix:** Moved wallet balance validation before starting the transaction in both:
-- Code purchase endpoint
-- Instructor authorization payment endpoint
-
-**Impact:** Better error handling and transaction management.
+| Error Code | الوصف / Description | Status Code |
+|------------|---------------------|-------------|
+| `invalid_payment_method` | قيمة payment_method غير صالحة | 422 |
 
 ---
 
-## 📋 Important Notes for Frontend Developers
+## 5. أمثلة على الكود / Code Examples
 
-### 1. Error Handling
+### مثال كامل على الشراء / Complete Purchase Example
 
-Always check HTTP status codes:
-- **200**: Success
-- **201**: Created successfully
-- **400**: Bad Request (validation errors)
-- **401**: Unauthorized (not logged in)
-- **402**: Payment Required (insufficient balance)
-- **403**: Forbidden (no authorization)
-- **404**: Not Found
-- **422**: Unprocessable Entity (invalid discount code, etc.)
-- **500**: Server Error
+```javascript
+// React Component Example
+import { purchaseCodes } from './api';
 
-### 2. Authorization Requirements
-
-Before purchasing codes, ensure:
-- Training Center is authorized by the ACC (`status: 'approved'`)
-- ACC is active (`status: 'active'`)
-- Course belongs to the ACC
-
-You can check authorization status using:
+async function handlePurchase() {
+  try {
+    // 1. التحقق من البيانات
+    const purchaseData = {
+      acc_id: selectedAccId,
+      course_id: selectedCourseId,
+      quantity: quantity,
+      payment_method: 'credit_card', // أو 'wallet' أو 'manual_payment'
+      payment_intent_id: paymentIntentId,
+      payment_method_id: paymentMethodId, // اختياري
+      discount_code: discountCode || null
+    };
+    
+    // 2. التحقق من القيم المسموحة
+    const validMethods = ['wallet', 'credit_card', 'manual_payment'];
+    if (!validMethods.includes(purchaseData.payment_method)) {
+      setError('Invalid payment method');
+      return;
+    }
+    
+    // 3. إرسال الطلب
+    const response = await purchaseCodes(purchaseData);
+    
+    // 4. معالجة النجاح
+    if (response.success) {
+      console.log('Purchase successful:', response.data);
+      // تحديث الواجهة
+    }
+    
+  } catch (error) {
+    // 5. معالجة الأخطاء
+    if (error.response?.status === 422) {
+      // خطأ في التحقق من البيانات
+      const errorData = error.response.data;
+      if (errorData.error_code === 'invalid_payment_method') {
+        setError(errorData.message);
+      } else {
+        setError(errorData.message || 'Validation error');
+      }
+    } else if (error.response?.status === 400) {
+      // خطأ في الدفع
+      setError(error.response.data.message || 'Payment error');
+    } else if (error.response?.status === 500) {
+      // خطأ في السيرفر
+      setError('Server error. Please try again later.');
+    } else {
+      setError('An unexpected error occurred');
+    }
+  }
+}
 ```
-GET /api/training-center/authorizations
-```
-
-### 3. Payment Methods
-
-**Wallet Payment:**
-- No `payment_intent_id` required
-- Balance is checked before transaction
-- Returns 402 if insufficient balance
-
-**Credit Card Payment:**
-- `payment_intent_id` is required
-- Must be obtained from Stripe first
-- Should verify payment intent before calling endpoint
-
-### 4. Discount Codes
-
-When applying discount codes:
-- Code must belong to the ACC
-- Code must be active
-- Code must be within valid date range
-- Code must apply to the course (if course-specific)
-- Code must have available quantity (if quantity-based)
-
-### 5. Response Fields
-
-**Batch Object:**
-- `total_amount`: Original amount before discount
-- `discount_amount`: Discount applied
-- `final_amount`: Amount after discount (this is what was charged)
-- `payment_status`: Always "completed" on success
-
-**Codes Array:**
-- Each code has `id`, `code`, and `status`
-- Status is initially "available"
-- Codes can be used immediately after purchase
 
 ---
 
-## 🧪 Testing Checklist
+## 6. الاختبار / Testing
 
-Before deploying to production, test:
+### سيناريوهات الاختبار / Test Scenarios
 
-- [ ] Get instructor authorizations list
-- [ ] Filter authorizations by status
-- [ ] Filter authorizations by payment_status
-- [ ] Purchase codes with wallet (sufficient balance)
-- [ ] Purchase codes with wallet (insufficient balance)
-- [ ] Purchase codes with credit card
-- [ ] Purchase codes with valid discount code
-- [ ] Purchase codes with invalid discount code
-- [ ] Purchase codes without authorization (should fail)
-- [ ] Purchase codes for course not belonging to ACC (should fail)
-- [ ] Verify commission distribution in response
+1. **اختبار Discount Codes:**
+   ```bash
+   # يجب أن يعمل الآن بدون خطأ 403
+   GET /api/acc/7/discount-codes
+   Authorization: Bearer TRAINING_CENTER_TOKEN
+   ```
+
+2. **اختبار Purchase مع payment_method صالح:**
+   ```bash
+   POST /api/training-center/codes/purchase
+   {
+     "payment_method": "credit_card",
+     ...
+   }
+   # يجب أن يعمل بدون خطأ 500
+   ```
+
+3. **اختبار Purchase مع payment_method غير صالح:**
+   ```bash
+   POST /api/training-center/codes/purchase
+   {
+     "payment_method": "invalid_method",
+     ...
+   }
+   # يجب أن يعيد 422 مع رسالة خطأ واضحة
+   ```
 
 ---
 
-## 📞 Support
+## 7. الأسئلة الشائعة / FAQ
 
-If you encounter any issues or have questions:
-1. Check error messages in response
-2. Verify authentication token is valid
-3. Check user role (must be `training_center_admin`)
-4. Verify Training Center has authorization from ACC
-5. Check API documentation for detailed endpoint specifications
+### Q: هل أحتاج لتغيير الكود في الفرونت إند؟
+**A:** لا، بالنسبة لـ discount codes endpoint - نفس الـ endpoint يعمل الآن. بالنسبة لـ purchase endpoint، نوصي بإضافة التحقق من `payment_method` قبل الإرسال.
+
+### Q: ما هي القيم المسموحة لـ payment_method؟
+**A:** `wallet`, `credit_card`, `manual_payment` فقط.
+
+### Q: ماذا يحدث إذا أرسلت payment_method غير صالح؟
+**A:** ستحصل على خطأ 422 مع رسالة توضح القيم المسموحة.
+
+### Q: هل يمكنني استخدام نفس endpoint للـ discount codes؟
+**A:** نعم، نفس الـ endpoint `/api/acc/{id}/discount-codes` يعمل الآن لجميع المستخدمين المسجلين دخول.
 
 ---
 
-**Last Updated:** December 19, 2025
+## 8. الدعم / Support
 
+إذا واجهت أي مشاكل أو لديك أسئلة، يرجى التواصل مع فريق التطوير.
 
+---
+
+**آخر تحديث / Last Updated:** 2026-01-03
+**الإصدار / Version:** 1.0.0
