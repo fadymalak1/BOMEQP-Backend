@@ -44,6 +44,45 @@ class DiscountCodeController extends Controller
         return response()->json(['discount_codes' => $discountCodes]);
     }
 
+    #[OA\Get(
+        path: "/acc/{id}/discount-codes",
+        summary: "Get discount codes by ACC ID",
+        description: "Get all active discount codes for a specific ACC. Can be used by training centers or admins to view available discount codes for an ACC.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 6)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Discount codes retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "discount_codes", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
+    public function getByAccId($id)
+    {
+        $acc = ACC::find($id);
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        // Only return active discount codes for public viewing
+        $discountCodes = DiscountCode::where('acc_id', $acc->id)
+            ->where('status', 'active')
+            ->get();
+
+        return response()->json(['discount_codes' => $discountCodes]);
+    }
+
     #[OA\Post(
         path: "/acc/discount-codes",
         summary: "Create discount code",

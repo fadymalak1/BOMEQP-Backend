@@ -588,31 +588,41 @@ class CodeController extends Controller
             
             // Determine payment type and amounts for credit card
             $paymentType = 'standard';
-            $commissionAmount = null;
-            $providerAmount = null;
+            $commissionAmount = 0;
+            $providerAmount = 0;
             
             if ($request->payment_method === 'credit_card') {
                 // Check if destination charge was used (check payment intent metadata)
                 try {
-                    $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
-                    if ($paymentIntent && isset($paymentIntent->metadata->payment_type) && $paymentIntent->metadata->payment_type === 'destination_charge') {
-                        $paymentType = 'destination_charge';
-                        $commissionAmount = $groupCommissionAmount;
-                        $providerAmount = $finalAmount - $groupCommissionAmount;
+                    if ($request->payment_intent_id) {
+                        $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                        if ($paymentIntent && isset($paymentIntent->metadata->payment_type) && $paymentIntent->metadata->payment_type === 'destination_charge') {
+                            $paymentType = 'destination_charge';
+                            $commissionAmount = $groupCommissionAmount ?? 0;
+                            $providerAmount = $finalAmount - ($groupCommissionAmount ?? 0);
+                        } else {
+                            // Standard payment - commission handled through ledger
+                            $commissionAmount = $groupCommissionAmount ?? 0;
+                            $providerAmount = $accCommissionAmount ?? 0;
+                        }
                     } else {
-                        // Standard payment - commission handled through ledger
-                        $commissionAmount = $groupCommissionAmount;
-                        $providerAmount = $accCommissionAmount;
+                        // No payment intent ID provided, use calculated amounts
+                        $commissionAmount = $groupCommissionAmount ?? 0;
+                        $providerAmount = $accCommissionAmount ?? 0;
                     }
                 } catch (\Exception $e) {
                     // If can't retrieve payment intent, use calculated amounts
-                    $commissionAmount = $groupCommissionAmount;
-                    $providerAmount = $accCommissionAmount;
+                    \Log::warning('Failed to retrieve payment intent, using calculated amounts', [
+                        'error' => $e->getMessage(),
+                        'payment_intent_id' => $request->payment_intent_id
+                    ]);
+                    $commissionAmount = $groupCommissionAmount ?? 0;
+                    $providerAmount = $accCommissionAmount ?? 0;
                 }
             } else {
                 // Manual payment - amounts will be set after verification
-                $commissionAmount = $groupCommissionAmount;
-                $providerAmount = $accCommissionAmount;
+                $commissionAmount = $groupCommissionAmount ?? 0;
+                $providerAmount = $accCommissionAmount ?? 0;
             }
             
             // Create transaction
@@ -623,12 +633,12 @@ class CodeController extends Controller
                 'payee_type' => 'acc',
                 'payee_id' => $request->acc_id,
                 'amount' => $finalAmount,
-                'commission_amount' => $commissionAmount,
-                'provider_amount' => $providerAmount,
+                'commission_amount' => $commissionAmount ?? 0,
+                'provider_amount' => $providerAmount ?? 0,
                 'currency' => 'USD',
                 'payment_method' => $request->payment_method === 'credit_card' ? 'credit_card' : 'bank_transfer',
                 'payment_type' => $paymentType,
-                'payment_gateway_transaction_id' => $request->payment_intent_id,
+                'payment_gateway_transaction_id' => $request->payment_intent_id ?? null,
                 'status' => $paymentStatus === 'pending' ? 'pending' : 'completed',
                 'completed_at' => $paymentStatus === 'completed' ? now() : null,
                 'reference_type' => 'code_batch',
@@ -653,20 +663,47 @@ class CodeController extends Controller
             // Only generate codes if payment is completed (not manual/pending)
             $codes = [];
             if ($paymentStatus === 'completed') {
+                $maxAttempts = 10; // Maximum attempts to generate unique code
                 for ($i = 0; $i < $request->quantity; $i++) {
-                    $code = CertificateCode::create([
-                        'code' => strtoupper(Str::random(12)),
-                        'batch_id' => $batch->id,
-                        'training_center_id' => $trainingCenter->id,
-                        'acc_id' => $request->acc_id,
-                        'course_id' => $request->course_id,
-                        'purchased_price' => $unitPrice,
-                        'discount_applied' => $discountAmount > 0,
-                        'discount_code_id' => $discountCodeId,
-                        'status' => 'available',
-                        'purchased_at' => now(),
-                    ]);
-                    $codes[] = $code;
+                    $attempts = 0;
+                    $codeCreated = false;
+                    
+                    while (!$codeCreated && $attempts < $maxAttempts) {
+                        try {
+                            $generatedCode = strtoupper(Str::random(12));
+                            
+                            // Check if code already exists
+                            $existingCode = CertificateCode::where('code', $generatedCode)->first();
+                            if ($existingCode) {
+                                $attempts++;
+                                continue;
+                            }
+                            
+                            $code = CertificateCode::create([
+                                'code' => $generatedCode,
+                                'batch_id' => $batch->id,
+                                'training_center_id' => $trainingCenter->id,
+                                'acc_id' => $request->acc_id,
+                                'course_id' => $request->course_id,
+                                'purchased_price' => $unitPrice,
+                                'discount_applied' => $discountAmount > 0,
+                                'discount_code_id' => $discountCodeId,
+                                'status' => 'available',
+                                'purchased_at' => now(),
+                            ]);
+                            $codes[] = $code;
+                            $codeCreated = true;
+                        } catch (\Exception $codeError) {
+                            $attempts++;
+                            if ($attempts >= $maxAttempts) {
+                                throw new \Exception('Failed to generate unique certificate code after ' . $maxAttempts . ' attempts: ' . $codeError->getMessage());
+                            }
+                        }
+                    }
+                    
+                    if (!$codeCreated) {
+                        throw new \Exception('Failed to generate certificate code after ' . $maxAttempts . ' attempts');
+                    }
                 }
 
                 // Update discount code usage
@@ -690,20 +727,21 @@ class CodeController extends Controller
                     'transaction_id' => $transaction->id,
                     'acc_id' => $request->acc_id,
                     'training_center_id' => $trainingCenter->id,
-                    'group_commission_amount' => $groupCommissionAmount,
-                    'group_commission_percentage' => $groupCommissionPercentage,
-                    'acc_commission_amount' => $accCommissionAmount,
-                    'acc_commission_percentage' => $accCommissionPercentage,
+                    'group_commission_amount' => $groupCommissionAmount ?? 0,
+                    'group_commission_percentage' => $groupCommissionPercentage ?? 0,
+                    'acc_commission_amount' => $accCommissionAmount ?? 0,
+                    'acc_commission_percentage' => $accCommissionPercentage ?? 0,
                     'settlement_status' => 'pending',
                 ]);
             }
 
             DB::commit();
 
-            // Send notifications
+            // Send notifications (wrap in try-catch to prevent notification failures from affecting the purchase)
             $notificationService = new NotificationService();
             
-            if ($paymentStatus === 'completed') {
+            try {
+                if ($paymentStatus === 'completed') {
                 // Notify Training Center about success
                 $notificationService->notifyCodePurchaseSuccess(
                     $user->id,
@@ -780,6 +818,14 @@ class CodeController extends Controller
                     $request->quantity,
                     $finalAmount
                 );
+            }
+            } catch (\Exception $notificationError) {
+                // Log notification errors but don't fail the purchase
+                \Log::error('Notification sending failed after code purchase', [
+                    'error' => $notificationError->getMessage(),
+                    'batch_id' => $batch->id ?? null,
+                    'trace' => $notificationError->getTraceAsString()
+                ]);
             }
 
             // Format response

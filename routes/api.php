@@ -188,6 +188,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Discount Codes
         // Specific routes must come before apiResource to avoid route conflicts
         Route::post('/discount-codes/validate', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'validate']);
+        // Route to get discount codes by ACC ID (must be before apiResource to avoid conflicts)
+        Route::get('/{id}/discount-codes', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'getByAccId'])->where('id', '[0-9]+');
         Route::apiResource('discount-codes', App\Http\Controllers\API\ACC\DiscountCodeController::class);
 
         // Materials
@@ -257,6 +259,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Courses (from approved ACCs)
         Route::get('/courses', [App\Http\Controllers\API\TrainingCenter\CourseController::class, 'index']);
         Route::get('/courses/{id}', [App\Http\Controllers\API\TrainingCenter\CourseController::class, 'show']);
+
+        // Discount Codes (view available discount codes for an ACC)
+        Route::get('/accs/{id}/discount-codes', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'getByAccId']);
 
         // Classes
         Route::apiResource('classes', App\Http\Controllers\API\TrainingCenter\ClassController::class);
