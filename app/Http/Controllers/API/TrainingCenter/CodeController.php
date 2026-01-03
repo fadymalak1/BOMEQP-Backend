@@ -352,6 +352,9 @@ class CodeController extends Controller
             'payment_amount.min' => 'Payment amount must be greater than 0.',
         ]);
 
+        // Define payment method value early to ensure it's always available
+        $paymentMethodValue = trim((string)($request->payment_method ?? ''));
+
         $user = $request->user();
         $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
 
@@ -477,9 +480,7 @@ class CodeController extends Controller
         $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
         $accCommissionAmount = ($finalAmount * $accCommissionPercentage) / 100;
 
-        // Payment method already validated above, use the cleaned value
-        // Ensure we use the validated and cleaned payment method value
-
+        // Payment method already validated and defined above
         // Handle payment based on payment method
         if ($request->payment_method === 'credit_card') {
             // Validate payment_intent_id for credit card payments
@@ -784,8 +785,8 @@ class CodeController extends Controller
                     'file' => $batchError->getFile(),
                     'line' => $batchError->getLine(),
                     'transaction_id' => $transaction->id ?? null,
-                    'payment_method' => $paymentMethodValue,
-                    'payment_status' => $paymentStatus,
+                    'payment_method' => $paymentMethodValue ?? $request->payment_method ?? 'unknown',
+                    'payment_status' => $paymentStatus ?? 'unknown',
                     'batch_data' => $batchData ?? null,
                 ]);
                 throw new \Exception('Failed to create code batch: ' . $batchError->getMessage() . ' (File: ' . $batchError->getFile() . ', Line: ' . $batchError->getLine() . ')');
