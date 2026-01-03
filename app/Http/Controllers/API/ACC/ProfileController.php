@@ -218,6 +218,64 @@ class ProfileController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
+        // Check for upload errors before validation (catches server-level issues)
+        // This helps identify 503 errors caused by PHP upload limits
+        if ($request->hasFile('logo')) {
+            $logoFile = $request->file('logo');
+            
+            // Check if file upload was successful
+            if (!$logoFile->isValid()) {
+                $errorCode = $logoFile->getError();
+                $errorMessages = [
+                    UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize directive in php.ini',
+                    UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive in HTML form',
+                    UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
+                    UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+                    UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
+                    UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+                    UPLOAD_ERR_EXTENSION => 'File upload stopped by extension',
+                ];
+                
+                $errorMessage = $errorMessages[$errorCode] ?? 'Unknown upload error';
+                
+                // Get PHP configuration for debugging
+                $phpLimits = [
+                    'upload_max_filesize' => ini_get('upload_max_filesize'),
+                    'post_max_size' => ini_get('post_max_size'),
+                    'max_file_uploads' => ini_get('max_file_uploads'),
+                    'max_execution_time' => ini_get('max_execution_time'),
+                    'memory_limit' => ini_get('memory_limit'),
+                ];
+                
+                Log::error('Logo upload failed at server level', [
+                    'acc_id' => $acc->id,
+                    'error_code' => $errorCode,
+                    'error_message' => $errorMessage,
+                    'php_limits' => $phpLimits,
+                    'file_size' => $logoFile->getSize() ?? 'unknown',
+                ]);
+                
+                return response()->json([
+                    'message' => 'File upload failed: ' . $errorMessage,
+                    'error_code' => $errorCode,
+                    'hint' => 'Please check file size limits. Maximum allowed: 5MB',
+                    'php_limits' => $phpLimits
+                ], 422);
+            }
+            
+            // Check file size before processing (additional safety check)
+            $fileSize = $logoFile->getSize();
+            $maxSize = 5 * 1024 * 1024; // 5MB in bytes
+            
+            if ($fileSize > $maxSize) {
+                return response()->json([
+                    'message' => 'File size exceeds maximum allowed size of 5MB',
+                    'file_size' => round($fileSize / 1024 / 1024, 2) . ' MB',
+                    'max_size' => '5 MB'
+                ], 422);
+            }
+        }
+
         // All fields are optional - validate only if provided
         // Validation happens BEFORE transaction to avoid unnecessary rollbacks
         try {
