@@ -291,6 +291,22 @@ class ProfileController extends Controller
         $updatedDocuments = [];
         $hasTextUpdates = false;
         $hasFileUpdates = false;
+        
+        // Early detection of file uploads (before transaction)
+        $hasLogoFile = $request->hasFile('logo');
+        $hasDocumentFiles = false;
+        
+        // Check for document files
+        if ($request->has('documents') && is_array($request->input('documents'))) {
+            $documents = $request->input('documents', []);
+            foreach ($documents as $index => $docData) {
+                $fileKey = "documents.{$index}.file";
+                if ($request->hasFile($fileKey)) {
+                    $hasDocumentFiles = true;
+                    break;
+                }
+            }
+        }
 
         try {
             DB::beginTransaction();
@@ -312,31 +328,68 @@ class ProfileController extends Controller
             }
 
             // Process logo file upload
-            if ($request->hasFile('logo')) {
-                $logoResult = $this->handleLogoUpload($request, $acc);
-                if ($logoResult['success']) {
-                    $updateData['logo_url'] = $logoResult['logo_url'];
-                    $uploadedFiles[] = $logoResult['file_path'];
-                    $hasFileUpdates = true;
-                    $acc->update(['logo_url' => $logoResult['logo_url']]);
-                    $acc->refresh();
+            if ($hasLogoFile) {
+                $logoFile = $request->file('logo');
+                // Check if file is valid before processing
+                if ($logoFile && $logoFile->isValid()) {
+                    $logoResult = $this->handleLogoUpload($request, $acc);
+                    if ($logoResult['success']) {
+                        $updateData['logo_url'] = $logoResult['logo_url'];
+                        $uploadedFiles[] = $logoResult['file_path'];
+                        $hasFileUpdates = true;
+                        $acc->update(['logo_url' => $logoResult['logo_url']]);
+                        $acc->refresh();
+                    } else {
+                        throw new \Exception($logoResult['error']);
+                    }
                 } else {
-                    throw new \Exception($logoResult['error']);
+                    // File exists but is invalid
+                    throw new \Exception('Invalid logo file uploaded');
                 }
             }
 
             // Process document uploads/updates
-            if ($request->has('documents') && is_array($request->input('documents'))) {
+            $hasDocumentsInput = $request->has('documents') && is_array($request->input('documents'));
+            
+            // Process documents if we have input or detected files
+            if ($hasDocumentsInput || $hasDocumentFiles) {
                 $docResult = $this->handleDocuments($request, $acc);
                 $updatedDocuments = $docResult['updated_documents'];
                 $uploadedFiles = array_merge($uploadedFiles, $docResult['uploaded_files']);
                 $oldFilesToDelete = array_merge($oldFilesToDelete, $docResult['old_files']);
-                if (!empty($updatedDocuments)) {
+                // Set hasFileUpdates if we have uploaded files OR updated documents
+                if (!empty($updatedDocuments) || !empty($docResult['uploaded_files'])) {
                     $hasFileUpdates = true;
                 }
             }
+            
+            // Safety check: If we detected files but hasFileUpdates is still false,
+            // it means files were attempted but processing didn't complete successfully
+            // In this case, we should have thrown an exception, but as a fallback,
+            // ensure we don't return "No changes" if files were detected
+            if (($hasLogoFile || $hasDocumentFiles) && !$hasFileUpdates) {
+                // This shouldn't happen - if files were detected, they should have been processed
+                // or an exception should have been thrown. Log this case for debugging.
+                Log::warning('Files detected but hasFileUpdates is false', [
+                    'acc_id' => $acc->id,
+                    'has_logo_file' => $hasLogoFile,
+                    'has_document_files' => $hasDocumentFiles,
+                    'uploaded_files_count' => count($uploadedFiles),
+                ]);
+            }
 
             // Check if any updates were made
+            // Log for debugging
+            Log::info('ACC profile update check', [
+                'acc_id' => $acc->id,
+                'has_text_updates' => $hasTextUpdates,
+                'has_file_updates' => $hasFileUpdates,
+                'has_logo_file' => $hasLogoFile,
+                'has_document_files' => $hasDocumentFiles,
+                'uploaded_files_count' => count($uploadedFiles),
+                'updated_documents_count' => count($updatedDocuments),
+            ]);
+            
             if (!$hasTextUpdates && !$hasFileUpdates) {
                 DB::rollBack();
                 $acc->load('documents.verifiedBy');
