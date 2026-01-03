@@ -266,6 +266,7 @@ class ProfileController extends Controller
         $uploadedFiles = [];
         $oldFilesToDelete = [];
         $updatedDocuments = [];
+        $logoUploaded = false; // Track if logo was uploaded
 
         // Start transaction - all database operations will be rolled back on error
         try {
@@ -316,6 +317,7 @@ class ProfileController extends Controller
                         $newLogoUrl = Storage::disk('public')->url($logoPath);
                         $updateData['logo_url'] = $newLogoUrl;
                         $uploadedFiles[] = $logoPath; // Track for rollback
+                        $logoUploaded = true; // Mark that logo was uploaded
                         Log::info('ACC logo file uploaded successfully', [
                             'acc_id' => $acc->id,
                             'original_name' => $originalName,
@@ -493,7 +495,8 @@ class ProfileController extends Controller
             }
 
             // Check if any updates were made
-            $hasUpdates = !empty($updateData) || !empty($updatedDocuments);
+            // Include logoUploaded flag to detect logo-only updates
+            $hasUpdates = !empty($updateData) || !empty($updatedDocuments) || $logoUploaded;
             
             if (!$hasUpdates) {
                 // No updates to commit - rollback empty transaction
