@@ -123,10 +123,10 @@ class ProfileController extends Controller
         ]);
     }
 
-    #[OA\Put(
+    #[OA\Post(
         path: "/acc/profile",
         summary: "Update ACC profile",
-        description: "Update the authenticated ACC's profile information including Stripe account ID.",
+        description: "Update the authenticated ACC's profile information including Stripe account ID. Use POST method for file uploads. Laravel's method spoofing with _method=PUT is supported for compatibility.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
@@ -174,6 +174,7 @@ class ProfileController extends Controller
                     mediaType: "multipart/form-data",
                     schema: new OA\Schema(
                         properties: [
+                            new OA\Property(property: "_method", type: "string", example: "PUT", nullable: true, description: "HTTP method override (optional, for compatibility with PUT endpoints)"),
                             new OA\Property(property: "name", type: "string", nullable: true),
                             new OA\Property(property: "legal_name", type: "string", nullable: true),
                             new OA\Property(property: "phone", type: "string", nullable: true),

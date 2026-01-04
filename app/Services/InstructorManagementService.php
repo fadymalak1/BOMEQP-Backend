@@ -141,24 +141,38 @@ class InstructorManagementService
         try {
             DB::beginTransaction();
 
+            // Enhanced data collection for POST (multipart/form-data) and PUT (form-urlencoded)
             $updateData = [];
+            $allRequestData = $request->all();
+            $requestMethod = $request->method();
+            $contentType = $request->header('Content-Type', '');
+            
+            // Handle PUT/PATCH requests with form-urlencoded (Laravel limitation)
+            if (in_array($requestMethod, ['PUT', 'PATCH']) && 
+                str_contains($contentType, 'application/x-www-form-urlencoded') && 
+                empty($allRequestData)) {
+                parse_str($request->getContent(), $parsedData);
+                $allRequestData = $parsedData;
+                $request->merge($parsedData);
+            }
 
-            if ($request->has('first_name')) {
-                $updateData['first_name'] = $request->first_name;
+            if ($request->has('first_name') || array_key_exists('first_name', $allRequestData)) {
+                $updateData['first_name'] = $request->input('first_name');
             }
-            if ($request->has('last_name')) {
-                $updateData['last_name'] = $request->last_name;
+            if ($request->has('last_name') || array_key_exists('last_name', $allRequestData)) {
+                $updateData['last_name'] = $request->input('last_name');
             }
-            if ($request->has('phone')) {
-                $updateData['phone'] = $request->phone;
+            if ($request->has('phone') || array_key_exists('phone', $allRequestData)) {
+                $updateData['phone'] = $request->input('phone');
             }
-            if ($request->has('certificates_json') || $request->has('certificates')) {
-                $updateData['certificates_json'] = $request->certificates_json ?? $request->certificates;
+            if ($request->has('certificates_json') || $request->has('certificates') || 
+                array_key_exists('certificates_json', $allRequestData) || array_key_exists('certificates', $allRequestData)) {
+                $updateData['certificates_json'] = $request->input('certificates_json') ?? $request->input('certificates');
             }
-            if ($request->has('specializations')) {
-                $updateData['specializations'] = $request->specializations;
+            if ($request->has('specializations') || array_key_exists('specializations', $allRequestData)) {
+                $updateData['specializations'] = $request->input('specializations');
             }
-            if ($request->has('is_assessor')) {
+            if ($request->has('is_assessor') || array_key_exists('is_assessor', $allRequestData)) {
                 $updateData['is_assessor'] = $request->boolean('is_assessor');
             }
 

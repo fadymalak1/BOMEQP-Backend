@@ -163,10 +163,10 @@ class InstructorController extends Controller
         return response()->json(['instructor' => $instructor]);
     }
 
-    #[OA\Put(
+    #[OA\Post(
         path: "/training-center/instructors/{id}",
         summary: "Update instructor",
-        description: "Update instructor information.",
+        description: "Update instructor information. Use POST method for file uploads. Laravel's method spoofing with _method=PUT is supported for compatibility.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -178,6 +178,7 @@ class InstructorController extends Controller
                 mediaType: "multipart/form-data",
                 schema: new OA\Schema(
                     properties: [
+                        new OA\Property(property: "_method", type: "string", example: "PUT", nullable: true, description: "HTTP method override (optional, for compatibility with PUT endpoints)"),
                         new OA\Property(property: "first_name", type: "string", nullable: true),
                         new OA\Property(property: "last_name", type: "string", nullable: true),
                         new OA\Property(property: "phone", type: "string", nullable: true),

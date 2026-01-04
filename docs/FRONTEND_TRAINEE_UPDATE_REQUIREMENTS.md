@@ -1,14 +1,19 @@
 # Frontend Requirements: Update Trainee Endpoint
 
 ## Overview
-This document describes the requirements and steps that the frontend application must follow to successfully update trainee information using the PUT endpoint `/api/training-center/trainees/{id}`.
+This document describes the requirements and steps that the frontend application must follow to successfully update trainee information using the POST endpoint `/api/training-center/trainees/{id}` (PUT is also supported for backward compatibility, but POST is recommended especially for file uploads).
 
 ## Endpoint Information
 
-**Method:** PUT  
+**Method:** POST (Recommended) or PUT (for backward compatibility)  
 **URL:** `/api/training-center/trainees/{id}`  
 **Authentication:** Required (Bearer Token)  
-**Content Type:** `multipart/form-data` (recommended) or `application/x-www-form-urlencoded`
+**Content Type:** `multipart/form-data` (required for file uploads) or `application/x-www-form-urlencoded`
+
+**Important Note:** 
+- **Use POST method when uploading files** - Laravel/PHP has limitations with PUT requests and multipart/form-data
+- PUT method works fine for text-only updates with `application/x-www-form-urlencoded`
+- POST method is strongly recommended for all updates, especially when including file uploads
 
 ## Authentication Requirements
 
@@ -135,12 +140,18 @@ Before sending the request, validate:
 
 ### Step 4: Send the Request
 
-1. Use the PUT HTTP method
-2. Include the Authorization header with Bearer token
-3. For FormData: Let the browser set Content-Type automatically (don't set it manually)
-4. For form-urlencoded: Set Content-Type to `application/x-www-form-urlencoded`
-5. Include the trainee ID in the URL path
-6. Send the prepared request body
+1. **Use POST HTTP method** (recommended, especially for file uploads) or PUT (for backward compatibility with text-only updates)
+2. If using POST and you need PUT semantics, you can include `_method: "PUT"` in your FormData (Laravel's method spoofing)
+3. Include the Authorization header with Bearer token
+4. For FormData: Let the browser set Content-Type automatically (don't set it manually)
+5. For form-urlencoded: Set Content-Type to `application/x-www-form-urlencoded`
+6. Include the trainee ID in the URL path
+7. Send the prepared request body
+
+**Why POST instead of PUT?**
+- Laravel/PHP has limitations parsing multipart/form-data with PUT requests
+- POST method properly handles file uploads with multipart/form-data
+- POST is the recommended method for updates that include file uploads
 
 ### Step 5: Handle Response
 
@@ -186,6 +197,13 @@ After successful update:
 4. Show success notification to the user
 
 ## Important Notes for Frontend Developers
+
+### HTTP Method Selection
+
+- **Use POST method** when uploading files or using FormData
+- **PUT method works** but has limitations with multipart/form-data due to PHP/Laravel constraints
+- POST is the **recommended method** for all updates, especially those involving file uploads
+- If using POST, you can optionally include `_method: "PUT"` in FormData for Laravel's method spoofing (not required)
 
 ### Content-Type Handling
 

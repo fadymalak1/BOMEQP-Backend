@@ -53,10 +53,10 @@ class ProfileController extends Controller
         ]);
     }
 
-    #[OA\Put(
+    #[OA\Post(
         path: "/instructor/profile",
         summary: "Update instructor profile",
-        description: "Update the authenticated instructor's profile information.",
+        description: "Update the authenticated instructor's profile information. Use POST method for file uploads. Laravel's method spoofing with _method=PUT is supported for compatibility.",
         tags: ["Instructor"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
@@ -65,6 +65,7 @@ class ProfileController extends Controller
                 mediaType: "multipart/form-data",
                 schema: new OA\Schema(
                     properties: [
+                        new OA\Property(property: "_method", type: "string", example: "PUT", nullable: true, description: "HTTP method override (optional, for compatibility with PUT endpoints)"),
                         new OA\Property(property: "first_name", type: "string", nullable: true, example: "John", description: "First name of the instructor"),
                         new OA\Property(property: "last_name", type: "string", nullable: true, example: "Doe", description: "Last name of the instructor"),
                         new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890", description: "Phone number"),

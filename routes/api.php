@@ -155,7 +155,8 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
     Route::prefix('acc')->middleware(['role:acc_admin'])->group(function () {
         // Profile Management
         Route::get('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'show']);
-        Route::put('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'update']);
+        Route::post('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'update']); // POST for file uploads
+        Route::put('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'update']); // PUT for backward compatibility
         Route::post('/profile/verify-stripe-account', [App\Http\Controllers\API\ACC\ProfileController::class, 'verifyStripeAccount']);
         
         Route::get('/dashboard', [App\Http\Controllers\API\ACC\DashboardController::class, 'index']);
@@ -245,9 +246,15 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::post('/instructors/authorizations/{id}/payment-intent', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'createAuthorizationPaymentIntent']);
         Route::post('/instructors/authorizations/{id}/pay', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'payAuthorization']);
         Route::post('/instructors/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'requestAuthorization']);
+        // POST route for updates (supports file uploads with multipart/form-data)
+        Route::post('/instructors/{id}', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'update']);
+        // Standard RESTful routes (PUT still works but POST is recommended for file uploads)
         Route::apiResource('instructors', App\Http\Controllers\API\TrainingCenter\InstructorController::class);
 
         // Trainees
+        // POST route for updates (supports file uploads with multipart/form-data)
+        Route::post('/trainees/{id}', [App\Http\Controllers\API\TrainingCenter\TraineeController::class, 'update']);
+        // Standard RESTful routes (PUT still works but POST is recommended for file uploads)
         Route::apiResource('trainees', App\Http\Controllers\API\TrainingCenter\TraineeController::class);
 
         // Certificate Codes
@@ -290,7 +297,8 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         
         // Profile
         Route::get('/profile', [App\Http\Controllers\API\Instructor\ProfileController::class, 'show']);
-        Route::put('/profile', [App\Http\Controllers\API\Instructor\ProfileController::class, 'update']);
+        Route::post('/profile', [App\Http\Controllers\API\Instructor\ProfileController::class, 'update']); // POST for file uploads
+        Route::put('/profile', [App\Http\Controllers\API\Instructor\ProfileController::class, 'update']); // PUT for backward compatibility
         
         // Classes
         Route::get('/classes', [App\Http\Controllers\API\Instructor\ClassController::class, 'index']);

@@ -71,10 +71,24 @@ class InstructorProfileService
         try {
             DB::beginTransaction();
 
+            // Enhanced data collection for POST (multipart/form-data) and PUT (form-urlencoded)
+            $allRequestData = $request->all();
+            $requestMethod = $request->method();
+            $contentType = $request->header('Content-Type', '');
+            
+            // Handle PUT/PATCH requests with form-urlencoded (Laravel limitation)
+            if (in_array($requestMethod, ['PUT', 'PATCH']) && 
+                str_contains($contentType, 'application/x-www-form-urlencoded') && 
+                empty($allRequestData)) {
+                parse_str($request->getContent(), $parsedData);
+                $allRequestData = $parsedData;
+                $request->merge($parsedData);
+            }
+
             // Process basic text fields
             $textFields = ['first_name', 'last_name', 'phone', 'country', 'city', 'id_number'];
             foreach ($textFields as $field) {
-                if ($request->has($field)) {
+                if ($request->has($field) || array_key_exists($field, $allRequestData)) {
                     $value = $request->input($field);
                     if ($value !== null && $value !== '') {
                         $updateData[$field] = $value;

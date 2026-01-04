@@ -211,10 +211,10 @@ class TraineeController extends Controller
         }
     }
 
-    #[OA\Put(
+    #[OA\Post(
         path: "/training-center/trainees/{id}",
         summary: "Update trainee",
-        description: "Update trainee information. Can update personal details, images, and enrolled classes.",
+        description: "Update trainee information. Use POST method for file uploads. Can update personal details, images, and enrolled classes. Laravel's method spoofing with _method=PUT is supported for compatibility.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -226,6 +226,7 @@ class TraineeController extends Controller
                 mediaType: "multipart/form-data",
                 schema: new OA\Schema(
                     properties: [
+                        new OA\Property(property: "_method", type: "string", example: "PUT", nullable: true, description: "HTTP method override (optional, for compatibility with PUT endpoints)"),
                         new OA\Property(property: "first_name", type: "string", nullable: true),
                         new OA\Property(property: "last_name", type: "string", nullable: true),
                         new OA\Property(property: "email", type: "string", format: "email", nullable: true),

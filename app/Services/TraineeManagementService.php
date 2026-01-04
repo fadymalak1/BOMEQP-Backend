@@ -158,46 +158,62 @@ class TraineeManagementService
         try {
             DB::beginTransaction();
 
-            // Collect update data - handle both multipart/form-data and application/x-www-form-urlencoded
+            // Collect update data - handle POST (multipart/form-data), PUT (form-urlencoded), and other formats
             $allowedFields = ['first_name', 'last_name', 'email', 'phone', 'id_number', 'status'];
+            $updateData = [];
             
-            // Get all request data - Laravel should parse PUT request bodies automatically
-            // But sometimes form-urlencoded PUT requests need special handling
+            // Get all request data - Laravel automatically parses POST multipart/form-data
+            // For PUT requests with form-urlencoded, we may need manual parsing
             $allRequestData = $request->all();
+            $requestMethod = $request->method();
+            $contentType = $request->header('Content-Type', '');
             
-            // If request data is empty but we have a PUT request with form-urlencoded,
-            // manually parse the request body
-            if (empty($allRequestData) && $request->method() === 'PUT') {
-                $contentType = $request->header('Content-Type', '');
-                if (str_contains($contentType, 'application/x-www-form-urlencoded')) {
-                    parse_str($request->getContent(), $parsedData);
-                    $allRequestData = $parsedData;
-                    // Merge parsed data into request for subsequent access
-                    $request->merge($parsedData);
+            // Handle PUT/PATCH requests with form-urlencoded (Laravel limitation - PHP doesn't populate $_POST for PUT)
+            if (in_array($requestMethod, ['PUT', 'PATCH']) && 
+                str_contains($contentType, 'application/x-www-form-urlencoded') && 
+                empty($allRequestData)) {
+                
+                // Manually parse form-urlencoded body for PUT/PATCH
+                parse_str($request->getContent(), $parsedData);
+                $allRequestData = $parsedData;
+                // Merge parsed data into request for subsequent access
+                $request->merge($parsedData);
+            }
+            
+            // Handle POST with multipart/form-data (works automatically in Laravel)
+            // For PUT/PATCH with multipart, Laravel may not parse it correctly
+            if (in_array($requestMethod, ['PUT', 'PATCH']) && 
+                str_contains($contentType, 'multipart/form-data') && 
+                empty($allRequestData)) {
+                
+                // For PUT/PATCH with multipart, try to get data from input()
+                // This is a known Laravel limitation - multipart data is only parsed for POST
+                foreach ($allowedFields as $field) {
+                    $value = $request->input($field);
+                    if ($value !== null) {
+                        $allRequestData[$field] = $value;
+                    }
                 }
             }
             
             // Filter to only include allowed fields that are actually present in the request
-            $updateData = [];
             foreach ($allowedFields as $field) {
-                // Check if the field exists in the request data
-                // Try multiple methods to ensure we catch the data
+                // Use multiple methods to ensure we catch the data
                 if (array_key_exists($field, $allRequestData)) {
                     $updateData[$field] = $request->input($field);
-                } elseif ($request->has($field)) {
+                } elseif ($request->has($field) || $request->filled($field)) {
                     $updateData[$field] = $request->input($field);
                 }
             }
 
-            // Log for debugging
+            // Log for debugging (can be removed or reduced in production)
             Log::debug('Updating trainee - data collection', [
                 'trainee_id' => $trainee->id,
                 'update_data' => $updateData,
                 'request_all' => $allRequestData,
                 'request_keys' => array_keys($allRequestData),
-                'request_method' => $request->method(),
-                'content_type' => $request->header('Content-Type'),
-                'request_content' => substr($request->getContent(), 0, 500), // First 500 chars for debugging
+                'request_method' => $requestMethod,
+                'content_type' => $contentType,
             ]);
 
             $uploadedFiles = [];

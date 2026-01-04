@@ -226,6 +226,20 @@ class ACCProfileService
         $updateData = [];
         $logoFileUploaded = $request->hasFile('logo');
         
+        // Enhanced data collection for POST (multipart/form-data) and PUT (form-urlencoded)
+        $allRequestData = $request->all();
+        $requestMethod = $request->method();
+        $contentType = $request->header('Content-Type', '');
+        
+        // Handle PUT/PATCH requests with form-urlencoded (Laravel limitation)
+        if (in_array($requestMethod, ['PUT', 'PATCH']) && 
+            str_contains($contentType, 'application/x-www-form-urlencoded') && 
+            empty($allRequestData)) {
+            parse_str($request->getContent(), $parsedData);
+            $allRequestData = $parsedData;
+            $request->merge($parsedData);
+        }
+        
         // Define all updatable text fields
         $textFields = [
             'name', 'legal_name', 'phone', 'country', 'address',
@@ -244,6 +258,11 @@ class ACCProfileService
         foreach ($textFields as $field) {
             // Skip logo_url if logo file was uploaded (file takes precedence)
             if ($field === 'logo_url' && $logoFileUploaded) {
+                continue;
+            }
+            
+            // Check if field exists in request (works for both POST and PUT)
+            if (!($request->has($field) || array_key_exists($field, $allRequestData))) {
                 continue;
             }
             
