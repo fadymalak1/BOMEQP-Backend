@@ -538,11 +538,6 @@ class InstructorManagementService
             $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
             $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
             $accCommissionAmount = $authorization->authorization_price - $groupCommissionAmount;
-
-            // Calculate commission amounts
-            $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
-            $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
-            $accCommissionAmount = $authorization->authorization_price - $groupCommissionAmount;
             
             // Determine payment type
             $paymentType = 'standard';
@@ -580,13 +575,6 @@ class InstructorManagementService
                     ($authorization->instructor->last_name ?? ''),
                 'reference_type' => 'InstructorAccAuthorization',
                 'reference_id' => $authorization->id,
-            ]);
-
-            // Update authorization payment status
-            $authorization->update([
-                'payment_status' => 'paid',
-                'payment_date' => now(),
-                'transaction_id' => $transaction->id,
             ]);
 
             // Update authorization payment status
