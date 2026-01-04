@@ -31,6 +31,7 @@ Route::post('/stripe/webhook', [App\Http\Controllers\API\StripeController::class
 
 // Public file access routes (specific routes first)
 Route::get('/storage/instructors/cv/{filename}', [App\Http\Controllers\API\FileController::class, 'instructorCv']);
+Route::get('/storage/instructors/certificates/{filename}', [App\Http\Controllers\API\FileController::class, 'instructorCertificate']);
 // General storage route (must be last to avoid conflicts)
 Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, 'serveFile'])->where('path', '.+');
 

@@ -58,7 +58,7 @@ class ProfileController extends Controller
                 'country' => $instructor->country,
                 'city' => $instructor->city,
                 'cv_url' => $instructor->cv_url,
-                'certificates' => $instructor->certificates_json ?? [],
+                'certificates' => $instructor->certificates_json ?? [], // Returns array of objects with name, issue_date, url
                 'specializations' => $instructor->specializations ?? [],
                 'status' => $instructor->status,
                 'training_center' => $instructor->trainingCenter,
@@ -85,15 +85,36 @@ class ProfileController extends Controller
                 mediaType: "multipart/form-data",
                 schema: new OA\Schema(
                     properties: [
-                        new OA\Property(property: "first_name", type: "string", nullable: true, example: "John"),
-                        new OA\Property(property: "last_name", type: "string", nullable: true, example: "Doe"),
-                        new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890"),
-                        new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
-                        new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo"),
+                        new OA\Property(property: "first_name", type: "string", nullable: true, example: "John", description: "First name of the instructor"),
+                        new OA\Property(property: "last_name", type: "string", nullable: true, example: "Doe", description: "Last name of the instructor"),
+                        new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890", description: "Phone number"),
+                        new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt", description: "Country"),
+                        new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo", description: "City"),
                         new OA\Property(property: "cv", type: "string", format: "binary", nullable: true, description: "CV file (PDF, max 10MB)"),
-                        new OA\Property(property: "certificates_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
-                        new OA\Property(property: "specializations", type: "array", nullable: true, items: new OA\Items(type: "string"))
-                    ]
+                        new OA\Property(
+                            property: "certificates", 
+                            type: "array", 
+                            nullable: true, 
+                            items: new OA\Items(
+                                type: "object",
+                                properties: [
+                                    new OA\Property(property: "name", type: "string", example: "Certificate Name"),
+                                    new OA\Property(property: "issue_date", type: "string", format: "date", example: "2024-01-01"),
+                                    new OA\Property(property: "certificate_file", type: "string", format: "binary", nullable: true, description: "Certificate PDF file (max 10MB) - upload file instead of providing URL")
+                                ]
+                            ), 
+                            description: "Array of certificate objects. Each certificate can have a certificate_file (PDF) uploaded, or you can provide certificates as JSON with name, issue_date, and optionally url."
+                        ),
+                        new OA\Property(
+                            property: "certificate_files", 
+                            type: "array", 
+                            nullable: true, 
+                            items: new OA\Items(type: "string", format: "binary"),
+                            description: "Alternative: Array of certificate PDF files. Files will be matched with certificates array by index."
+                        ),
+                        new OA\Property(property: "specializations", type: "array", nullable: true, items: new OA\Items(type: "string"), description: "Array of specializations"),
+                    ],
+                    description: "Note: email and id_number cannot be changed by instructor for security reasons. is_assessor can only be changed by training center."
                 )
             )
         ),
@@ -125,12 +146,20 @@ class ProfileController extends Controller
         $request->validate([
             'first_name' => 'sometimes|string|max:255',
             'last_name' => 'sometimes|string|max:255',
-            'phone' => 'sometimes|string',
+            'phone' => 'sometimes|string|max:255',
             'country' => 'sometimes|string|max:255',
             'city' => 'sometimes|string|max:255',
             'cv' => 'nullable|file|mimes:pdf|max:10240',
-            'certificates_json' => 'nullable|array',
+            'certificates' => 'nullable|array',
+            'certificates.*.name' => 'required_with:certificates|string|max:255',
+            'certificates.*.issue_date' => 'required_with:certificates|date',
+            'certificates.*.url' => 'nullable|url|max:500',
+            'certificates.*.certificate_file' => 'nullable|file|mimes:pdf|max:10240',
+            'certificate_files' => 'nullable|array',
+            'certificate_files.*' => 'nullable|file|mimes:pdf|max:10240',
             'specializations' => 'nullable|array',
+            // Note: email and id_number cannot be changed by instructor for security reasons
+            // Note: is_assessor can only be changed by training center
         ]);
 
         $updateData = [];
@@ -242,8 +271,118 @@ class ProfileController extends Controller
             }
         }
 
-        if ($request->has('certificates_json') || $request->has('certificates')) {
-            $updateData['certificates_json'] = $request->certificates_json ?? $request->certificates;
+        // Handle certificates array with file uploads
+        if ($request->has('certificates')) {
+            $certificates = $request->input('certificates');
+            $certificateFiles = $request->file('certificate_files', []);
+            
+            if (is_array($certificates)) {
+                // Validate and format certificates
+                $formattedCertificates = [];
+                foreach ($certificates as $index => $cert) {
+                    if (isset($cert['name']) && isset($cert['issue_date'])) {
+                        $certificateUrl = null;
+                        
+                        // Check if certificate file is uploaded for this index
+                        if (isset($certificateFiles[$index]) && $certificateFiles[$index]->isValid()) {
+                            try {
+                                $certFile = $certificateFiles[$index];
+                                $originalName = $certFile->getClientOriginalName();
+                                $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+                                $fileName = time() . '_' . $instructor->id . '_' . $index . '_' . $sanitizedName;
+                                
+                                // Ensure the directory exists
+                                $directory = 'instructors/certificates';
+                                if (!Storage::disk('public')->exists($directory)) {
+                                    Storage::disk('public')->makeDirectory($directory, 0755, true);
+                                }
+                                
+                                // Store the file
+                                $certPath = $certFile->storeAs($directory, $fileName, 'public');
+                                
+                                // Verify file was actually stored
+                                $fullPath = Storage::disk('public')->path($certPath);
+                                $fileExists = file_exists($fullPath);
+                                $fileSize = $fileExists ? filesize($fullPath) : 0;
+                                
+                                if ($certPath && $fileExists && $fileSize > 0) {
+                                    // Generate URL using the API route
+                                    $certificateUrl = url('/api/storage/instructors/certificates/' . $fileName);
+                                    \Log::info('Certificate file uploaded successfully', [
+                                        'instructor_id' => $instructor->id,
+                                        'index' => $index,
+                                        'file_name' => $fileName,
+                                        'certificate_url' => $certificateUrl,
+                                    ]);
+                                } else {
+                                    \Log::error('Failed to store certificate file', [
+                                        'instructor_id' => $instructor->id,
+                                        'index' => $index,
+                                        'file_name' => $fileName,
+                                    ]);
+                                }
+                            } catch (\Exception $e) {
+                                \Log::error('Error uploading certificate file', [
+                                    'instructor_id' => $instructor->id,
+                                    'index' => $index,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        } elseif (isset($cert['certificate_file']) && $request->hasFile("certificates.{$index}.certificate_file")) {
+                            // Handle nested certificate_file in certificates array
+                            try {
+                                $certFile = $request->file("certificates.{$index}.certificate_file");
+                                if ($certFile && $certFile->isValid()) {
+                                    $originalName = $certFile->getClientOriginalName();
+                                    $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+                                    $fileName = time() . '_' . $instructor->id . '_' . $index . '_' . $sanitizedName;
+                                    
+                                    // Ensure the directory exists
+                                    $directory = 'instructors/certificates';
+                                    if (!Storage::disk('public')->exists($directory)) {
+                                        Storage::disk('public')->makeDirectory($directory, 0755, true);
+                                    }
+                                    
+                                    // Store the file
+                                    $certPath = $certFile->storeAs($directory, $fileName, 'public');
+                                    
+                                    // Verify file was actually stored
+                                    $fullPath = Storage::disk('public')->path($certPath);
+                                    $fileExists = file_exists($fullPath);
+                                    $fileSize = $fileExists ? filesize($fullPath) : 0;
+                                    
+                                    if ($certPath && $fileExists && $fileSize > 0) {
+                                        // Generate URL using the API route
+                                        $certificateUrl = url('/api/storage/instructors/certificates/' . $fileName);
+                                        \Log::info('Certificate file uploaded successfully (nested)', [
+                                            'instructor_id' => $instructor->id,
+                                            'index' => $index,
+                                            'file_name' => $fileName,
+                                            'certificate_url' => $certificateUrl,
+                                        ]);
+                                    }
+                                }
+                            } catch (\Exception $e) {
+                                \Log::error('Error uploading certificate file (nested)', [
+                                    'instructor_id' => $instructor->id,
+                                    'index' => $index,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        } elseif (isset($cert['url']) && !empty($cert['url'])) {
+                            // Use provided URL if no file uploaded
+                            $certificateUrl = $cert['url'];
+                        }
+                        
+                        $formattedCertificates[] = [
+                            'name' => $cert['name'],
+                            'issue_date' => $cert['issue_date'],
+                            'url' => $certificateUrl,
+                        ];
+                    }
+                }
+                $updateData['certificates_json'] = $formattedCertificates;
+            }
         }
 
         // Log update data before saving
@@ -286,7 +425,7 @@ class ProfileController extends Controller
                 'country' => $instructor->country,
                 'city' => $instructor->city,
                 'cv_url' => $instructor->cv_url,
-                'certificates_json' => $instructor->certificates_json,
+                'certificates' => $instructor->certificates_json ?? [], // Array of objects with name, issue_date, url
                 'specializations' => $instructor->specializations ?? [],
                 'status' => $instructor->status,
                 'is_assessor' => $instructor->is_assessor,

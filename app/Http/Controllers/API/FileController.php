@@ -42,6 +42,37 @@ class FileController extends Controller
     }
 
     #[OA\Get(
+        path: "/storage/instructors/certificates/{filename}",
+        summary: "Get instructor certificate file",
+        description: "Serve an instructor certificate file. This is a public endpoint.",
+        tags: ["Files"],
+        parameters: [
+            new OA\Parameter(name: "filename", in: "path", required: true, schema: new OA\Schema(type: "string"), example: "cert_1234567890.pdf")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "File retrieved successfully"),
+            new OA\Response(response: 404, description: "File not found")
+        ]
+    )]
+    public function instructorCertificate(Request $request, string $filename)
+    {
+        $filePath = 'instructors/certificates/' . $filename;
+        
+        if (!Storage::disk('public')->exists($filePath)) {
+            return response()->json([
+                'message' => 'File not found'
+            ], 404);
+        }
+
+        $fullPath = Storage::disk('public')->path($filePath);
+        
+        return response()->file($fullPath, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
+    }
+
+    #[OA\Get(
         path: "/storage/{path}",
         summary: "Get file from storage",
         description: "Serve a file from public storage. Only authorized paths are allowed.",
@@ -62,10 +93,16 @@ class FileController extends Controller
         $allowedPaths = ['authorization', 'documents', 'accs'];
         $pathParts = explode('/', $path);
         
-        // Don't allow instructors/cv through this route (use specific route instead)
+        // Don't allow instructors/cv or instructors/certificates through this route (use specific routes instead)
         if (strpos($path, 'instructors/cv') === 0) {
             return response()->json([
                 'message' => 'Use /api/storage/instructors/cv/{filename} endpoint'
+            ], 400);
+        }
+        
+        if (strpos($path, 'instructors/certificates') === 0) {
+            return response()->json([
+                'message' => 'Use /api/storage/instructors/certificates/{filename} endpoint'
             ], 400);
         }
         
