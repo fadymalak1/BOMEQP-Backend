@@ -158,19 +158,47 @@ class TraineeManagementService
         try {
             DB::beginTransaction();
 
-            // Collect update data - only include fields that are present in the request
-            // Use only() to filter allowed fields, but also check request data directly
-            // to handle form-data properly
+            // Collect update data - handle both multipart/form-data and application/x-www-form-urlencoded
             $allowedFields = ['first_name', 'last_name', 'email', 'phone', 'id_number', 'status'];
-            $requestData = $request->all();
-            $updateData = [];
             
+            // Get all request data - Laravel should parse PUT request bodies automatically
+            // But sometimes form-urlencoded PUT requests need special handling
+            $allRequestData = $request->all();
+            
+            // If request data is empty but we have a PUT request with form-urlencoded,
+            // manually parse the request body
+            if (empty($allRequestData) && $request->method() === 'PUT') {
+                $contentType = $request->header('Content-Type', '');
+                if (str_contains($contentType, 'application/x-www-form-urlencoded')) {
+                    parse_str($request->getContent(), $parsedData);
+                    $allRequestData = $parsedData;
+                    // Merge parsed data into request for subsequent access
+                    $request->merge($parsedData);
+                }
+            }
+            
+            // Filter to only include allowed fields that are actually present in the request
+            $updateData = [];
             foreach ($allowedFields as $field) {
-                // Check if field exists in request (works with both JSON and form-data)
-                if (array_key_exists($field, $requestData)) {
+                // Check if the field exists in the request data
+                // Try multiple methods to ensure we catch the data
+                if (array_key_exists($field, $allRequestData)) {
+                    $updateData[$field] = $request->input($field);
+                } elseif ($request->has($field)) {
                     $updateData[$field] = $request->input($field);
                 }
             }
+
+            // Log for debugging
+            Log::debug('Updating trainee - data collection', [
+                'trainee_id' => $trainee->id,
+                'update_data' => $updateData,
+                'request_all' => $allRequestData,
+                'request_keys' => array_keys($allRequestData),
+                'request_method' => $request->method(),
+                'content_type' => $request->header('Content-Type'),
+                'request_content' => substr($request->getContent(), 0, 500), // First 500 chars for debugging
+            ]);
 
             $uploadedFiles = [];
             $filesToCleanup = [];
@@ -227,9 +255,35 @@ class TraineeManagementService
 
             // Only update if there's data to update
             if (!empty($updateData)) {
-                $trainee->update($updateData);
-                // Refresh the model to get updated attributes
+                Log::debug('Updating trainee - before update', [
+                    'trainee_id' => $trainee->id,
+                    'current_data' => [
+                        'first_name' => $trainee->first_name,
+                        'last_name' => $trainee->last_name,
+                        'email' => $trainee->email,
+                        'phone' => $trainee->phone,
+                        'id_number' => $trainee->id_number,
+                        'status' => $trainee->status,
+                    ],
+                    'update_data' => $updateData,
+                ]);
+                
+                // Update the trainee
+                $updated = $trainee->update($updateData);
+                
+                Log::debug('Updating trainee - after update', [
+                    'trainee_id' => $trainee->id,
+                    'update_result' => $updated,
+                    'updated_data' => $trainee->getChanges(),
+                ]);
+                
+                // Refresh the model to get updated attributes from database
                 $trainee->refresh();
+            } else {
+                Log::warning('Update trainee called with no data', [
+                    'trainee_id' => $trainee->id,
+                    'request_all' => $request->all(),
+                ]);
             }
 
             // Cleanup old files after successful update
@@ -249,8 +303,27 @@ class TraineeManagementService
                 // Get current enrolled classes
                 $currentClasses = $trainee->trainingClasses()->pluck('training_classes.id')->toArray();
                 
-                // Get new classes
-                $newClasses = is_array($request->enrolled_classes) ? $request->enrolled_classes : [];
+                // Get new classes - handle both array and string formats
+                $enrolledClassesInput = $request->input('enrolled_classes');
+                
+                // Convert to array if needed
+                if (!is_array($enrolledClassesInput)) {
+                    if (is_string($enrolledClassesInput) && !empty($enrolledClassesInput)) {
+                        // Single string value, convert to array
+                        $enrolledClassesInput = [(int)$enrolledClassesInput];
+                    } elseif (is_numeric($enrolledClassesInput)) {
+                        // Single numeric value
+                        $enrolledClassesInput = [(int)$enrolledClassesInput];
+                    } else {
+                        $enrolledClassesInput = [];
+                    }
+                } else {
+                    // Ensure all values are integers
+                    $enrolledClassesInput = array_map('intval', $enrolledClassesInput);
+                }
+                
+                // Remove duplicates
+                $newClasses = array_unique($enrolledClassesInput);
                 
                 // Verify all new classes belong to this training center
                 $validClasses = TrainingClass::where('training_center_id', $trainingCenter->id)
