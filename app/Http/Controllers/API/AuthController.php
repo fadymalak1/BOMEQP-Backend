@@ -4,20 +4,22 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Mail\ResetPasswordMail;
-use App\Services\NotificationService;
+use App\Services\AuthService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
 
 class AuthController extends Controller
 {
+    protected AuthService $authService;
+
+    public function __construct(AuthService $authService)
+    {
+        $this->authService = $authService;
+    }
     #[OA\Post(
         path: "/auth/register",
         summary: "Register a new user",
@@ -68,61 +70,26 @@ class AuthController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Both training centers and ACCs require approval (pending)
-        $userStatus = 'pending';
-        
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => $request->role,
-            'status' => $userStatus,
-        ]);
+        try {
+            $result = $this->authService->register($request);
 
-        // Create Training Center record if role is training_center_admin
-        if ($request->role === 'training_center_admin') {
-            $trainingCenter = \App\Models\TrainingCenter::create([
-                'name' => $request->name,
-                'legal_name' => $request->name,
-                'registration_number' => 'TC-' . strtoupper(Str::random(8)),
-                'country' => $request->country ?? 'Unknown',
-                'city' => $request->city ?? 'Unknown',
-                'address' => $request->address ?? '',
-                'phone' => $request->phone ?? '',
+            return response()->json([
+                'message' => $result['message'],
+                'user' => $result['user'],
+                'token' => $result['token'],
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('Registration failed', [
                 'email' => $request->email,
-                'status' => 'pending', // Training centers require group admin approval
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-
-            // Notify admin about new training center application
-            $notificationService = new NotificationService();
-            $notificationService->notifyAdminNewTrainingCenterApplication($trainingCenter->id, $trainingCenter->name);
+            return response()->json([
+                'message' => 'Registration failed: ' . $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        // Create ACC record if role is acc_admin
-        if ($request->role === 'acc_admin') {
-            $acc = \App\Models\ACC::create([
-                'name' => $request->name,
-                'legal_name' => $request->name,
-                'registration_number' => 'ACC-' . strtoupper(Str::random(8)),
-                'country' => $request->country ?? 'Unknown',
-                'address' => $request->address ?? '',
-                'phone' => $request->phone ?? '',
-                'email' => $request->email,
-                'status' => 'pending',
-            ]);
-
-            // Notify admin about new ACC application
-            $notificationService = new NotificationService();
-            $notificationService->notifyAdminNewAccApplication($acc->id, $acc->name);
-        }
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return response()->json([
-            'message' => 'Registration successful',
-            'user' => $user,
-            'token' => $token,
-        ], 201);
     }
 
     #[OA\Post(
@@ -162,27 +129,27 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        try {
+            $result = $this->authService->login($request);
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+            return response()->json([
+                'message' => $result['message'],
+                'user' => $result['user'],
+                'token' => $result['token'],
+            ], 200);
+
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('Login failed', [
+                'email' => $request->email,
+                'error' => $e->getMessage()
             ]);
+            return response()->json([
+                'message' => 'Login failed',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        // Status check removed - allow login regardless of status
-        // if ($user->status !== 'active') {
-        //     return response()->json(['message' => 'Account is not active'], 403);
-        // }
-
-        $user->update(['last_login' => now()]);
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return response()->json([
-            'message' => 'Login successful',
-            'user' => $user,
-            'token' => $token,
-        ]);
     }
 
     #[OA\Post(
@@ -315,13 +282,17 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        if (!Hash::check($request->current_password, $request->user()->password)) {
-            return response()->json(['message' => 'Current password is incorrect'], 422);
+        $result = $this->authService->changePassword(
+            $request->user(),
+            $request->current_password,
+            $request->password
+        );
+
+        if (!$result['success']) {
+            return response()->json(['message' => $result['message']], $result['code']);
         }
 
-        $request->user()->update(['password' => Hash::make($request->password)]);
-
-        return response()->json(['message' => 'Password changed successfully']);
+        return response()->json(['message' => $result['message']], 200);
     }
 
     #[OA\Post(
@@ -358,42 +329,11 @@ class AuthController extends Controller
             'email' => 'required|email|exists:users,email',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $result = $this->authService->forgotPassword($request->email);
 
-        if (!$user) {
-            return response()->json([
-                'message' => 'We could not find a user with that email address.'
-            ], 404);
-        }
-
-        // Generate reset token
-        $token = Str::random(64);
-        
-        // Store token in password_reset_tokens table
-        DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $request->email],
-            [
-                'email' => $request->email,
-                'token' => Hash::make($token),
-                'created_at' => now()
-            ]
-        );
-
-        try {
-            // Send reset password email
-            Mail::to($user->email)->send(new ResetPasswordMail($token, $user->email));
-            
-            return response()->json([
-                'message' => 'Password reset link sent to your email'
-            ], 200);
-        } catch (\Exception $e) {
-            // Log the error but don't expose it to the user
-            \Log::error('Password reset email failed: ' . $e->getMessage());
-            
-            return response()->json([
-                'message' => 'Unable to send password reset email. Please try again later.'
-            ], 500);
-        }
+        return response()->json([
+            'message' => $result['message']
+        ], $result['success'] ? 200 : $result['code']);
     }
 
     #[OA\Post(
@@ -436,52 +376,15 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        // Get password reset record
-        $passwordReset = DB::table('password_reset_tokens')
-            ->where('email', $request->email)
-            ->first();
-
-        if (!$passwordReset) {
-            return response()->json([
-                'message' => 'Invalid or expired reset token'
-            ], 400);
-        }
-
-
-        $createdAt = \Carbon\Carbon::parse($passwordReset->created_at);
-        $tokenAge = now()->diffInMinutes($createdAt);
-        if ($tokenAge > 60) {
-            // Delete expired token
-            DB::table('password_reset_tokens')->where('email', $request->email)->delete();
-            return response()->json([
-                'message' => 'Reset token has expired. Please request a new one.'
-            ], 400);
-        }
-
-        // Verify token
-        if (!Hash::check($request->token, $passwordReset->token)) {
-            return response()->json([
-                'message' => 'Invalid reset token'
-            ], 400);
-        }
-
-        // Update user password
-        $user = User::where('email', $request->email)->first();
-        if (!$user) {
-            return response()->json([
-                'message' => 'User not found'
-            ], 404);
-        }
-
-        $user->password = Hash::make($request->password);
-        $user->save();
-
-        // Delete the used token
-        DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+        $result = $this->authService->resetPassword(
+            $request->token,
+            $request->email,
+            $request->password
+        );
 
         return response()->json([
-            'message' => 'Password reset successfully'
-        ], 200);
+            'message' => $result['message']
+        ], $result['success'] ? 200 : $result['code']);
     }
 
     #[OA\Get(

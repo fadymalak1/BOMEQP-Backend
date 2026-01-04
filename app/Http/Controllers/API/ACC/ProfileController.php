@@ -4,23 +4,27 @@ namespace App\Http\Controllers\API\ACC;
 
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
-use App\Models\ACCDocument;
-use App\Models\User;
+use App\Services\ACCProfileService;
+use App\Services\FileUploadService;
 use App\Services\StripeService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use OpenApi\Attributes as OA;
 
 class ProfileController extends Controller
 {
     protected StripeService $stripeService;
+    protected ACCProfileService $profileService;
+    protected FileUploadService $fileUploadService;
 
-    public function __construct(StripeService $stripeService)
-    {
+    public function __construct(
+        StripeService $stripeService,
+        ACCProfileService $profileService,
+        FileUploadService $fileUploadService
+    ) {
         $this->stripeService = $stripeService;
+        $this->profileService = $profileService;
+        $this->fileUploadService = $fileUploadService;
     }
     #[OA\Get(
         path: "/acc/profile",
@@ -115,7 +119,7 @@ class ProfileController extends Controller
         }
 
         return response()->json([
-            'profile' => $this->formatAccProfile($acc)
+            'profile' => $this->profileService->getProfile($acc)
         ]);
     }
 
@@ -218,21 +222,20 @@ class ProfileController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // ============================================
-        // STEP 1: Validate file uploads (if any)
-        // ============================================
-        $uploadValidation = $this->validateFileUploads($request, $acc);
-        if (!$uploadValidation['valid']) {
-            return response()->json([
-                'message' => $uploadValidation['message'],
-                'error_code' => $uploadValidation['error_code'] ?? null,
-                'hint' => $uploadValidation['hint'] ?? null
-            ], 422);
+        // Validate file uploads (if any)
+        if ($request->hasFile('logo')) {
+            $logoFile = $request->file('logo');
+            $validation = $this->fileUploadService->validateFile($logoFile, 5, ['image/jpeg', 'image/jpg', 'image/png']);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'message' => $validation['message'],
+                    'error_code' => $validation['error_code'] ?? null,
+                    'hint' => $validation['hint'] ?? null
+                ], 422);
+            }
         }
 
-        // ============================================
-        // STEP 2: Validate all input data
-        // ============================================
+        // Validate all input data
         try {
             $request->validate([
                 // Basic Information
@@ -283,156 +286,23 @@ class ProfileController extends Controller
             ], 422);
         }
 
-        // ============================================
-        // STEP 3: Process updates in transaction
-        // ============================================
-        $uploadedFiles = [];
-        $oldFilesToDelete = [];
-        $updatedDocuments = [];
-        $hasTextUpdates = false;
-        $hasFileUpdates = false;
-        
-        // Early detection of file uploads (before transaction)
-        $hasLogoFile = $request->hasFile('logo');
-        $hasDocumentFiles = false;
-        
-        // Check for document files - handle nested array structure in multipart/form-data
-        // Laravel handles nested file arrays differently, so we check all files
-        $allFiles = $request->allFiles();
-        foreach ($allFiles as $key => $file) {
-            // Check if it's a logo file
-            if ($key === 'logo') {
-                $hasLogoFile = true;
-            }
-            // Check if it's a document file (documents[0][file], documents[1][file], etc.)
-            if (preg_match('/^documents\[\d+\]\[file\]$/', $key) || 
-                preg_match('/^documents\.\d+\.file$/', $key)) {
-                $hasDocumentFiles = true;
-                break;
-            }
-        }
-        
-        // Also check if documents array is provided (even without files, might update document_type)
-        $hasDocumentsInput = $request->has('documents') && is_array($request->input('documents'));
-
+        // Process updates using service
         try {
-            DB::beginTransaction();
-
-            // Process text/data field updates (partial updates supported)
-            $updateData = $this->processTextFields($request);
-            if (!empty($updateData)) {
-                $hasTextUpdates = true;
-                $acc->update($updateData);
-                $acc->refresh();
-                
-                // Update user account name if name changed
-                if (isset($updateData['name'])) {
-                    $userAccount = User::where('email', $user->email)->lockForUpdate()->first();
-                    if ($userAccount) {
-                        $userAccount->update(['name' => $acc->name]);
-                    }
-                }
-            }
-
-            // Process logo file upload
-            if ($hasLogoFile) {
-                $logoFile = $request->file('logo');
-                // Check if file exists and is valid before processing
-                if ($logoFile) {
-                    if ($logoFile->isValid()) {
-                        $logoResult = $this->handleLogoUpload($request, $acc);
-                        if ($logoResult['success']) {
-                            $updateData['logo_url'] = $logoResult['logo_url'];
-                            $uploadedFiles[] = $logoResult['file_path'];
-                            $hasFileUpdates = true;
-                            $acc->update(['logo_url' => $logoResult['logo_url']]);
-                            $acc->refresh();
-                        } else {
-                            throw new \Exception($logoResult['error']);
-                        }
-                    } else {
-                        // File exists but is invalid
-                        $errorCode = $logoFile->getError();
-                        throw new \Exception('Invalid logo file uploaded. Error code: ' . $errorCode);
-                    }
-                } else {
-                    throw new \Exception('Logo file not found in request');
-                }
-            }
-
-            // Process document uploads/updates
-            // Process documents if we have input or detected files
-            if ($hasDocumentsInput || $hasDocumentFiles) {
-                $docResult = $this->handleDocuments($request, $acc);
-                $updatedDocuments = $docResult['updated_documents'];
-                $uploadedFiles = array_merge($uploadedFiles, $docResult['uploaded_files']);
-                $oldFilesToDelete = array_merge($oldFilesToDelete, $docResult['old_files']);
-                // Set hasFileUpdates if we have uploaded files OR updated documents
-                if (!empty($updatedDocuments) || !empty($docResult['uploaded_files'])) {
-                    $hasFileUpdates = true;
-                }
-            }
+            $result = $this->profileService->updateProfile($request, $acc, $user);
             
-            // Safety check: If we detected files but hasFileUpdates is still false,
-            // it means files were attempted but processing didn't complete successfully
-            // In this case, we should have thrown an exception, but as a fallback,
-            // ensure we don't return "No changes" if files were detected
-            if (($hasLogoFile || $hasDocumentFiles) && !$hasFileUpdates) {
-                // This shouldn't happen - if files were detected, they should have been processed
-                // or an exception should have been thrown. Log this case for debugging.
-                Log::warning('Files detected but hasFileUpdates is false', [
-                    'acc_id' => $acc->id,
-                    'has_logo_file' => $hasLogoFile,
-                    'has_document_files' => $hasDocumentFiles,
-                    'uploaded_files_count' => count($uploadedFiles),
-                ]);
-            }
-
-            // Check if any updates were made
-            // Log for debugging
-            Log::info('ACC profile update check', [
-                'acc_id' => $acc->id,
-                'has_text_updates' => $hasTextUpdates,
-                'has_file_updates' => $hasFileUpdates,
-                'has_logo_file' => $hasLogoFile,
-                'has_document_files' => $hasDocumentFiles,
-                'uploaded_files_count' => count($uploadedFiles),
-                'updated_documents_count' => count($updatedDocuments),
-            ]);
-            
-            if (!$hasTextUpdates && !$hasFileUpdates) {
-                DB::rollBack();
-                $acc->load('documents.verifiedBy');
+            if (!$result['success']) {
                 return response()->json([
-                    'message' => 'No changes provided. Profile remains unchanged.',
-                    'profile' => $this->formatAccProfile($acc)
+                    'message' => $result['message'],
+                    'profile' => $result['profile']
                 ], 200);
             }
 
-            // Commit transaction
-            DB::commit();
-
-            // Delete old files after successful commit
-            $this->deleteOldFiles($oldFilesToDelete);
-
-            // Reload ACC with documents
-            $acc->load('documents.verifiedBy');
-
             return response()->json([
-                'message' => 'Profile updated successfully',
-                'profile' => $this->formatAccProfile($acc)
+                'message' => $result['message'],
+                'profile' => $result['profile']
             ]);
 
         } catch (\Exception $e) {
-            // Rollback transaction
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-
-            // Cleanup uploaded files
-            $this->cleanupUploadedFiles($uploadedFiles);
-
-            // Log error
             Log::error('ACC profile update failed', [
                 'acc_id' => $acc->id ?? null,
                 'user_email' => $user->email ?? null,
@@ -446,436 +316,6 @@ class ProfileController extends Controller
         }
     }
 
-    /**
-     * Validate file uploads before processing
-     */
-    private function validateFileUploads(Request $request, ACC $acc): array
-    {
-        if ($request->hasFile('logo')) {
-            $logoFile = $request->file('logo');
-            
-            if (!$logoFile->isValid()) {
-                $errorCode = $logoFile->getError();
-                $errorMessages = [
-                    UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize directive in php.ini',
-                    UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive in HTML form',
-                    UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
-                    UPLOAD_ERR_NO_FILE => 'No file was uploaded',
-                    UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
-                    UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
-                    UPLOAD_ERR_EXTENSION => 'File upload stopped by extension',
-                ];
-                
-                $errorMessage = $errorMessages[$errorCode] ?? 'Unknown upload error';
-                
-                Log::error('Logo upload failed at server level', [
-                    'acc_id' => $acc->id,
-                    'error_code' => $errorCode,
-                    'error_message' => $errorMessage,
-                ]);
-                
-                return [
-                    'valid' => false,
-                    'message' => 'File upload failed: ' . $errorMessage,
-                    'error_code' => $errorCode,
-                    'hint' => 'Please check file size limits. Maximum allowed: 5MB'
-                ];
-            }
-            
-            // Check file size
-            $fileSize = $logoFile->getSize();
-            $maxSize = 5 * 1024 * 1024; // 5MB
-            
-            if ($fileSize > $maxSize) {
-                return [
-                    'valid' => false,
-                    'message' => 'File size exceeds maximum allowed size of 5MB',
-                    'hint' => 'Maximum file size: 5MB. Your file: ' . round($fileSize / 1024 / 1024, 2) . ' MB'
-                ];
-            }
-        }
-        
-        return ['valid' => true];
-    }
-
-    /**
-     * Process text/data field updates (supports partial updates)
-     */
-    private function processTextFields(Request $request): array
-    {
-        $updateData = [];
-        $logoFileUploaded = $request->hasFile('logo');
-        
-        // Define all updatable text fields
-        $textFields = [
-            'name', 'legal_name', 'phone', 'country', 'address',
-            'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
-            'physical_street', 'physical_city', 'physical_country', 'physical_postal_code',
-            'website', 'logo_url', 'stripe_account_id'
-        ];
-        
-        // Fields that can be set to null (cleared)
-        $nullableFields = [
-            'website', 'logo_url', 'stripe_account_id', 'address',
-            'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
-            'physical_street', 'physical_city', 'physical_country', 'physical_postal_code'
-        ];
-        
-        foreach ($textFields as $field) {
-            // Skip logo_url if logo file was uploaded (file takes precedence)
-            if ($field === 'logo_url' && $logoFileUploaded) {
-                continue;
-            }
-            
-            // Only process fields that are explicitly provided
-            if ($request->has($field)) {
-                $value = $request->input($field);
-                
-                if (in_array($field, $nullableFields)) {
-                    // Nullable fields: empty string becomes null
-                    $updateData[$field] = ($value === '' || $value === null) ? null : $value;
-                } else {
-                    // Non-nullable fields: only update if not empty
-                    if ($value !== null && $value !== '') {
-                        $updateData[$field] = $value;
-                    }
-                }
-            }
-        }
-        
-        return $updateData;
-    }
-
-    /**
-     * Handle logo file upload
-     */
-    private function handleLogoUpload(Request $request, ACC $acc): array
-    {
-        try {
-            $logoFile = $request->file('logo');
-            
-            // Delete old logo if exists
-            if ($acc->logo_url) {
-                try {
-                    $oldLogoPath = str_replace(Storage::disk('public')->url(''), '', $acc->logo_url);
-                    if (Storage::disk('public')->exists($oldLogoPath)) {
-                        Storage::disk('public')->delete($oldLogoPath);
-                    }
-                } catch (\Exception $e) {
-                    Log::warning('Failed to delete old logo', [
-                        'acc_id' => $acc->id,
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
-
-            // Prepare file name
-            $originalName = $logoFile->getClientOriginalName();
-            $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
-            $fileName = time() . '_' . $acc->id . '_' . $sanitizedName;
-            
-            // Ensure directory exists
-            $directory = 'accs/' . $acc->id . '/logo';
-            if (!Storage::disk('public')->exists($directory)) {
-                Storage::disk('public')->makeDirectory($directory);
-            }
-            
-            // Store file
-            $logoPath = $logoFile->storeAs($directory, $fileName, 'public');
-            
-            // Verify file was stored
-            $fullPath = Storage::disk('public')->path($logoPath);
-            if (!file_exists($fullPath) || filesize($fullPath) === 0) {
-                throw new \Exception('Failed to store logo file');
-            }
-            
-            $logoUrl = Storage::disk('public')->url($logoPath);
-            
-            Log::info('ACC logo uploaded successfully', [
-                'acc_id' => $acc->id,
-                'file_name' => $fileName,
-                'logo_url' => $logoUrl,
-            ]);
-            
-            return [
-                'success' => true,
-                'logo_url' => $logoUrl,
-                'file_path' => $logoPath
-            ];
-            
-        } catch (\Exception $e) {
-            Log::error('Error uploading ACC logo', [
-                'acc_id' => $acc->id,
-                'error' => $e->getMessage()
-            ]);
-            
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Handle document uploads and updates
-     */
-    private function handleDocuments(Request $request, ACC $acc): array
-    {
-        $updatedDocuments = [];
-        $uploadedFiles = [];
-        $oldFilesToDelete = [];
-        
-        $documents = $request->input('documents', []);
-        $allFiles = $request->allFiles();
-        
-        // Build a map of file keys to their index
-        $fileMap = [];
-        foreach ($allFiles as $key => $file) {
-            // Handle both formats: documents[0][file] and documents.0.file
-            if (preg_match('/^documents\[(\d+)\]\[file\]$/', $key, $matches)) {
-                $fileMap[(int)$matches[1]] = $key;
-            } elseif (preg_match('/^documents\.(\d+)\.file$/', $key, $matches)) {
-                $fileMap[(int)$matches[1]] = $key;
-            }
-        }
-        
-        foreach ($documents as $index => $docData) {
-            if (!is_array($docData)) {
-                continue;
-            }
-
-            $documentId = $docData['id'] ?? null;
-            $documentType = $docData['document_type'] ?? null;
-            
-            // Get file using the mapped key or try standard formats
-            $file = null;
-            if (isset($fileMap[$index])) {
-                $file = $request->file($fileMap[$index]);
-            } else {
-                // Try standard Laravel nested array formats
-                $file = $request->file("documents.{$index}.file") ?? 
-                        $request->file("documents[{$index}][file]");
-            }
-            
-            // Handle file upload
-            if ($file && $file->isValid()) {
-                // Validate document type
-                if (!$documentType || !in_array($documentType, ['license', 'registration', 'certificate', 'other'])) {
-                    throw new \Exception("Invalid document type for document at index {$index}. Must be one of: license, registration, certificate, other");
-                }
-
-                // Ensure directory exists
-                $directory = 'accs/' . $acc->id . '/documents';
-                if (!Storage::disk('public')->exists($directory)) {
-                    Storage::disk('public')->makeDirectory($directory);
-                }
-
-                // Store file
-                $originalName = $file->getClientOriginalName();
-                $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
-                $fileName = time() . '_' . $acc->id . '_' . Str::random(10) . '_' . $sanitizedName;
-                $path = $file->storeAs($directory, $fileName, 'public');
-                
-                // Verify file was stored
-                if (!$path || !Storage::disk('public')->exists($path)) {
-                    throw new \Exception("Failed to store document file at index {$index}");
-                }
-                
-                $url = Storage::disk('public')->url($path);
-                $uploadedFiles[] = $path;
-                
-                if ($documentId) {
-                    // Update existing document
-                    $document = ACCDocument::where('id', $documentId)
-                        ->where('acc_id', $acc->id)
-                        ->lockForUpdate()
-                        ->first();
-                    
-                    if (!$document) {
-                        throw new \Exception("Document with ID {$documentId} not found or does not belong to this ACC");
-                    }
-                    
-                    // Track old file for deletion
-                    if ($document->document_url) {
-                        try {
-                            $oldPath = str_replace(Storage::disk('public')->url(''), '', $document->document_url);
-                            // Also try removing /storage prefix if present
-                            $oldPath = ltrim($oldPath, '/storage/');
-                            $oldPath = ltrim($oldPath, 'storage/');
-                            if (Storage::disk('public')->exists($oldPath)) {
-                                $oldFilesToDelete[] = $oldPath;
-                            }
-                        } catch (\Exception $e) {
-                            Log::warning('Failed to extract old document path', [
-                                'acc_id' => $acc->id,
-                                'document_id' => $documentId,
-                                'document_url' => $document->document_url,
-                                'error' => $e->getMessage()
-                            ]);
-                        }
-                    }
-                    
-                    $document->update([
-                        'document_type' => $documentType,
-                        'document_url' => $url,
-                        'uploaded_at' => now(),
-                        'verified' => false,
-                        'verified_by' => null,
-                        'verified_at' => null,
-                    ]);
-                    $updatedDocuments[] = $document->id;
-                    
-                    Log::info('ACC document updated', [
-                        'acc_id' => $acc->id,
-                        'document_id' => $documentId,
-                        'document_type' => $documentType,
-                        'file_name' => $fileName
-                    ]);
-                } else {
-                    // Create new document
-                    $newDocument = ACCDocument::create([
-                        'acc_id' => $acc->id,
-                        'document_type' => $documentType,
-                        'document_url' => $url,
-                        'uploaded_at' => now(),
-                        'verified' => false,
-                    ]);
-                    $updatedDocuments[] = $newDocument->id;
-                    
-                    Log::info('ACC document created', [
-                        'acc_id' => $acc->id,
-                        'document_id' => $newDocument->id,
-                        'document_type' => $documentType,
-                        'file_name' => $fileName
-                    ]);
-                }
-            } elseif ($documentId && isset($docData['document_type'])) {
-                // Update document type only (no file upload)
-                $document = ACCDocument::where('id', $documentId)
-                    ->where('acc_id', $acc->id)
-                    ->lockForUpdate()
-                    ->first();
-                
-                if (!$document) {
-                    throw new \Exception("Document with ID {$documentId} not found or does not belong to this ACC");
-                }
-                
-                if (!in_array($docData['document_type'], ['license', 'registration', 'certificate', 'other'])) {
-                    throw new \Exception("Invalid document type: {$docData['document_type']}. Must be one of: license, registration, certificate, other");
-                }
-
-                $document->update(['document_type' => $docData['document_type']]);
-                $updatedDocuments[] = $document->id;
-            }
-        }
-        
-        return [
-            'updated_documents' => $updatedDocuments,
-            'uploaded_files' => $uploadedFiles,
-            'old_files' => $oldFilesToDelete
-        ];
-    }
-
-    /**
-     * Delete old files after successful commit
-     */
-    private function deleteOldFiles(array $oldFiles): void
-    {
-        foreach ($oldFiles as $oldPath) {
-            try {
-                if (Storage::disk('public')->exists($oldPath)) {
-                    Storage::disk('public')->delete($oldPath);
-                }
-            } catch (\Exception $e) {
-                Log::warning('Failed to delete old file', [
-                    'path' => $oldPath,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Cleanup uploaded files on rollback
-     */
-    private function cleanupUploadedFiles(array $uploadedFiles): void
-    {
-        foreach ($uploadedFiles as $filePath) {
-            try {
-                if (Storage::disk('public')->exists($filePath)) {
-                    Storage::disk('public')->delete($filePath);
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to delete uploaded file during rollback', [
-                    'path' => $filePath,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Format ACC profile with documents
-     */
-    private function formatAccProfile(ACC $acc): array
-    {
-        $userAccount = User::where('email', $acc->email)->first();
-
-        return [
-            'id' => $acc->id,
-            'name' => $acc->name,
-            'legal_name' => $acc->legal_name,
-            'registration_number' => $acc->registration_number,
-            'email' => $acc->email,
-            'phone' => $acc->phone,
-            'country' => $acc->country,
-            'address' => $acc->address,
-            'mailing_address' => [
-                'street' => $acc->mailing_street,
-                'city' => $acc->mailing_city,
-                'country' => $acc->mailing_country,
-                'postal_code' => $acc->mailing_postal_code,
-            ],
-            'physical_address' => [
-                'street' => $acc->physical_street,
-                'city' => $acc->physical_city,
-                'country' => $acc->physical_country,
-                'postal_code' => $acc->physical_postal_code,
-            ],
-            'website' => $acc->website,
-            'logo_url' => $acc->logo_url,
-            'status' => $acc->status,
-            'commission_percentage' => $acc->commission_percentage,
-            'stripe_account_id' => $acc->stripe_account_id,
-            'stripe_account_configured' => !empty($acc->stripe_account_id),
-            'documents' => $acc->documents->map(function ($document) {
-                return [
-                    'id' => $document->id,
-                    'document_type' => $document->document_type,
-                    'document_url' => $document->document_url,
-                    'uploaded_at' => $document->uploaded_at,
-                    'verified' => $document->verified,
-                    'verified_by' => $document->verifiedBy ? [
-                        'id' => $document->verifiedBy->id,
-                        'name' => $document->verifiedBy->name,
-                        'email' => $document->verifiedBy->email,
-                    ] : null,
-                    'verified_at' => $document->verified_at,
-                    'created_at' => $document->created_at,
-                    'updated_at' => $document->updated_at,
-                ];
-            }),
-            'user' => $userAccount ? [
-                'id' => $userAccount->id,
-                'name' => $userAccount->name,
-                'email' => $userAccount->email,
-                'role' => $userAccount->role,
-                'status' => $userAccount->status,
-            ] : null,
-            'created_at' => $acc->created_at,
-            'updated_at' => $acc->updated_at,
-        ];
-    }
 
     #[OA\Post(
         path: "/acc/profile/verify-stripe-account",

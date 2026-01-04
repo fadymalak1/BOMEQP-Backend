@@ -5,13 +5,19 @@ namespace App\Http\Controllers\API\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\Category;
-use App\Models\User;
-use App\Services\NotificationService;
+use App\Services\ACCManagementService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 
 class ACCController extends Controller
 {
+    protected ACCManagementService $accService;
+
+    public function __construct(ACCManagementService $accService)
+    {
+        $this->accService = $accService;
+    }
     #[OA\Get(
         path: "/admin/accs/applications",
         summary: "Get ACC applications",
@@ -93,23 +99,23 @@ class ACCController extends Controller
     public function approve(Request $request, $id)
     {
         $acc = ACC::findOrFail($id);
-        $acc->update([
-            'status' => 'active',
-            'approved_at' => now(),
-            'approved_by' => $request->user()->id,
-        ]);
 
-        // Also activate the user account associated with this ACC
-        $user = User::where('email', $acc->email)->first();
-        if ($user && $user->role === 'acc_admin') {
-            $user->update(['status' => 'active']);
-            
-            // Send notification to ACC admin
-            $notificationService = new NotificationService();
-            $notificationService->notifyAccApproved($user->id, $acc->id, $acc->name);
+        try {
+            $result = $this->accService->approveApplication($acc, $request->user()->id);
+            return response()->json([
+                'message' => $result['message'],
+                'acc' => $result['acc']
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to approve ACC application', [
+                'acc_id' => $acc->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to approve ACC application',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        return response()->json(['message' => 'ACC application approved', 'acc' => $acc]);
     }
 
     #[OA\Put(
@@ -151,23 +157,27 @@ class ACCController extends Controller
         $request->validate(['rejection_reason' => 'required|string']);
 
         $acc = ACC::findOrFail($id);
-        $acc->update([
-            'status' => 'rejected',
-            'rejection_reason' => $request->rejection_reason,
-            'approved_by' => $request->user()->id,
-        ]);
 
-        // Send notification to ACC admin
-        $user = User::where('email', $acc->email)->first();
-        if ($user && $user->role === 'acc_admin') {
-            $notificationService = new NotificationService();
-            $notificationService->notifyAccRejected($user->id, $acc->id, $acc->name, $request->rejection_reason);
+        try {
+            $result = $this->accService->rejectApplication(
+                $acc,
+                $request->rejection_reason,
+                $request->user()->id
+            );
+            return response()->json([
+                'message' => $result['message'],
+                'acc' => $result['acc']
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to reject ACC application', [
+                'acc_id' => $acc->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to reject ACC application',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        return response()->json([
-            'message' => 'ACC application rejected',
-            'acc' => $acc->fresh(),
-        ]);
     }
 
     #[OA\Post(
@@ -370,14 +380,23 @@ class ACCController extends Controller
         ]);
 
         $acc = ACC::findOrFail($id);
-        $acc->update([
-            'commission_percentage' => $request->commission_percentage,
-        ]);
 
-        return response()->json([
-            'message' => 'Commission percentage set successfully',
-            'acc' => $acc->fresh(),
-        ]);
+        try {
+            $result = $this->accService->setCommissionPercentage($acc, $request->commission_percentage);
+            return response()->json([
+                'message' => $result['message'],
+                'acc' => $result['acc']
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to set commission percentage', [
+                'acc_id' => $acc->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to set commission percentage',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 
     #[OA\Get(
@@ -457,19 +476,28 @@ class ACCController extends Controller
         $acc = ACC::findOrFail($id);
         $category = Category::findOrFail($request->category_id);
 
-        // Check if already assigned
-        if ($acc->categories()->where('category_id', $request->category_id)->exists()) {
+        try {
+            $result = $this->accService->assignCategory($acc, $category);
+            
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['code']);
+            }
+
             return response()->json([
-                'message' => 'Category is already assigned to this ACC'
-            ], 400);
+                'message' => $result['message'],
+                'acc' => $result['acc']
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to assign category', [
+                'acc_id' => $acc->id,
+                'category_id' => $category->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to assign category',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        $acc->categories()->attach($request->category_id);
-
-        return response()->json([
-            'message' => 'Category assigned successfully',
-            'acc' => $acc->fresh()->load('categories')
-        ], 200);
     }
 
     /**
@@ -516,12 +544,30 @@ class ACCController extends Controller
         ]);
 
         $acc = ACC::findOrFail($id);
-        $acc->categories()->detach($request->category_id);
+        $category = Category::findOrFail($request->category_id);
 
-        return response()->json([
-            'message' => 'Category removed successfully',
-            'acc' => $acc->fresh()->load('categories')
-        ], 200);
+        try {
+            $result = $this->accService->removeCategory($acc, $category);
+            
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['code']);
+            }
+
+            return response()->json([
+                'message' => $result['message'],
+                'acc' => $result['acc']
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to remove category', [
+                'acc_id' => $acc->id,
+                'category_id' => $category->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to remove category',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 
     #[OA\Put(

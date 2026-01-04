@@ -1,0 +1,304 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Instructor;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class InstructorProfileService
+{
+    protected FileUploadService $fileUploadService;
+
+    public function __construct(FileUploadService $fileUploadService)
+    {
+        $this->fileUploadService = $fileUploadService;
+    }
+
+    /**
+     * Get instructor profile with formatted data
+     *
+     * @param Instructor $instructor
+     * @return array
+     */
+    public function getProfile(Instructor $instructor): array
+    {
+        $userAccount = User::where('email', $instructor->email)->first();
+
+        return [
+            'id' => $instructor->id,
+            'first_name' => $instructor->first_name,
+            'last_name' => $instructor->last_name,
+            'full_name' => $instructor->first_name . ' ' . $instructor->last_name,
+            'email' => $instructor->email,
+            'phone' => $instructor->phone,
+            'id_number' => $instructor->id_number,
+            'country' => $instructor->country,
+            'city' => $instructor->city,
+            'cv_url' => $instructor->cv_url,
+            'certificates' => $instructor->certificates_json ?? [],
+            'specializations' => $instructor->specializations ?? [],
+            'status' => $instructor->status,
+            'training_center' => $instructor->trainingCenter,
+            'user' => $userAccount ? [
+                'id' => $userAccount->id,
+                'name' => $userAccount->name,
+                'email' => $userAccount->email,
+                'role' => $userAccount->role,
+                'status' => $userAccount->status,
+            ] : null,
+        ];
+    }
+
+    /**
+     * Update instructor profile
+     *
+     * @param Request $request
+     * @param Instructor $instructor
+     * @param User $user
+     * @return array
+     * @throws \Exception
+     */
+    public function updateProfile(Request $request, Instructor $instructor, User $user): array
+    {
+        $updateData = [];
+        $uploadedFiles = [];
+
+        try {
+            DB::beginTransaction();
+
+            // Process basic text fields
+            $textFields = ['first_name', 'last_name', 'phone', 'country', 'city', 'id_number'];
+            foreach ($textFields as $field) {
+                if ($request->has($field)) {
+                    $value = $request->input($field);
+                    if ($value !== null && $value !== '') {
+                        $updateData[$field] = $value;
+                    }
+                }
+            }
+
+            // Handle CV file upload
+            if ($request->hasFile('cv')) {
+                $cvResult = $this->uploadCV($request, $instructor);
+                if (!$cvResult['success']) {
+                    throw new \Exception($cvResult['error'] ?? 'CV upload failed');
+                }
+                $updateData['cv_url'] = $cvResult['url'];
+                $uploadedFiles[] = $cvResult['file_path'];
+            }
+
+            // Handle certificates
+            if ($request->has('certificates')) {
+                $certificatesResult = $this->handleCertificates($request, $instructor);
+                if (isset($certificatesResult['certificates'])) {
+                    $updateData['certificates_json'] = $certificatesResult['certificates'];
+                }
+                $uploadedFiles = array_merge($uploadedFiles, $certificatesResult['uploaded_files'] ?? []);
+            }
+
+            // Handle specializations
+            if ($request->has('specializations')) {
+                $specializations = $request->input('specializations');
+                if (is_array($specializations)) {
+                    $updateData['specializations'] = array_filter($specializations);
+                }
+            }
+
+            // Update instructor if there are changes
+            if (!empty($updateData)) {
+                $instructor->update($updateData);
+                $instructor->refresh();
+
+                // Update user account name if name changed
+                if (isset($updateData['first_name']) || isset($updateData['last_name'])) {
+                    $fullName = ($updateData['first_name'] ?? $instructor->first_name) . ' ' . 
+                                ($updateData['last_name'] ?? $instructor->last_name);
+                    $userAccount = User::where('email', $user->email)->lockForUpdate()->first();
+                    if ($userAccount) {
+                        $userAccount->update(['name' => trim($fullName)]);
+                    }
+                }
+            }
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'message' => 'Profile updated successfully',
+                'profile' => $this->getProfile($instructor)
+            ];
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            // Cleanup uploaded files
+            $this->fileUploadService->cleanupFiles($uploadedFiles);
+
+            Log::error('Instructor profile update failed', [
+                'instructor_id' => $instructor->id ?? null,
+                'user_email' => $user->email ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Upload CV file
+     *
+     * @param Request $request
+     * @param Instructor $instructor
+     * @return array
+     */
+    private function uploadCV(Request $request, Instructor $instructor): array
+    {
+        try {
+            $cvFile = $request->file('cv');
+
+            // Validate file
+            $validation = $this->fileUploadService->validateFile($cvFile, 10, ['application/pdf']);
+            if (!$validation['valid']) {
+                return [
+                    'success' => false,
+                    'error' => $validation['message']
+                ];
+            }
+
+            // Check available disk space
+            $fileSize = $cvFile->getSize();
+            $freeSpace = disk_free_space(storage_path('app/public'));
+            if ($freeSpace !== false && $freeSpace < $fileSize * 2) {
+                return [
+                    'success' => false,
+                    'error' => 'Insufficient disk space to upload file'
+                ];
+            }
+
+            // Delete old CV if exists
+            if ($instructor->cv_url) {
+                $this->fileUploadService->deleteOldFile($instructor->cv_url, 'instructor', $instructor->id, 'cv');
+            }
+
+            // Upload new CV
+            $originalName = $cvFile->getClientOriginalName();
+            $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+            $fileName = time() . '_' . $instructor->id . '_' . $sanitizedName;
+
+            // Ensure directory exists
+            $directory = 'instructors/cv';
+            if (!Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->makeDirectory($directory);
+            }
+
+            // Store file
+            $cvPath = $cvFile->storeAs($directory, $fileName, 'public');
+
+            if (!$cvPath || !Storage::disk('public')->exists($cvPath)) {
+                throw new \Exception('Failed to store CV file');
+            }
+
+            // Generate URL using the API route
+            $cvUrl = url('/api/storage/instructors/cv/' . $fileName);
+
+            Log::info('CV file uploaded successfully', [
+                'instructor_id' => $instructor->id,
+                'file_name' => $fileName,
+                'cv_url' => $cvUrl,
+            ]);
+
+            return [
+                'success' => true,
+                'url' => $cvUrl,
+                'file_path' => $cvPath
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error uploading CV file', [
+                'instructor_id' => $instructor->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Handle certificates with file uploads
+     *
+     * @param Request $request
+     * @param Instructor $instructor
+     * @return array
+     */
+    private function handleCertificates(Request $request, Instructor $instructor): array
+    {
+        $certificates = $request->input('certificates', []);
+        $certificateFiles = $request->file('certificate_files', []);
+        $uploadedFiles = [];
+        $processedCertificates = [];
+
+        foreach ($certificates as $index => $cert) {
+            if (!is_array($cert)) {
+                continue;
+            }
+
+            $certificateData = [
+                'name' => $cert['name'] ?? '',
+                'issuer' => $cert['issuer'] ?? '',
+                'issue_date' => $cert['issue_date'] ?? null,
+                'expiry' => $cert['expiry'] ?? null,
+            ];
+
+            // Handle file upload if provided
+            $fileKey = "certificate_files.{$index}";
+            if (isset($certificateFiles[$index])) {
+                $file = $certificateFiles[$index];
+            } elseif ($request->hasFile("certificates.{$index}.certificate_file")) {
+                $file = $request->file("certificates.{$index}.certificate_file");
+            } else {
+                $file = null;
+            }
+
+            if ($file && $file->isValid()) {
+                // Upload certificate file
+                $uploadResult = $this->fileUploadService->uploadDocument(
+                    $file,
+                    $instructor->id,
+                    'instructor',
+                    'certificate'
+                );
+
+                if ($uploadResult['success']) {
+                    $certificateData['url'] = $uploadResult['url'];
+                    $uploadedFiles[] = $uploadResult['file_path'];
+                } else {
+                    Log::warning('Failed to upload certificate file', [
+                        'instructor_id' => $instructor->id,
+                        'index' => $index,
+                        'error' => $uploadResult['error']
+                    ]);
+                }
+            } elseif (isset($cert['url'])) {
+                // Keep existing URL if no new file uploaded
+                $certificateData['url'] = $cert['url'];
+            }
+
+            $processedCertificates[] = $certificateData;
+        }
+
+        return [
+            'certificates' => $processedCertificates,
+            'uploaded_files' => $uploadedFiles
+        ];
+    }
+}
+

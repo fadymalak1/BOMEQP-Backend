@@ -5,13 +5,19 @@ namespace App\Http\Controllers\API\ACC;
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\Course;
-use App\Models\CertificatePricing;
+use App\Services\CourseManagementService;
 use Illuminate\Http\Request;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 
 class CourseController extends Controller
 {
+    protected CourseManagementService $courseService;
+
+    public function __construct(CourseManagementService $courseService)
+    {
+        $this->courseService = $courseService;
+    }
     #[OA\Get(
         path: "/acc/courses",
         summary: "List ACC courses",
@@ -47,52 +53,9 @@ class CourseController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $query = Course::where('acc_id', $acc->id)
-            ->with(['subCategory.category']);
+        $courses = $this->courseService->getCoursesWithPricing($request, $acc);
 
-        // Optional filters
-        if ($request->has('sub_category_id')) {
-            $query->where('sub_category_id', $request->sub_category_id);
-        }
-
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->has('level')) {
-            $query->where('level', $request->level);
-        }
-
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('name_ar', 'like', "%{$search}%")
-                  ->orWhere('code', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
-            });
-        }
-
-        $courses = $query->orderBy('created_at', 'desc')->get();
-
-        // Add current pricing to each course (pricing is always effective)
-        $coursesWithDetails = $courses->map(function ($course) use ($acc) {
-            // Get the current pricing for this course
-            $currentPricing = CertificatePricing::where('course_id', $course->id)
-                ->where('acc_id', $acc->id)
-                ->latest('created_at')
-                ->first();
-
-            // Add pricing information to course
-            $course->current_price = $currentPricing ? [
-                'base_price' => $currentPricing->base_price,
-                'currency' => $currentPricing->currency ?? 'USD',
-            ] : null;
-
-            return $course;
-        });
-
-        return response()->json(['courses' => $coursesWithDetails->values()]);
+        return response()->json(['courses' => $courses]);
     }
 
     #[OA\Post(
@@ -146,7 +109,6 @@ class CourseController extends Controller
     )]
     public function store(Request $request)
     {
-        // Validate course fields
         $request->validate([
             'sub_category_id' => 'required|exists:sub_categories,id',
             'name' => 'required|string|max:255',
@@ -158,7 +120,6 @@ class CourseController extends Controller
             'assessor_required' => 'nullable|boolean',
             'level' => 'required|in:beginner,intermediate,advanced',
             'status' => 'required|in:active,inactive,archived',
-            // Pricing fields (optional)
             'pricing' => 'nullable|array',
             'pricing.base_price' => 'required_with:pricing|numeric|min:0',
             'pricing.currency' => 'required_with:pricing|string|size:3',
@@ -171,74 +132,22 @@ class CourseController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Create course
-        $course = Course::create([
-            'sub_category_id' => $request->sub_category_id,
-            'acc_id' => $acc->id,
-            'name' => $request->name,
-            'name_ar' => $request->name_ar,
-            'code' => $request->code,
-            'description' => $request->description,
-            'duration_hours' => $request->duration_hours,
-            'max_capacity' => $request->max_capacity,
-            'assessor_required' => $request->boolean('assessor_required', false),
-            'level' => $request->level,
-            'status' => $request->status,
-        ]);
-
-        // Create pricing if provided (commissions are set by Group Admin, not ACC)
-        // Pricing is always effective - no date restrictions
-        if ($request->has('pricing') && $request->pricing) {
-            $pricingData = $request->pricing;
-            // If pricing exists, update it; otherwise create new
-            $existingPricing = CertificatePricing::where('course_id', $course->id)
-                ->where('acc_id', $acc->id)
-                ->first();
-            
-            if ($existingPricing) {
-                $existingPricing->update([
-                    'base_price' => $pricingData['base_price'],
-                    'currency' => $pricingData['currency'],
-                ]);
-            } else {
-                CertificatePricing::create([
-                    'acc_id' => $acc->id,
-                    'course_id' => $course->id,
-                    'base_price' => $pricingData['base_price'],
-                    'currency' => $pricingData['currency'],
-                    'group_commission_percentage' => 0,
-                    'training_center_commission_percentage' => 0,
-                    'instructor_commission_percentage' => 0,
-                    'effective_from' => now()->format('Y-m-d'),
-                    'effective_to' => null,
-                ]);
-            }
+        try {
+            $result = $this->courseService->createCourse($request, $acc);
+            return response()->json([
+                'message' => $result['message'],
+                'course' => $result['course']
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Failed to create course', [
+                'acc_id' => $acc->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to create course',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        // Reload course with relationships
-        $course->load(['subCategory.category']);
-
-        // Get the current pricing for this course (always effective)
-        $currentPricing = CertificatePricing::where('course_id', $course->id)
-            ->where('acc_id', $acc->id)
-            ->latest('created_at')
-            ->first();
-
-        // Add pricing information to course
-        $course->current_price = $currentPricing ? [
-            'base_price' => $currentPricing->base_price,
-            'currency' => $currentPricing->currency ?? 'USD',
-        ] : null;
-
-        $message = 'Course created successfully';
-        if ($request->has('pricing') && $request->pricing) {
-            $message .= ' with pricing';
-        }
-
-        return response()->json([
-            'message' => $message,
-            'course' => $course
-        ], 201);
     }
 
     #[OA\Get(
@@ -332,7 +241,6 @@ class CourseController extends Controller
 
         $course = Course::where('acc_id', $acc->id)->findOrFail($id);
 
-        // Validate course fields
         $request->validate([
             'sub_category_id' => 'sometimes|exists:sub_categories,id',
             'name' => 'sometimes|string|max:255',
@@ -344,81 +252,27 @@ class CourseController extends Controller
             'assessor_required' => 'nullable|boolean',
             'level' => 'sometimes|in:beginner,intermediate,advanced',
             'status' => 'sometimes|in:active,inactive,archived',
-            // Pricing fields (optional)
             'pricing' => 'sometimes|array',
             'pricing.base_price' => 'required_with:pricing|numeric|min:0',
             'pricing.currency' => 'required_with:pricing|string|size:3',
         ]);
 
-        // Update course fields
-        $updateData = $request->only([
-            'sub_category_id', 'name', 'name_ar', 'code', 'description',
-            'duration_hours', 'max_capacity', 'level', 'status'
-        ]);
-        
-        // Handle boolean conversion for assessor_required
-        if ($request->has('assessor_required')) {
-            $updateData['assessor_required'] = $request->boolean('assessor_required');
+        try {
+            $result = $this->courseService->updateCourse($request, $course, $acc);
+            return response()->json([
+                'message' => $result['message'],
+                'course' => $result['course']
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update course', [
+                'course_id' => $course->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to update course',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-        
-        $course->update($updateData);
-
-        // Handle pricing update if provided (pricing is always effective - no date restrictions)
-        if ($request->has('pricing') && $request->pricing) {
-            $pricingData = $request->pricing;
-            
-            // Get existing pricing for this course
-            $existingPricing = CertificatePricing::where('course_id', $course->id)
-                ->where('acc_id', $acc->id)
-                ->latest('created_at')
-                ->first();
-
-            if ($existingPricing) {
-                // Update existing pricing (commissions not updated by ACC)
-                $existingPricing->update([
-                    'base_price' => $pricingData['base_price'],
-                    'currency' => $pricingData['currency'],
-                ]);
-            } else {
-                // Create new pricing if none exists (commissions are set by Group Admin, not ACC)
-                CertificatePricing::create([
-                    'acc_id' => $acc->id,
-                    'course_id' => $course->id,
-                    'base_price' => $pricingData['base_price'],
-                    'currency' => $pricingData['currency'],
-                    'group_commission_percentage' => 0,
-                    'training_center_commission_percentage' => 0,
-                    'instructor_commission_percentage' => 0,
-                    'effective_from' => now()->format('Y-m-d'),
-                    'effective_to' => null,
-                ]);
-            }
-        }
-
-        // Reload course with relationships
-        $course->load(['subCategory.category']);
-
-        // Get the current pricing for this course (always effective)
-        $currentPricing = CertificatePricing::where('course_id', $course->id)
-            ->where('acc_id', $acc->id)
-            ->latest('created_at')
-            ->first();
-
-        // Add pricing information to course
-        $course->current_price = $currentPricing ? [
-            'base_price' => $currentPricing->base_price,
-            'currency' => $currentPricing->currency ?? 'USD',
-        ] : null;
-
-        $message = 'Course updated successfully';
-        if ($request->has('pricing')) {
-            $message .= ' and pricing updated';
-        }
-
-        return response()->json([
-            'message' => $message,
-            'course' => $course
-        ]);
     }
 
     #[OA\Delete(
@@ -506,20 +360,6 @@ class CourseController extends Controller
             'effective_to' => 'nullable|date|after:effective_from',
         ]);
 
-        // Validate commission percentages don't exceed 100% total
-        $totalCommission = $request->group_commission_percentage + 
-                          $request->training_center_commission_percentage + 
-                          $request->instructor_commission_percentage;
-        
-        if ($totalCommission > 100) {
-            return response()->json([
-                'message' => 'Total commission percentages cannot exceed 100%',
-                'errors' => [
-                    'commission_percentages' => ['The sum of all commission percentages is ' . $totalCommission . '% which exceeds 100%']
-                ]
-            ], 422);
-        }
-
         $user = $request->user();
         $acc = ACC::where('email', $user->email)->first();
 
@@ -529,47 +369,30 @@ class CourseController extends Controller
 
         $course = Course::where('acc_id', $acc->id)->findOrFail($id);
 
-        // Check for overlapping active pricing and end it
-        $activePricing = CertificatePricing::where('course_id', $course->id)
-            ->where('acc_id', $acc->id)
-            ->where('effective_from', '<=', $request->effective_from)
-            ->where(function ($q) use ($request) {
-                $q->whereNull('effective_to')
-                  ->orWhere('effective_to', '>=', $request->effective_from);
-            })
-            ->first();
-
-        if ($activePricing) {
-            // End the previous pricing one day before the new one starts
-            $newEffectiveFrom = Carbon::parse($request->effective_from);
-            $previousEffectiveTo = $newEffectiveFrom->copy()->subDay();
+        try {
+            $result = $this->courseService->setPricing($request, $course, $acc);
             
-            // Only update if the previous pricing doesn't already have an end date
-            if (!$activePricing->effective_to || 
-                Carbon::parse($activePricing->effective_to) > $previousEffectiveTo) {
-                $activePricing->update([
-                    'effective_to' => $previousEffectiveTo->format('Y-m-d')
-                ]);
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => $result['message'],
+                    'errors' => $result['errors'] ?? null
+                ], $result['code']);
             }
+
+            return response()->json([
+                'message' => $result['message'],
+                'pricing' => $result['pricing']
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to set pricing', [
+                'course_id' => $course->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to set pricing',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        // Create new pricing
-        $pricing = CertificatePricing::create([
-            'acc_id' => $acc->id,
-            'course_id' => $course->id,
-            'base_price' => $request->base_price,
-            'currency' => $request->currency,
-            'group_commission_percentage' => $request->group_commission_percentage,
-            'training_center_commission_percentage' => $request->training_center_commission_percentage,
-            'instructor_commission_percentage' => $request->instructor_commission_percentage,
-            'effective_from' => $request->effective_from,
-            'effective_to' => $request->effective_to,
-        ]);
-
-        return response()->json([
-            'message' => 'Pricing set successfully',
-            'pricing' => $pricing->fresh()
-        ]);
     }
 
     #[OA\Put(
@@ -627,65 +450,30 @@ class CourseController extends Controller
 
         $course = Course::where('acc_id', $acc->id)->findOrFail($id);
 
-        // Get the active pricing (most recent active one)
-        $pricing = CertificatePricing::where('course_id', $course->id)
-            ->where('acc_id', $acc->id)
-            ->where(function ($q) {
-                $q->where('effective_from', '<=', now())
-                  ->where(function ($subQ) {
-                      $subQ->whereNull('effective_to')
-                           ->orWhere('effective_to', '>=', now());
-                  });
-            })
-            ->latest('effective_from')
-            ->first();
-
-        // If no active pricing, try to get the latest one
-        if (!$pricing) {
-            $pricing = CertificatePricing::where('course_id', $course->id)
-                ->where('acc_id', $acc->id)
-                ->latest('effective_from')
-                ->first();
-        }
-
-        if (!$pricing) {
-            return response()->json(['message' => 'Pricing not found for this course'], 404);
-        }
-
-        // Validate commission percentages if provided
-        $updateData = $request->only([
-            'base_price', 'currency', 'group_commission_percentage',
-            'training_center_commission_percentage', 'instructor_commission_percentage',
-            'effective_from', 'effective_to'
-        ]);
-
-        // Check commission percentages if any are being updated
-        if ($request->has('group_commission_percentage') || 
-            $request->has('training_center_commission_percentage') || 
-            $request->has('instructor_commission_percentage')) {
+        try {
+            $result = $this->courseService->updatePricing($request, $course, $acc);
             
-            $groupCommission = $request->group_commission_percentage ?? $pricing->group_commission_percentage;
-            $tcCommission = $request->training_center_commission_percentage ?? $pricing->training_center_commission_percentage;
-            $instructorCommission = $request->instructor_commission_percentage ?? $pricing->instructor_commission_percentage;
-            
-            $totalCommission = $groupCommission + $tcCommission + $instructorCommission;
-            
-            if ($totalCommission > 100) {
+            if (!$result['success']) {
                 return response()->json([
-                    'message' => 'Total commission percentages cannot exceed 100%',
-                    'errors' => [
-                        'commission_percentages' => ['The sum of all commission percentages is ' . $totalCommission . '% which exceeds 100%']
-                    ]
-                ], 422);
+                    'message' => $result['message'],
+                    'errors' => $result['errors'] ?? null
+                ], $result['code']);
             }
+
+            return response()->json([
+                'message' => $result['message'],
+                'pricing' => $result['pricing']
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update pricing', [
+                'course_id' => $course->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to update pricing',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        $pricing->update($updateData);
-
-        return response()->json([
-            'message' => 'Pricing updated successfully',
-            'pricing' => $pricing->fresh()
-        ]);
     }
 }
 

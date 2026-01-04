@@ -5,39 +5,18 @@ namespace App\Http\Controllers\API\TrainingCenter;
 use App\Http\Controllers\Controller;
 use App\Models\Trainee;
 use App\Models\TrainingCenter;
-use App\Models\TrainingClass;
+use App\Services\TraineeManagementService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 
 class TraineeController extends Controller
 {
-    /**
-     * Generate storage URL for a file path
-     * Ensures the URL includes /app/public in the path to match server structure
-     */
-    private function getStorageUrl($path)
+    protected TraineeManagementService $traineeService;
+
+    public function __construct(TraineeManagementService $traineeService)
     {
-        $baseUrl = Storage::disk('public')->url('');
-        
-        // If base URL already includes /app/public, use standard Storage URL
-        if (strpos($baseUrl, '/app/public') !== false) {
-            return Storage::disk('public')->url($path);
-        }
-        
-        // Otherwise, ensure /app/public is included in the path
-        // Remove trailing slash from base URL
-        $baseUrl = rtrim($baseUrl, '/');
-        
-        // Ensure path doesn't start with /app/public (to avoid duplication)
-        $cleanPath = ltrim($path, '/');
-        if (strpos($cleanPath, 'app/public/') === 0) {
-            $cleanPath = substr($cleanPath, 11); // Remove 'app/public/' prefix
-        }
-        
-        // Construct URL: baseUrl/app/public/path
-        return $baseUrl . '/app/public/' . $cleanPath;
+        $this->traineeService = $traineeService;
     }
 
     #[OA\Get(
@@ -211,90 +190,20 @@ class TraineeController extends Controller
             'status' => 'sometimes|in:active,inactive,suspended',
         ]);
 
-        // Handle file uploads
-        $idImagePath = null;
-        $cardImagePath = null;
-
         try {
-            if ($request->hasFile('id_image')) {
-                $idImage = $request->file('id_image');
-                $idImageName = Str::random(40) . '.' . $idImage->getClientOriginalExtension();
-                $idImagePath = $idImage->storeAs(
-                    "trainees/{$trainingCenter->id}/id_images",
-                    $idImageName,
-                    'public'
-                );
-            }
-
-            if ($request->hasFile('card_image')) {
-                $cardImage = $request->file('card_image');
-                $cardImageName = Str::random(40) . '.' . $cardImage->getClientOriginalExtension();
-                $cardImagePath = $cardImage->storeAs(
-                    "trainees/{$trainingCenter->id}/card_images",
-                    $cardImageName,
-                    'public'
-                );
-            }
-
-            // Generate URLs for stored files
-            $idImageUrl = $idImagePath ? $this->getStorageUrl($idImagePath) : null;
-            $cardImageUrl = $cardImagePath ? $this->getStorageUrl($cardImagePath) : null;
-
-            // Create trainee
-            $trainee = Trainee::create([
-                'training_center_id' => $trainingCenter->id,
-                'first_name' => $request->first_name,
-                'last_name' => $request->last_name,
-                'email' => $request->email,
-                'phone' => $request->phone,
-                'id_number' => $request->id_number,
-                'id_image_url' => $idImageUrl,
-                'card_image_url' => $cardImageUrl,
-                'status' => $request->status ?? 'active',
-            ]);
-
-            // Attach enrolled classes
-            if ($request->has('enrolled_classes') && is_array($request->enrolled_classes)) {
-                $enrolledClasses = [];
-                foreach ($request->enrolled_classes as $classId) {
-                    // Verify the class belongs to this training center
-                    $trainingClass = TrainingClass::where('training_center_id', $trainingCenter->id)
-                        ->find($classId);
-                    
-                    if ($trainingClass) {
-                        $enrolledClasses[$classId] = [
-                            'status' => 'enrolled',
-                            'enrolled_at' => now(),
-                        ];
-                    }
-                }
-                
-                if (!empty($enrolledClasses)) {
-                    $trainee->trainingClasses()->attach($enrolledClasses);
-                    
-                    // Update enrolled_count for each class
-                    foreach (array_keys($enrolledClasses) as $classId) {
-                        $class = TrainingClass::find($classId);
-                        if ($class) {
-                            $class->increment('enrolled_count');
-                        }
-                    }
-                }
-            }
+            $result = $this->traineeService->createTrainee($request, $trainingCenter);
 
             return response()->json([
-                'message' => 'Trainee created successfully',
-                'trainee' => $trainee->load('trainingClasses')
+                'message' => $result['message'],
+                'trainee' => $result['trainee']
             ], 201);
 
         } catch (\Exception $e) {
-            // Clean up uploaded files if trainee creation fails
-            if ($idImagePath && Storage::disk('public')->exists($idImagePath)) {
-                Storage::disk('public')->delete($idImagePath);
-            }
-            if ($cardImagePath && Storage::disk('public')->exists($cardImagePath)) {
-                Storage::disk('public')->delete($cardImagePath);
-            }
+            Log::error('Failed to create trainee', [
+                'training_center_id' => $trainingCenter->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
 
             return response()->json([
                 'message' => 'Failed to create trainee: ' . $e->getMessage()
@@ -370,126 +279,31 @@ class TraineeController extends Controller
             'status' => 'sometimes|in:active,inactive,suspended',
         ]);
 
-        $updateData = [];
+        try {
+            $result = $this->traineeService->updateTrainee($request, $trainee, $trainingCenter);
 
-        // Only include fields that are actually provided and not empty
-        // Use input() to handle both JSON and form data
-        $fields = ['first_name', 'last_name', 'email', 'phone', 'id_number', 'status'];
-        foreach ($fields as $field) {
-            if ($request->has($field)) {
-                $value = $request->input($field);
-                // Only add if value is not null and not empty string
-                if ($value !== null && $value !== '') {
-                    $updateData[$field] = $value;
-                }
-            }
-        }
-
-        // Handle file uploads if provided
-        if ($request->hasFile('id_image')) {
-            // Delete old file
-            if ($trainee->id_image_url) {
-                // Extract path from URL - remove the storage URL base
-                $storageUrl = Storage::disk('public')->url('');
-                $oldPath = str_replace($storageUrl, '', $trainee->id_image_url);
-                // Remove leading slash if present
-                $oldPath = ltrim($oldPath, '/');
-                Storage::disk('public')->delete($oldPath);
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => $result['message']
+                ], $result['code'] ?? 500);
             }
 
-            $idImage = $request->file('id_image');
-            $idImageName = Str::random(40) . '.' . $idImage->getClientOriginalExtension();
-            $idImagePath = $idImage->storeAs(
-                "trainees/{$trainingCenter->id}/id_images",
-                $idImageName,
-                'public'
-            );
-            $updateData['id_image_url'] = $this->getStorageUrl($idImagePath);
+            return response()->json([
+                'message' => $result['message'],
+                'trainee' => $result['trainee']
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to update trainee', [
+                'trainee_id' => $trainee->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to update trainee: ' . $e->getMessage()
+            ], 500);
         }
-
-        if ($request->hasFile('card_image')) {
-            // Delete old file
-            if ($trainee->card_image_url) {
-                // Extract path from URL - remove the storage URL base
-                $storageUrl = Storage::disk('public')->url('');
-                $oldPath = str_replace($storageUrl, '', $trainee->card_image_url);
-                // Remove leading slash if present
-                $oldPath = ltrim($oldPath, '/');
-                Storage::disk('public')->delete($oldPath);
-            }
-
-            $cardImage = $request->file('card_image');
-            $cardImageName = Str::random(40) . '.' . $cardImage->getClientOriginalExtension();
-            $cardImagePath = $cardImage->storeAs(
-                "trainees/{$trainingCenter->id}/card_images",
-                $cardImageName,
-                'public'
-            );
-            $updateData['card_image_url'] = $this->getStorageUrl($cardImagePath);
-        }
-
-        // Only update if there's data to update
-        if (!empty($updateData)) {
-            $trainee->update($updateData);
-            // Refresh the model to ensure we have the latest data
-            $trainee->refresh();
-        }
-
-        // Update enrolled classes if provided
-        if ($request->has('enrolled_classes')) {
-            // Get current enrolled classes
-            $currentClasses = $trainee->trainingClasses()->pluck('training_classes.id')->toArray();
-            
-            // Get new classes
-            $newClasses = is_array($request->enrolled_classes) ? $request->enrolled_classes : [];
-            
-            // Verify all new classes belong to this training center
-            $validClasses = TrainingClass::where('training_center_id', $trainingCenter->id)
-                ->whereIn('id', $newClasses)
-                ->pluck('id')
-                ->toArray();
-
-            // Classes to remove
-            $classesToRemove = array_diff($currentClasses, $validClasses);
-            
-            // Classes to add
-            $classesToAdd = array_diff($validClasses, $currentClasses);
-
-            // Remove classes
-            if (!empty($classesToRemove)) {
-                $trainee->trainingClasses()->detach($classesToRemove);
-                foreach ($classesToRemove as $classId) {
-                    $class = TrainingClass::find($classId);
-                    if ($class && $class->enrolled_count > 0) {
-                        $class->decrement('enrolled_count');
-                    }
-                }
-            }
-
-            // Add new classes
-            if (!empty($classesToAdd)) {
-                $enrolledClasses = [];
-                foreach ($classesToAdd as $classId) {
-                    $enrolledClasses[$classId] = [
-                        'status' => 'enrolled',
-                        'enrolled_at' => now(),
-                    ];
-                }
-                $trainee->trainingClasses()->attach($enrolledClasses);
-                
-                foreach ($classesToAdd as $classId) {
-                    $class = TrainingClass::find($classId);
-                    if ($class) {
-                        $class->increment('enrolled_count');
-                    }
-                }
-            }
-        }
-
-        return response()->json([
-            'message' => 'Trainee updated successfully',
-            'trainee' => $trainee->fresh()->load('trainingClasses')
-        ], 200);
     }
 
     #[OA\Delete(

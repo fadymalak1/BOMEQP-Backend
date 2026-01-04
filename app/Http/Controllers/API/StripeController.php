@@ -3,22 +3,23 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
-use App\Models\StripeSetting;
 use App\Models\Transaction;
 use App\Services\StripeService;
+use App\Services\StripeWebhookService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
-use Stripe\Charge;
 use OpenApi\Attributes as OA;
 
 class StripeController extends Controller
 {
     protected StripeService $stripeService;
+    protected StripeWebhookService $webhookService;
 
-    public function __construct(StripeService $stripeService)
+    public function __construct(StripeService $stripeService, StripeWebhookService $webhookService)
     {
         $this->stripeService = $stripeService;
+        $this->webhookService = $webhookService;
     }
 
     #[OA\Get(
@@ -314,23 +315,23 @@ class StripeController extends Controller
 
             switch ($event['type']) {
                 case 'payment_intent.succeeded':
-                    $this->handlePaymentSucceeded($event['data']['object']);
+                    $this->webhookService->handlePaymentSucceeded($event['data']['object']);
                     break;
 
                 case 'payment_intent.payment_failed':
-                    $this->handlePaymentFailed($event['data']['object']);
+                    $this->webhookService->handlePaymentFailed($event['data']['object']);
                     break;
 
                 case 'payment_intent.canceled':
-                    $this->handlePaymentCanceled($event['data']['object']);
+                    $this->webhookService->handlePaymentCanceled($event['data']['object']);
                     break;
 
                 case 'charge.refunded':
-                    $this->handleRefund($event['data']['object']);
+                    $this->webhookService->handleRefund($event['data']['object']);
                     break;
 
                 case 'charge.dispute.created':
-                    $this->handleDisputeCreated($event['data']['object']);
+                    $this->webhookService->handleDisputeCreated($event['data']['object']);
                     break;
 
                 default:
@@ -347,148 +348,6 @@ class StripeController extends Controller
         }
     }
 
-    /**
-     * Handle successful payment
-     */
-    protected function handlePaymentSucceeded(array $paymentIntent)
-    {
-        $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntent['id'])->first();
-
-        if ($transaction) {
-            // Only update if status is not already completed (idempotency)
-            if ($transaction->status !== 'completed') {
-                $transaction->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                ]);
-
-                Log::info('Transaction updated to completed via webhook', [
-                    'transaction_id' => $transaction->id,
-                    'payment_intent_id' => $paymentIntent['id'],
-                    'transaction_type' => $transaction->transaction_type,
-                ]);
-            } else {
-                Log::info('Transaction already completed, skipping update', [
-                    'transaction_id' => $transaction->id,
-                    'payment_intent_id' => $paymentIntent['id'],
-                ]);
-            }
-        } else {
-            Log::warning('Payment succeeded webhook received but transaction not found', [
-                'payment_intent_id' => $paymentIntent['id'],
-                'amount' => $paymentIntent['amount'] ?? null,
-                'currency' => $paymentIntent['currency'] ?? null,
-            ]);
-        }
-    }
-
-    /**
-     * Handle failed payment
-     */
-    protected function handlePaymentFailed(array $paymentIntent)
-    {
-        $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntent['id'])->first();
-
-        if ($transaction) {
-            // Only update if status is not already failed
-            if ($transaction->status !== 'failed') {
-                $transaction->update([
-                    'status' => 'failed',
-                ]);
-
-                Log::info('Transaction updated to failed via webhook', [
-                    'transaction_id' => $transaction->id,
-                    'payment_intent_id' => $paymentIntent['id'],
-                    'error_message' => $paymentIntent['last_payment_error']['message'] ?? null,
-                ]);
-            }
-        } else {
-            Log::warning('Payment failed webhook received but transaction not found', [
-                'payment_intent_id' => $paymentIntent['id'],
-            ]);
-        }
-    }
-
-    /**
-     * Handle payment canceled
-     */
-    protected function handlePaymentCanceled(array $paymentIntent)
-    {
-        $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntent['id'])->first();
-
-        if ($transaction) {
-            $transaction->update([
-                'status' => 'failed',
-            ]);
-
-            Log::info('Transaction updated to failed (canceled)', [
-                'transaction_id' => $transaction->id,
-                'payment_intent_id' => $paymentIntent['id'],
-            ]);
-        }
-    }
-
-    /**
-     * Handle refund
-     */
-    protected function handleRefund(array $charge)
-    {
-        $paymentIntentId = $charge['payment_intent'] ?? null;
-        
-        if ($paymentIntentId) {
-            $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntentId)->first();
-
-            if ($transaction) {
-                $transaction->update([
-                    'status' => 'refunded',
-                ]);
-
-                Log::info('Transaction updated to refunded', [
-                    'transaction_id' => $transaction->id,
-                    'payment_intent_id' => $paymentIntentId,
-                    'refund_amount' => $charge['amount_refunded'] ?? null,
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Handle dispute created
-     */
-    protected function handleDisputeCreated(array $dispute)
-    {
-        $chargeId = $dispute['charge'] ?? null;
-        
-        if ($chargeId) {
-            // Try to find transaction by charge ID or payment intent
-            $transaction = Transaction::where('payment_gateway_transaction_id', $chargeId)->first();
-            
-            // If not found, try to get payment intent from charge
-            if (!$transaction) {
-                try {
-                    $charge = Charge::retrieve($chargeId);
-                    $paymentIntentId = $charge->payment_intent ?? null;
-                    if ($paymentIntentId) {
-                        $transaction = Transaction::where('payment_gateway_transaction_id', $paymentIntentId)->first();
-                    }
-                } catch (\Exception $e) {
-                    Log::error('Error retrieving charge for dispute', ['error' => $e->getMessage()]);
-                }
-            }
-
-            if ($transaction) {
-                Log::warning('Dispute created for transaction', [
-                    'transaction_id' => $transaction->id,
-                    'dispute_id' => $dispute['id'],
-                    'dispute_reason' => $dispute['reason'] ?? null,
-                    'dispute_amount' => $dispute['amount'] ?? null,
-                ]);
-                
-                // Optionally update transaction status or create dispute record
-                // Transaction status remains unchanged, but you may want to track disputes
-            }
-        }
-    }
 
     #[OA\Post(
         path: "/stripe/refund",

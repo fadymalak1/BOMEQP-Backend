@@ -6,11 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\Category;
 use App\Models\SubCategory;
+use App\Services\CategoryManagementService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 
 class CategoryController extends Controller
 {
+    protected CategoryManagementService $categoryService;
+
+    public function __construct(CategoryManagementService $categoryService)
+    {
+        $this->categoryService = $categoryService;
+    }
     #[OA\Get(
         path: "/acc/categories",
         summary: "List ACC categories",
@@ -43,21 +51,17 @@ class CategoryController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Get category IDs assigned to this ACC
-        $assignedCategoryIds = $acc->categories()->pluck('categories.id')->toArray();
-        $createdCategoryIds = Category::where('created_by', $user->id)->pluck('id')->toArray();
-        $accessibleCategoryIds = array_unique(array_merge($assignedCategoryIds, $createdCategoryIds));
+        $accessibleCategoryIds = $this->categoryService->getAccessibleCategoryIds($acc, $user->id);
 
         // Query categories: assigned to ACC OR created by ACC's user
         $query = Category::with(['subCategories' => function($q) use ($accessibleCategoryIds, $user) {
-            // Only load subcategories that belong to accessible categories OR created by ACC
             $q->where(function($subQ) use ($accessibleCategoryIds, $user) {
                 $subQ->whereIn('category_id', $accessibleCategoryIds)
                      ->orWhere('created_by', $user->id);
             });
         }])
-        ->where(function($q) use ($assignedCategoryIds, $user) {
-            $q->whereIn('id', $assignedCategoryIds)
+        ->where(function($q) use ($accessibleCategoryIds, $user) {
+            $q->whereIn('id', $accessibleCategoryIds)
               ->orWhere('created_by', $user->id);
         });
 
@@ -168,16 +172,16 @@ class CategoryController extends Controller
             'status' => 'required|in:active,inactive',
         ]);
 
-        $category = Category::create([
-            'name' => $request->name,
-            'name_ar' => $request->name_ar,
-            'description' => $request->description,
-            'icon_url' => $request->icon_url,
-            'status' => $request->status,
-            'created_by' => $request->user()->id,
-        ]);
-
-        return response()->json(['category' => $category], 201);
+        try {
+            $result = $this->categoryService->createCategory($request, $request->user()->id);
+            return response()->json(['category' => $result['category']], 201);
+        } catch (\Exception $e) {
+            Log::error('Failed to create category', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to create category',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 
     /**
@@ -224,13 +228,6 @@ class CategoryController extends Controller
     {
         $category = Category::findOrFail($id);
 
-        // Check if category was created by this ACC's user
-        if ($category->created_by !== $request->user()->id) {
-            return response()->json([
-                'message' => 'You can only update categories you created'
-            ], 403);
-        }
-
         $request->validate([
             'name' => 'sometimes|string|max:255',
             'name_ar' => 'nullable|string|max:255',
@@ -239,12 +236,24 @@ class CategoryController extends Controller
             'status' => 'sometimes|in:active,inactive',
         ]);
 
-        $category->update($request->only(['name', 'name_ar', 'description', 'icon_url', 'status']));
+        try {
+            $result = $this->categoryService->updateCategory($request, $category, $request->user()->id);
+            
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['code']);
+            }
 
-        return response()->json([
-            'message' => 'Category updated successfully',
-            'category' => $category
-        ], 200);
+            return response()->json([
+                'message' => $result['message'],
+                'category' => $result['category']
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to update category', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to update category',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 
     /**
@@ -278,16 +287,21 @@ class CategoryController extends Controller
     {
         $category = Category::findOrFail($id);
 
-        // Check if category was created by this ACC's user
-        if ($category->created_by !== $request->user()->id) {
+        try {
+            $result = $this->categoryService->deleteCategory($category, $request->user()->id);
+            
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['code']);
+            }
+
+            return response()->json(['message' => $result['message']], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete category', ['error' => $e->getMessage()]);
             return response()->json([
-                'message' => 'You can only delete categories you created'
-            ], 403);
+                'message' => 'Failed to delete category',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        $category->delete();
-
-        return response()->json(['message' => 'Category deleted successfully'], 200);
     }
 
     #[OA\Post(
@@ -342,27 +356,21 @@ class CategoryController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Check if category is accessible: assigned to ACC OR created by ACC's user
-        $category = Category::findOrFail($request->category_id);
-        $isAssigned = $acc->categories()->where('categories.id', $request->category_id)->exists();
-        $isCreatedByAcc = $category->created_by === $user->id;
+        try {
+            $result = $this->categoryService->createSubCategory($request, $acc, $user->id);
+            
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['code']);
+            }
 
-        if (!$isAssigned && !$isCreatedByAcc) {
+            return response()->json(['sub_category' => $result['sub_category']], 201);
+        } catch (\Exception $e) {
+            Log::error('Failed to create subcategory', ['error' => $e->getMessage()]);
             return response()->json([
-                'message' => 'You can only create sub categories for categories assigned to you or created by you'
-            ], 403);
+                'message' => 'Failed to create subcategory',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        $subCategory = SubCategory::create([
-            'category_id' => $request->category_id,
-            'name' => $request->name,
-            'name_ar' => $request->name_ar,
-            'description' => $request->description,
-            'status' => $request->status,
-            'created_by' => $request->user()->id,
-        ]);
-
-        return response()->json(['sub_category' => $subCategory], 201);
     }
 
     #[OA\Get(
@@ -399,10 +407,7 @@ class CategoryController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Get category IDs assigned to this ACC or created by ACC
-        $assignedCategoryIds = $acc->categories()->pluck('categories.id')->toArray();
-        $createdCategoryIds = Category::where('created_by', $user->id)->pluck('id')->toArray();
-        $accessibleCategoryIds = array_unique(array_merge($assignedCategoryIds, $createdCategoryIds));
+        $accessibleCategoryIds = $this->categoryService->getAccessibleCategoryIds($acc, $user->id);
 
         $query = SubCategory::with('category')
             ->whereIn('category_id', $accessibleCategoryIds);
@@ -520,19 +525,6 @@ class CategoryController extends Controller
         }
 
         $subCategory = SubCategory::with('category')->findOrFail($id);
-        $category = $subCategory->category;
-
-        // Check if subcategory is accessible: belongs to assigned category OR created by ACC
-        $isCategoryAssigned = $acc->categories()->where('categories.id', $category->id)->exists();
-        $isCategoryCreatedByAcc = $category->created_by === $user->id;
-        $isSubCategoryCreatedByAcc = $subCategory->created_by === $user->id;
-
-        // Can update if: created by ACC OR (belongs to assigned/created category AND created by ACC)
-        if (!$isSubCategoryCreatedByAcc && !($isCategoryAssigned || $isCategoryCreatedByAcc)) {
-            return response()->json([
-                'message' => 'You can only update sub categories you created or sub categories in accessible categories'
-            ], 403);
-        }
 
         $request->validate([
             'category_id' => 'sometimes|exists:categories,id',
@@ -545,22 +537,32 @@ class CategoryController extends Controller
         // If changing category_id, verify the new category is accessible
         if ($request->has('category_id') && $request->category_id != $subCategory->category_id) {
             $newCategory = Category::findOrFail($request->category_id);
-            $isNewCategoryAssigned = $acc->categories()->where('categories.id', $request->category_id)->exists();
-            $isNewCategoryCreatedByAcc = $newCategory->created_by === $user->id;
-
-            if (!$isNewCategoryAssigned && !$isNewCategoryCreatedByAcc) {
+            if (!$this->categoryService->isCategoryAccessible($newCategory, $acc, $user->id)) {
                 return response()->json([
                     'message' => 'You can only assign sub categories to categories assigned to you or created by you'
                 ], 403);
             }
+            $subCategory->category_id = $request->category_id;
         }
 
-        $subCategory->update($request->only(['category_id', 'name', 'name_ar', 'description', 'status']));
+        try {
+            $result = $this->categoryService->updateSubCategory($request, $subCategory, $acc, $user->id);
+            
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['code']);
+            }
 
-        return response()->json([
-            'message' => 'Sub category updated successfully',
-            'sub_category' => $subCategory->fresh()->load('category')
-        ], 200);
+            return response()->json([
+                'message' => $result['message'],
+                'sub_category' => $result['sub_category']->load('category')
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to update subcategory', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to update subcategory',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 
     /**
@@ -601,16 +603,21 @@ class CategoryController extends Controller
 
         $subCategory = SubCategory::with('category')->findOrFail($id);
 
-        // Check if sub category was created by this ACC's user
-        if ($subCategory->created_by !== $user->id) {
+        try {
+            $result = $this->categoryService->deleteSubCategory($subCategory, $user->id);
+            
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message']], $result['code']);
+            }
+
+            return response()->json(['message' => $result['message']], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete subcategory', ['error' => $e->getMessage()]);
             return response()->json([
-                'message' => 'You can only delete sub categories you created'
-            ], 403);
+                'message' => 'Failed to delete subcategory',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        $subCategory->delete();
-
-        return response()->json(['message' => 'Sub category deleted successfully'], 200);
     }
 }
 
