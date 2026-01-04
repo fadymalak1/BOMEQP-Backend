@@ -235,7 +235,8 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         
         // Profile
         Route::get('/profile', [App\Http\Controllers\API\TrainingCenter\ProfileController::class, 'show']);
-        Route::put('/profile', [App\Http\Controllers\API\TrainingCenter\ProfileController::class, 'update']);
+        Route::post('/profile', [App\Http\Controllers\API\TrainingCenter\ProfileController::class, 'update']); // POST for file uploads
+        Route::put('/profile', [App\Http\Controllers\API\TrainingCenter\ProfileController::class, 'update']); // PUT for backward compatibility
         
         Route::get('/accs', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'index']);
         Route::post('/accs/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'requestAuthorization']);
