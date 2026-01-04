@@ -136,11 +136,27 @@ class ProfileController extends Controller
     )]
     public function update(Request $request)
     {
+        // Increase execution time and memory limit for file uploads
+        set_time_limit(300); // 5 minutes
+        ini_set('max_execution_time', 300);
+        ini_set('memory_limit', '256M');
+        
         $user = $request->user();
         $instructor = Instructor::where('email', $user->email)->first();
 
         if (!$instructor) {
             return response()->json(['message' => 'Instructor not found'], 404);
+        }
+
+        // Check if request is too large before validation
+        $contentLength = $request->header('Content-Length');
+        if ($contentLength && $contentLength > 12 * 1024 * 1024) { // 12MB
+            return response()->json([
+                'message' => 'Request size exceeds maximum allowed size of 12MB',
+                'error' => 'Request too large',
+                'error_code' => 'request_too_large',
+                'content_length' => $contentLength
+            ], 413);
         }
 
         $request->validate([
@@ -187,43 +203,133 @@ class ProfileController extends Controller
         // Handle CV file upload
         if ($request->hasFile('cv')) {
             try {
+                $cvFile = $request->file('cv');
+                
+                // Validate file before processing
+                if (!$cvFile->isValid()) {
+                    return response()->json([
+                        'message' => 'Invalid CV file. Please ensure the file is a valid PDF and try again.',
+                        'error' => 'File validation failed',
+                        'error_code' => 'invalid_file'
+                    ], 422);
+                }
+                
+                // Check file size (10MB = 10485760 bytes)
+                $maxSize = 10 * 1024 * 1024; // 10MB in bytes
+                $fileSize = $cvFile->getSize();
+                
+                if ($fileSize > $maxSize) {
+                    return response()->json([
+                        'message' => 'CV file size exceeds the maximum allowed size of 10MB',
+                        'error' => 'File too large',
+                        'error_code' => 'file_too_large',
+                        'file_size' => $fileSize,
+                        'max_size' => $maxSize
+                    ], 422);
+                }
+                
+                // Check available disk space
+                $freeSpace = disk_free_space(storage_path('app/public'));
+                if ($freeSpace !== false && $freeSpace < $fileSize * 2) {
+                    return response()->json([
+                        'message' => 'Insufficient disk space to upload file',
+                        'error' => 'Disk space insufficient',
+                        'error_code' => 'insufficient_space'
+                    ], 507); // 507 Insufficient Storage
+                }
+                
                 // Delete old CV file if exists
                 if ($instructor->cv_url) {
-                    $urlParts = parse_url($instructor->cv_url);
-                    $path = ltrim($urlParts['path'] ?? '', '/');
-                    // Try multiple patterns to extract filename
-                    $oldFileName = null;
-                    if (preg_match('#instructors/cv/(.+)$#', $path, $matches)) {
-                        $oldFileName = $matches[1];
-                    } elseif (preg_match('#storage/instructors/cv/(.+)$#', $path, $matches)) {
-                        $oldFileName = $matches[1];
-                    } elseif (preg_match('#api/storage/instructors/cv/(.+)$#', $path, $matches)) {
-                        $oldFileName = $matches[1];
-                    }
-                    
-                    if ($oldFileName) {
-                        $oldFilePath = 'instructors/cv/' . $oldFileName;
-                        if (Storage::disk('public')->exists($oldFilePath)) {
-                            Storage::disk('public')->delete($oldFilePath);
-                            \Log::info('Deleted old CV file', ['instructor_id' => $instructor->id, 'file' => $oldFilePath]);
+                    try {
+                        $urlParts = parse_url($instructor->cv_url);
+                        $path = ltrim($urlParts['path'] ?? '', '/');
+                        // Try multiple patterns to extract filename
+                        $oldFileName = null;
+                        if (preg_match('#instructors/cv/(.+)$#', $path, $matches)) {
+                            $oldFileName = $matches[1];
+                        } elseif (preg_match('#storage/instructors/cv/(.+)$#', $path, $matches)) {
+                            $oldFileName = $matches[1];
+                        } elseif (preg_match('#api/storage/instructors/cv/(.+)$#', $path, $matches)) {
+                            $oldFileName = $matches[1];
                         }
+                        
+                        if ($oldFileName) {
+                            $oldFilePath = 'instructors/cv/' . $oldFileName;
+                            if (Storage::disk('public')->exists($oldFilePath)) {
+                                Storage::disk('public')->delete($oldFilePath);
+                                \Log::info('Deleted old CV file', ['instructor_id' => $instructor->id, 'file' => $oldFilePath]);
+                            }
+                        }
+                    } catch (\Exception $deleteError) {
+                        \Log::warning('Failed to delete old CV file', [
+                            'instructor_id' => $instructor->id,
+                            'error' => $deleteError->getMessage()
+                        ]);
+                        // Continue with upload even if old file deletion fails
                     }
                 }
 
                 // Upload new CV file
-                $cvFile = $request->file('cv');
                 $originalName = $cvFile->getClientOriginalName();
                 $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
-                $fileName = time() . '_' . $instructor->training_center_id . '_' . $sanitizedName;
+                $fileName = time() . '_' . $instructor->id . '_' . $sanitizedName;
                 
-                // Ensure the directory exists
+                // Set execution time limit for large file uploads
+                set_time_limit(300); // 5 minutes
+                ini_set('max_execution_time', 300);
+                
+                // Ensure the directory exists with proper permissions
                 $directory = 'instructors/cv';
-                if (!Storage::disk('public')->exists($directory)) {
-                    Storage::disk('public')->makeDirectory($directory);
+                $directoryPath = storage_path('app/public/' . $directory);
+                if (!file_exists($directoryPath)) {
+                    if (!mkdir($directoryPath, 0755, true)) {
+                        \Log::error('Failed to create CV directory', [
+                            'instructor_id' => $instructor->id,
+                            'directory' => $directoryPath
+                        ]);
+                        return response()->json([
+                            'message' => 'Failed to create storage directory',
+                            'error' => 'Directory creation failed',
+                            'error_code' => 'directory_creation_failed'
+                        ], 500);
+                    }
                 }
                 
-                // Store the file
-                $cvPath = $cvFile->storeAs($directory, $fileName, 'public');
+                // Check directory permissions
+                if (!is_writable($directoryPath)) {
+                    \Log::error('CV directory is not writable', [
+                        'instructor_id' => $instructor->id,
+                        'directory' => $directoryPath,
+                        'permissions' => substr(sprintf('%o', fileperms($directoryPath)), -4)
+                    ]);
+                    return response()->json([
+                        'message' => 'Storage directory is not writable. Please contact administrator.',
+                        'error' => 'Directory not writable',
+                        'error_code' => 'directory_not_writable'
+                    ], 500);
+                }
+                
+                // Store the file with error handling
+                try {
+                    $cvPath = $cvFile->storeAs($directory, $fileName, 'public');
+                    
+                    if (!$cvPath) {
+                        throw new \Exception('File storage returned false');
+                    }
+                } catch (\Exception $storeError) {
+                    \Log::error('Failed to store CV file', [
+                        'instructor_id' => $instructor->id,
+                        'error' => $storeError->getMessage(),
+                        'trace' => $storeError->getTraceAsString(),
+                        'file_name' => $fileName,
+                        'directory' => $directory
+                    ]);
+                    return response()->json([
+                        'message' => 'Failed to store CV file. Please check file permissions and try again.',
+                        'error' => config('app.debug') ? $storeError->getMessage() : 'File storage failed',
+                        'error_code' => 'file_storage_failed'
+                    ], 500);
+                }
                 
                 // Verify file was actually stored
                 $fullPath = Storage::disk('public')->path($cvPath);
@@ -231,7 +337,7 @@ class ProfileController extends Controller
                 $fileSize = $fileExists ? filesize($fullPath) : 0;
                 
                 if ($cvPath && $fileExists && $fileSize > 0) {
-                    // Generate URL using the API route (route is /storage/instructors/cv/{filename} in api.php, so it becomes /api/storage/instructors/cv/{filename})
+                    // Generate URL using the API route
                     $newCvUrl = url('/api/storage/instructors/cv/' . $fileName);
                     $updateData['cv_url'] = $newCvUrl;
                     \Log::info('CV file uploaded successfully', [
@@ -245,7 +351,7 @@ class ProfileController extends Controller
                         'file_exists' => $fileExists
                     ]);
                 } else {
-                    \Log::error('Failed to store CV file', [
+                    \Log::error('Failed to verify CV file after upload', [
                         'instructor_id' => $instructor->id,
                         'file_name' => $fileName,
                         'cv_path' => $cvPath,
@@ -254,19 +360,34 @@ class ProfileController extends Controller
                         'full_path' => $fullPath ?? 'N/A'
                     ]);
                     return response()->json([
-                        'message' => 'Failed to store CV file',
-                        'error' => 'File storage failed or file not found after upload'
+                        'message' => 'File was uploaded but could not be verified. Please try again.',
+                        'error' => 'File verification failed',
+                        'error_code' => 'file_verification_failed'
                     ], 500);
                 }
+            } catch (\Illuminate\Http\Exceptions\PostTooLargeException $e) {
+                \Log::error('CV file upload failed - file too large', [
+                    'instructor_id' => $instructor->id,
+                    'error' => $e->getMessage()
+                ]);
+                return response()->json([
+                    'message' => 'CV file size exceeds server limits. Maximum size is 10MB.',
+                    'error' => 'File too large for server configuration',
+                    'error_code' => 'post_too_large'
+                ], 413); // 413 Payload Too Large
             } catch (\Exception $e) {
                 \Log::error('Error uploading CV file', [
                     'instructor_id' => $instructor->id,
                     'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
+                    'error_class' => get_class($e),
+                    'trace' => $e->getTraceAsString(),
+                    'file_size' => $request->hasFile('cv') ? $request->file('cv')->getSize() : null
                 ]);
                 return response()->json([
-                    'message' => 'Failed to upload CV file',
-                    'error' => config('app.debug') ? $e->getMessage() : 'File upload failed'
+                    'message' => 'Failed to upload CV file. Please ensure the file is a valid PDF and try again.',
+                    'error' => config('app.debug') ? $e->getMessage() : 'File upload failed',
+                    'error_code' => 'upload_failed',
+                    'error_class' => config('app.debug') ? get_class($e) : null
                 ], 500);
             }
         }

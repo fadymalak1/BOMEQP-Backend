@@ -34,6 +34,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], 404);
             }
         });
+
+        // Handle PostTooLargeException for API routes
+        $exceptions->render(function (\Illuminate\Http\Exceptions\PostTooLargeException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'message' => 'File size exceeds server limits. Maximum size is 10MB.',
+                    'error' => 'File too large',
+                    'error_code' => 'post_too_large'
+                ], 413);
+            }
+        });
     })
     ->withMiddleware(function (Middleware $middleware): void {
         // Configure unauthenticated responses for API routes

@@ -32,3 +32,19 @@
     php_value max_input_time 300
     php_value memory_limit 256M
 </IfModule>
+
+# For PHP-FPM
+<IfModule mod_fastcgi.c>
+    <FilesMatch "\.php$">
+        SetHandler "proxy:unix:/var/run/php/php-fpm.sock|fcgi://localhost"
+    </FilesMatch>
+</IfModule>
+
+# Increase upload limits for file uploads
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 12M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+    php_value memory_limit 256M
+</IfModule>
