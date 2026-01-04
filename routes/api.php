@@ -232,6 +232,11 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
     // Training Center routes
     Route::prefix('training-center')->middleware(['role:training_center_admin'])->group(function () {
         Route::get('/dashboard', [App\Http\Controllers\API\TrainingCenter\DashboardController::class, 'index']);
+        
+        // Profile
+        Route::get('/profile', [App\Http\Controllers\API\TrainingCenter\ProfileController::class, 'show']);
+        Route::put('/profile', [App\Http\Controllers\API\TrainingCenter\ProfileController::class, 'update']);
+        
         Route::get('/accs', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'index']);
         Route::post('/accs/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'requestAuthorization']);
         Route::get('/authorizations', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'authorizations']);
