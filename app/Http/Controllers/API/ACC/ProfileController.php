@@ -296,17 +296,24 @@ class ProfileController extends Controller
         $hasLogoFile = $request->hasFile('logo');
         $hasDocumentFiles = false;
         
-        // Check for document files
-        if ($request->has('documents') && is_array($request->input('documents'))) {
-            $documents = $request->input('documents', []);
-            foreach ($documents as $index => $docData) {
-                $fileKey = "documents.{$index}.file";
-                if ($request->hasFile($fileKey)) {
-                    $hasDocumentFiles = true;
-                    break;
-                }
+        // Check for document files - handle nested array structure in multipart/form-data
+        // Laravel handles nested file arrays differently, so we check all files
+        $allFiles = $request->allFiles();
+        foreach ($allFiles as $key => $file) {
+            // Check if it's a logo file
+            if ($key === 'logo') {
+                $hasLogoFile = true;
+            }
+            // Check if it's a document file (documents[0][file], documents[1][file], etc.)
+            if (preg_match('/^documents\[\d+\]\[file\]$/', $key) || 
+                preg_match('/^documents\.\d+\.file$/', $key)) {
+                $hasDocumentFiles = true;
+                break;
             }
         }
+        
+        // Also check if documents array is provided (even without files, might update document_type)
+        $hasDocumentsInput = $request->has('documents') && is_array($request->input('documents'));
 
         try {
             DB::beginTransaction();
@@ -330,27 +337,30 @@ class ProfileController extends Controller
             // Process logo file upload
             if ($hasLogoFile) {
                 $logoFile = $request->file('logo');
-                // Check if file is valid before processing
-                if ($logoFile && $logoFile->isValid()) {
-                    $logoResult = $this->handleLogoUpload($request, $acc);
-                    if ($logoResult['success']) {
-                        $updateData['logo_url'] = $logoResult['logo_url'];
-                        $uploadedFiles[] = $logoResult['file_path'];
-                        $hasFileUpdates = true;
-                        $acc->update(['logo_url' => $logoResult['logo_url']]);
-                        $acc->refresh();
+                // Check if file exists and is valid before processing
+                if ($logoFile) {
+                    if ($logoFile->isValid()) {
+                        $logoResult = $this->handleLogoUpload($request, $acc);
+                        if ($logoResult['success']) {
+                            $updateData['logo_url'] = $logoResult['logo_url'];
+                            $uploadedFiles[] = $logoResult['file_path'];
+                            $hasFileUpdates = true;
+                            $acc->update(['logo_url' => $logoResult['logo_url']]);
+                            $acc->refresh();
+                        } else {
+                            throw new \Exception($logoResult['error']);
+                        }
                     } else {
-                        throw new \Exception($logoResult['error']);
+                        // File exists but is invalid
+                        $errorCode = $logoFile->getError();
+                        throw new \Exception('Invalid logo file uploaded. Error code: ' . $errorCode);
                     }
                 } else {
-                    // File exists but is invalid
-                    throw new \Exception('Invalid logo file uploaded');
+                    throw new \Exception('Logo file not found in request');
                 }
             }
 
             // Process document uploads/updates
-            $hasDocumentsInput = $request->has('documents') && is_array($request->input('documents'));
-            
             // Process documents if we have input or detected files
             if ($hasDocumentsInput || $hasDocumentFiles) {
                 $docResult = $this->handleDocuments($request, $acc);
@@ -616,6 +626,18 @@ class ProfileController extends Controller
         $oldFilesToDelete = [];
         
         $documents = $request->input('documents', []);
+        $allFiles = $request->allFiles();
+        
+        // Build a map of file keys to their index
+        $fileMap = [];
+        foreach ($allFiles as $key => $file) {
+            // Handle both formats: documents[0][file] and documents.0.file
+            if (preg_match('/^documents\[(\d+)\]\[file\]$/', $key, $matches)) {
+                $fileMap[(int)$matches[1]] = $key;
+            } elseif (preg_match('/^documents\.(\d+)\.file$/', $key, $matches)) {
+                $fileMap[(int)$matches[1]] = $key;
+            }
+        }
         
         foreach ($documents as $index => $docData) {
             if (!is_array($docData)) {
@@ -624,65 +646,108 @@ class ProfileController extends Controller
 
             $documentId = $docData['id'] ?? null;
             $documentType = $docData['document_type'] ?? null;
-            $fileKey = "documents.{$index}.file";
+            
+            // Get file using the mapped key or try standard formats
+            $file = null;
+            if (isset($fileMap[$index])) {
+                $file = $request->file($fileMap[$index]);
+            } else {
+                // Try standard Laravel nested array formats
+                $file = $request->file("documents.{$index}.file") ?? 
+                        $request->file("documents[{$index}][file]");
+            }
             
             // Handle file upload
-            if ($request->hasFile($fileKey)) {
-                $file = $request->file($fileKey);
-                
-                if ($file && $file->isValid()) {
-                    // Validate document type
-                    if (!$documentType || !in_array($documentType, ['license', 'registration', 'certificate', 'other'])) {
-                        throw new \Exception("Invalid document type for document at index {$index}");
-                    }
+            if ($file && $file->isValid()) {
+                // Validate document type
+                if (!$documentType || !in_array($documentType, ['license', 'registration', 'certificate', 'other'])) {
+                    throw new \Exception("Invalid document type for document at index {$index}. Must be one of: license, registration, certificate, other");
+                }
 
-                    // Store file
-                    $directory = 'accs/' . $acc->id . '/documents';
-                    $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
-                    $path = $file->storeAs($directory, $fileName, 'public');
-                    $url = Storage::disk('public')->url($path);
+                // Ensure directory exists
+                $directory = 'accs/' . $acc->id . '/documents';
+                if (!Storage::disk('public')->exists($directory)) {
+                    Storage::disk('public')->makeDirectory($directory);
+                }
+
+                // Store file
+                $originalName = $file->getClientOriginalName();
+                $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+                $fileName = time() . '_' . $acc->id . '_' . Str::random(10) . '_' . $sanitizedName;
+                $path = $file->storeAs($directory, $fileName, 'public');
+                
+                // Verify file was stored
+                if (!$path || !Storage::disk('public')->exists($path)) {
+                    throw new \Exception("Failed to store document file at index {$index}");
+                }
+                
+                $url = Storage::disk('public')->url($path);
+                $uploadedFiles[] = $path;
+                
+                if ($documentId) {
+                    // Update existing document
+                    $document = ACCDocument::where('id', $documentId)
+                        ->where('acc_id', $acc->id)
+                        ->lockForUpdate()
+                        ->first();
                     
-                    $uploadedFiles[] = $path;
+                    if (!$document) {
+                        throw new \Exception("Document with ID {$documentId} not found or does not belong to this ACC");
+                    }
                     
-                    if ($documentId) {
-                        // Update existing document
-                        $document = ACCDocument::where('id', $documentId)
-                            ->where('acc_id', $acc->id)
-                            ->lockForUpdate()
-                            ->first();
-                        
-                        if (!$document) {
-                            throw new \Exception("Document with ID {$documentId} not found");
-                        }
-                        
-                        // Track old file for deletion
-                        if ($document->document_url) {
+                    // Track old file for deletion
+                    if ($document->document_url) {
+                        try {
                             $oldPath = str_replace(Storage::disk('public')->url(''), '', $document->document_url);
+                            // Also try removing /storage prefix if present
+                            $oldPath = ltrim($oldPath, '/storage/');
+                            $oldPath = ltrim($oldPath, 'storage/');
                             if (Storage::disk('public')->exists($oldPath)) {
                                 $oldFilesToDelete[] = $oldPath;
                             }
+                        } catch (\Exception $e) {
+                            Log::warning('Failed to extract old document path', [
+                                'acc_id' => $acc->id,
+                                'document_id' => $documentId,
+                                'document_url' => $document->document_url,
+                                'error' => $e->getMessage()
+                            ]);
                         }
-                        
-                        $document->update([
-                            'document_type' => $documentType,
-                            'document_url' => $url,
-                            'uploaded_at' => now(),
-                            'verified' => false,
-                            'verified_by' => null,
-                            'verified_at' => null,
-                        ]);
-                        $updatedDocuments[] = $document->id;
-                    } else {
-                        // Create new document
-                        $newDocument = ACCDocument::create([
-                            'acc_id' => $acc->id,
-                            'document_type' => $documentType,
-                            'document_url' => $url,
-                            'uploaded_at' => now(),
-                            'verified' => false,
-                        ]);
-                        $updatedDocuments[] = $newDocument->id;
                     }
+                    
+                    $document->update([
+                        'document_type' => $documentType,
+                        'document_url' => $url,
+                        'uploaded_at' => now(),
+                        'verified' => false,
+                        'verified_by' => null,
+                        'verified_at' => null,
+                    ]);
+                    $updatedDocuments[] = $document->id;
+                    
+                    Log::info('ACC document updated', [
+                        'acc_id' => $acc->id,
+                        'document_id' => $documentId,
+                        'document_type' => $documentType,
+                        'file_name' => $fileName
+                    ]);
+                } else {
+                    // Create new document
+                    $newDocument = ACCDocument::create([
+                        'acc_id' => $acc->id,
+                        'document_type' => $documentType,
+                        'document_url' => $url,
+                        'uploaded_at' => now(),
+                        'verified' => false,
+                    ]);
+                    $updatedDocuments[] = $newDocument->id;
+                    
+                    Log::info('ACC document created', [
+                        'acc_id' => $acc->id,
+                        'document_id' => $newDocument->id,
+                        'document_type' => $documentType,
+                        'file_name' => $fileName
+                    ]);
                 }
             } elseif ($documentId && isset($docData['document_type'])) {
                 // Update document type only (no file upload)
@@ -692,11 +757,11 @@ class ProfileController extends Controller
                     ->first();
                 
                 if (!$document) {
-                    throw new \Exception("Document with ID {$documentId} not found");
+                    throw new \Exception("Document with ID {$documentId} not found or does not belong to this ACC");
                 }
                 
                 if (!in_array($docData['document_type'], ['license', 'registration', 'certificate', 'other'])) {
-                    throw new \Exception("Invalid document type: {$docData['document_type']}");
+                    throw new \Exception("Invalid document type: {$docData['document_type']}. Must be one of: license, registration, certificate, other");
                 }
 
                 $document->update(['document_type' => $docData['document_type']]);

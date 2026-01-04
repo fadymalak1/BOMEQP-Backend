@@ -1,46 +1,29 @@
 # ACC Profile API Documentation
 
-## نظرة عامة
+## نظرة عامة / Overview
 
-هذا التوثيق يشرح بالتفصيل جميع endpoints المتعلقة بإدارة ملف ACC الشخصي (Profile). هذه الـ APIs تسمح لـ ACC بإدارة معلوماته الشخصية، رفع الشعار، إدارة المستندات، وربط حساب Stripe.
+هذا التوثيق يشرح جميع الـ APIs المتعلقة ببيانات الـ ACC Profile. يتيح هذا الـ API للـ ACCs عرض وتحديث بياناتهم الشخصية، بما في ذلك المعلومات الأساسية، الشعار (Logo)، والمستندات (PDF Documents).
 
----
-
-## Base URL
-
-```
-https://your-domain.com/api
-```
-
----
-
-## Authentication
-
-جميع الـ endpoints تتطلب مصادقة باستخدام Laravel Sanctum. يجب إرسال Bearer Token في header:
-
-```
-Authorization: Bearer {your_token_here}
-```
+This documentation explains all APIs related to ACC Profile data. This API allows ACCs to view and update their profile information, including basic information, logo, and PDF documents.
 
 ---
 
 ## Endpoints
 
-### 1. الحصول على ملف ACC الشخصي
+### 1. عرض بيانات الـ Profile / Get Profile
 
-**GET** `/acc/profile`
+**Endpoint:** `GET /api/acc/profile`
 
-#### الوصف
-يحصل على جميع معلومات ملف ACC الشخصي بما في ذلك البيانات الأساسية، العناوين، الشعار، المستندات، ومعلومات Stripe.
+**الوصف / Description:**
+يعيد جميع بيانات الـ ACC Profile بما في ذلك المعلومات الأساسية، الشعار، والمستندات.
 
-#### Headers
-```
-Authorization: Bearer {token}
-Content-Type: application/json
-```
+Returns all ACC Profile data including basic information, logo, and documents.
 
-#### Response Success (200)
+**المتطلبات / Requirements:**
+- Authentication: مطلوب (Bearer Token)
+- Role: `acc_admin`
 
+**Response (200):**
 ```json
 {
   "profile": {
@@ -65,7 +48,7 @@ Content-Type: application/json
       "postal_code": "12345"
     },
     "website": "https://example.com",
-    "logo_url": "https://your-domain.com/storage/accs/1/logo/1234567890_1_logo.png",
+    "logo_url": "https://example.com/storage/accs/1/logo/logo_file.png",
     "status": "active",
     "commission_percentage": 10.00,
     "stripe_account_id": "acct_xxxxxxxxxxxxx",
@@ -74,500 +57,417 @@ Content-Type: application/json
       {
         "id": 1,
         "document_type": "license",
-        "document_url": "https://your-domain.com/storage/accs/1/documents/abc123def456.pdf",
-        "uploaded_at": "2024-01-15T10:30:00.000000Z",
-        "verified": true,
-        "verified_by": {
-          "id": 5,
-          "name": "Admin User",
-          "email": "admin@example.com"
-        },
-        "verified_at": "2024-01-16T14:20:00.000000Z",
-        "created_at": "2024-01-15T10:30:00.000000Z",
-        "updated_at": "2024-01-16T14:20:00.000000Z"
+        "document_url": "https://example.com/storage/accs/1/documents/document_file.pdf",
+        "uploaded_at": "2024-01-01T00:00:00.000000Z",
+        "verified": false,
+        "verified_by": null,
+        "verified_at": null,
+        "created_at": "2024-01-01T00:00:00.000000Z",
+        "updated_at": "2024-01-01T00:00:00.000000Z"
       }
     ],
     "user": {
-      "id": 2,
+      "id": 1,
       "name": "ABC Accreditation Body",
       "email": "info@example.com",
       "role": "acc_admin",
       "status": "active"
     },
     "created_at": "2024-01-01T00:00:00.000000Z",
-    "updated_at": "2024-01-20T15:45:00.000000Z"
+    "updated_at": "2024-01-01T00:00:00.000000Z"
   }
 }
 ```
 
-#### Response Fields Description
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | integer | معرف ACC الفريد |
-| `name` | string | اسم ACC |
-| `legal_name` | string | الاسم القانوني لـ ACC |
-| `registration_number` | string | رقم التسجيل الفريد |
-| `email` | string | البريد الإلكتروني |
-| `phone` | string | رقم الهاتف |
-| `country` | string | الدولة |
-| `address` | string | العنوان الأساسي |
-| `mailing_address` | object | عنوان المراسلات (street, city, country, postal_code) |
-| `physical_address` | object | العنوان الفعلي (street, city, country, postal_code) |
-| `website` | string/nullable | موقع الويب |
-| `logo_url` | string/nullable | رابط الشعار |
-| `status` | string | حالة ACC (pending, active, suspended, expired) |
-| `commission_percentage` | float | نسبة العمولة |
-| `stripe_account_id` | string/nullable | معرف حساب Stripe |
-| `stripe_account_configured` | boolean | هل تم إعداد حساب Stripe |
-| `documents` | array | قائمة المستندات المرفوعة |
-| `user` | object/nullable | معلومات حساب المستخدم المرتبط |
-
-#### Document Object Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | integer | معرف المستند |
-| `document_type` | string | نوع المستند (license, registration, certificate, other) |
-| `document_url` | string | رابط المستند |
-| `uploaded_at` | datetime | تاريخ الرفع |
-| `verified` | boolean | هل تم التحقق من المستند |
-| `verified_by` | object/nullable | معلومات المستخدم الذي تحقق من المستند |
-| `verified_at` | datetime/nullable | تاريخ التحقق |
-| `created_at` | datetime | تاريخ الإنشاء |
-| `updated_at` | datetime | تاريخ آخر تحديث |
-
-#### Error Responses
-
-**401 Unauthorized**
-```json
-{
-  "message": "Unauthenticated"
-}
-```
-
-**404 Not Found**
-```json
-{
-  "message": "ACC not found"
-}
-```
+**Error Responses:**
+- `401 Unauthorized` - غير مسجل دخول أو Token غير صالح
+- `404 Not Found` - الـ ACC غير موجود
 
 ---
 
-### 2. تحديث ملف ACC الشخصي
+### 2. تحديث بيانات الـ Profile / Update Profile
 
-**PUT** `/acc/profile`
+**Endpoint:** `PUT /api/acc/profile`
 
-#### الوصف
-يسمح بتحديث معلومات ملف ACC الشخصي بشكل جزئي. **لا يتطلب إدخال جميع البيانات** - يمكنك تحديث أي حقل أو مجموعة حقول فقط. يدعم تحديث البيانات النصية ورفع الملفات بشكل منفصل أو معاً.
+**الوصف / Description:**
+يسمح للـ ACC بتحديث بياناته الشخصية. يمكن تحديث الحقول التالية:
+- المعلومات الأساسية (الاسم، العنوان، الهاتف، إلخ)
+- الشعار (Logo) - صورة
+- المستندات (Documents) - ملفات PDF
+- معلومات Stripe Account
 
-**الميزات الرئيسية:**
-- ✅ **تحديث جزئي**: لا حاجة لإرسال جميع الحقول - فقط الحقول التي تريد تحديثها
-- ✅ **تحديث البيانات النصية**: يمكن تحديث أي حقل نصي بشكل مستقل (الاسم، الهاتف، العنوان، الموقع الإلكتروني، إلخ)
-- ✅ **رفع الملفات**: يمكن رفع الشعار أو المستندات بشكل منفصل أو مع البيانات النصية
-- ✅ **الدمج المرن**: يمكن دمج تحديث البيانات النصية مع رفع الملفات في نفس الطلب
-- ✅ **تنسيقات متعددة**: يعمل مع `application/json` (للبيانات النصية) و `multipart/form-data` (للملفات)
-- ✅ **أمان**: جميع العمليات تتم داخل transaction مع إمكانية التراجع التلقائي
+Allows the ACC to update their profile information. The following fields can be updated:
+- Basic information (name, address, phone, etc.)
+- Logo (image file)
+- Documents (PDF files)
+- Stripe Account information
 
-#### Headers
+**المتطلبات / Requirements:**
+- Authentication: مطلوب (Bearer Token)
+- Role: `acc_admin`
+- Content-Type: `multipart/form-data` (لرفع الملفات / for file uploads)
 
-**لرفع الملفات (multipart/form-data):**
-```
-Authorization: Bearer {token}
-Content-Type: multipart/form-data
-```
+**الحقول القابلة للتحديث / Updatable Fields:**
 
-**لإرسال JSON فقط:**
-```
-Authorization: Bearer {token}
-Content-Type: application/json
-```
+| الحقل / Field | النوع / Type | مطلوب / Required | الوصف / Description |
+|---------------|--------------|------------------|---------------------|
+| `name` | string | لا / No | اسم الـ ACC |
+| `legal_name` | string | لا / No | الاسم القانوني |
+| `phone` | string | لا / No | رقم الهاتف |
+| `country` | string | لا / No | الدولة |
+| `address` | string | لا / No | العنوان الأساسي |
+| `mailing_street` | string | لا / No | شارع العنوان البريدي |
+| `mailing_city` | string | لا / No | مدينة العنوان البريدي |
+| `mailing_country` | string | لا / No | دولة العنوان البريدي |
+| `mailing_postal_code` | string | لا / No | الرمز البريدي |
+| `physical_street` | string | لا / No | شارع العنوان الفعلي |
+| `physical_city` | string | لا / No | مدينة العنوان الفعلي |
+| `physical_country` | string | لا / No | دولة العنوان الفعلي |
+| `physical_postal_code` | string | لا / No | الرمز البريدي للعنوان الفعلي |
+| `website` | string (URL) | لا / No | الموقع الإلكتروني |
+| `logo` | file (image) | لا / No | ملف الشعار (JPG, JPEG, PNG - حد أقصى 5MB) |
+| `logo_url` | string (URL) | لا / No | رابط الشعار (إذا لم يتم رفع ملف) |
+| `stripe_account_id` | string | لا / No | معرف حساب Stripe (يبدأ بـ acct_) |
+| `documents` | array | لا / No | مصفوفة المستندات (انظر التفاصيل أدناه) |
 
-#### Request Body Parameters
+**ملاحظات مهمة / Important Notes:**
+- يمكن تحديث أي حقل بشكل منفصل (Partial Updates مدعومة)
+- عند رفع ملف شعار جديد، سيتم حذف الشعار القديم تلقائياً
+- عند رفع مستند جديد، يمكن إنشاء مستند جديد أو تحديث مستند موجود
+- يمكن تحديث نوع المستند فقط دون رفع ملف جديد
 
-**مهم جداً:** جميع الحقول اختيارية تماماً. **لا يتطلب إدخال جميع البيانات** - فقط أرسل الحقول التي تريد تحديثها.
+- Any field can be updated separately (Partial Updates are supported)
+- When uploading a new logo file, the old logo will be automatically deleted
+- When uploading a new document, you can create a new document or update an existing one
+- You can update the document type only without uploading a new file
 
-**ما يمكنك فعله:**
+---
 
-1. **تحديث البيانات النصية فقط:**
-   - تحديث حقل واحد (مثل: الهاتف فقط)
-   - تحديث عدة حقول (مثل: الاسم والهاتف والدولة)
-   - تحديث أي مجموعة من الحقول النصية
+### 3. رفع الشعار (Logo) / Upload Logo
 
-2. **رفع الملفات فقط:**
-   - رفع الشعار فقط
-   - رفع مستند جديد فقط
-   - تحديث مستند موجود فقط
-   - رفع عدة مستندات معاً
+**الوصف / Description:**
+يمكن رفع ملف الشعار كصورة. الشعار يتم حفظه في مجلد خاص بالـ ACC.
 
-3. **دمج التحديثات:**
-   - تحديث بيانات نصية + رفع شعار
-   - تحديث بيانات نصية + رفع مستندات
-   - رفع شعار + رفع مستندات
-   - أي مجموعة من التحديثات النصية والملفات
+You can upload a logo file as an image. The logo is saved in a folder specific to the ACC.
 
-**القاعدة الأساسية:** الحقول التي لا يتم إرسالها لن تتأثر وستبقى قيمها كما هي.
-
-##### الحقول الأساسية
-
-| Parameter | Type | Required | Description | Validation |
-|-----------|------|----------|-------------|------------|
-| `name` | string | No | اسم ACC | max:255 |
-| `legal_name` | string | No | الاسم القانوني | max:255 |
-| `phone` | string | No | رقم الهاتف | max:255 |
-| `country` | string | No | الدولة | max:255 |
-| `address` | string | No | العنوان الأساسي | - |
-
-##### عناوين المراسلات (Mailing Address)
-
-| Parameter | Type | Required | Description | Validation |
-|-----------|------|----------|-------------|------------|
-| `mailing_street` | string | No | الشارع | max:255 |
-| `mailing_city` | string | No | المدينة | max:255 |
-| `mailing_country` | string | No | الدولة | max:255 |
-| `mailing_postal_code` | string | No | الرمز البريدي | max:20 |
-
-##### العناوين الفعلية (Physical Address)
-
-| Parameter | Type | Required | Description | Validation |
-|-----------|------|----------|-------------|------------|
-| `physical_street` | string | No | الشارع | max:255 |
-| `physical_city` | string | No | المدينة | max:255 |
-| `physical_country` | string | No | الدولة | max:255 |
-| `physical_postal_code` | string | No | الرمز البريدي | max:20 |
-
-##### معلومات إضافية
-
-| Parameter | Type | Required | Description | Validation |
-|-----------|------|----------|-------------|------------|
-| `website` | string | No | موقع الويب | URL format, max:255 |
-| `logo_url` | string | No | رابط الشعار (اختياري إذا تم رفع ملف) | URL format, max:255 |
-| `logo` | file | No | ملف الشعار للرفع | image (jpeg, jpg, png), max:5MB |
-| `stripe_account_id` | string | No | معرف حساب Stripe Connect | يجب أن يبدأ بـ "acct_" |
-
-##### المستندات (Documents)
-
-| Parameter | Type | Required | Description | Validation |
-|-----------|------|----------|-------------|------------|
-| `documents` | array | No | مصفوفة المستندات | - |
-| `documents[].id` | integer | No | معرف المستند (للتحديث) | يجب أن يكون موجود في قاعدة البيانات |
-| `documents[].document_type` | string | Yes* | نوع المستند | license, registration, certificate, other |
-| `documents[].file` | file | No | ملف المستند للرفع | pdf, jpg, jpeg, png, max:10MB |
-
-*مطلوب عند رفع مستند جديد أو تحديث نوع مستند موجود
-
-#### ملاحظات مهمة
-
-##### 1. التحديث الجزئي (Partial Updates)
-
-- **لا حاجة لإرسال جميع الحقول**: فقط أرسل الحقول التي تريد تحديثها
-- **الحقول غير المرسلة**: لن تتأثر وستبقى قيمها كما هي
-- **المرونة الكاملة**: يمكن تحديث حقل واحد أو عدة حقول أو جميع الحقول
-- **يعمل مع كلا التنسيقين**: `application/json` و `multipart/form-data`
-
-##### 2. تحديث البيانات النصية (Text Data Updates)
-
-**يمكن تحديث أي حقل نصي بشكل مستقل:**
-
-- **الحقول الأساسية**: `name`, `legal_name`, `phone`, `country`, `address`
-- **عناوين المراسلات**: `mailing_street`, `mailing_city`, `mailing_country`, `mailing_postal_code`
-- **العناوين الفعلية**: `physical_street`, `physical_city`, `physical_country`, `physical_postal_code`
-- **معلومات إضافية**: `website`, `logo_url`, `stripe_account_id`
-
-**قواعد التحديث:**
-- للحقول القابلة للتفريغ (nullable): يمكن إرسال قيمة فارغة لمسح الحقل
-- للحقول الإلزامية: لا يمكن إرسال قيمة فارغة (سيتم تجاهلها)
-- يمكن تحديث حقل واحد أو عدة حقول في نفس الطلب
-
-**أمثلة:**
-- تحديث الهاتف فقط: أرسل `{"phone": "+1234567890"}`
-- تحديث الاسم والهاتف: أرسل `{"name": "New Name", "phone": "+1234567890"}`
-- مسح الموقع الإلكتروني: أرسل `{"website": ""}`
-
-##### 3. رفع الملفات (File Uploads)
-
-**رفع الشعار:**
-- استخدم حقل `logo` لرفع ملف الشعار مباشرة (يُفضل)
-- أو استخدم حقل `logo_url` لإرسال رابط الشعار
-- إذا تم رفع ملف شعار، سيتم تجاهل `logo_url` تلقائياً
-- الشعار القديم سيتم حذفه تلقائياً عند رفع شعار جديد
-- الصيغ المدعومة: JPEG, JPG, PNG
+**المتطلبات / Requirements:**
+- نوع الملف: JPG, JPEG, PNG
 - الحد الأقصى للحجم: 5MB
-- **يمكن رفع الشعار فقط دون تحديث أي بيانات أخرى**
+- Content-Type: `multipart/form-data`
 
-**إدارة المستندات:**
-- **رفع مستند جديد**: أرسل `document_type` و `file` بدون `id`
-- **تحديث مستند موجود**: أرسل `id` و `file` و `document_type`
-- **تحديث نوع مستند فقط**: أرسل `id` و `document_type` بدون `file`
-- عند تحديث مستند، سيتم إعادة تعيين حالة التحقق إلى `false`
-- المستند القديم سيتم حذفه تلقائياً عند رفع مستند جديد
-- يمكن رفع مستندات متعددة في نفس الطلب
+**مثال على الطلب / Request Example:**
 
-##### 4. دمج التحديثات (Combining Updates)
+**Using cURL:**
+```bash
+curl -X PUT "https://example.com/api/acc/profile" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: multipart/form-data" \
+  -F "logo=@/path/to/logo.png"
+```
 
-**يمكن دمج أي تحديثات في نفس الطلب:**
+**Using JavaScript (FormData):**
+```javascript
+const formData = new FormData();
+formData.append('logo', logoFile); // logoFile is a File object
 
-- تحديث بيانات نصية + رفع شعار
-- تحديث بيانات نصية + رفع مستندات
-- رفع شعار + رفع مستندات
-- تحديث بيانات نصية + رفع شعار + رفع مستندات
-- أي مجموعة من التحديثات
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
+```
 
-**مثال:** يمكنك تحديث الاسم والهاتف ورفع شعار جديد في نفس الطلب.
+**Response (200):**
+```json
+{
+  "message": "Profile updated successfully",
+  "profile": {
+    "id": 1,
+    "name": "ABC Accreditation Body",
+    "logo_url": "https://example.com/storage/accs/1/logo/1234567890_1_logo.png",
+    ...
+  }
+}
+```
 
-##### 5. Stripe Account ID
+**Error Responses:**
+- `422 Validation Error` - خطأ في التحقق من صحة الملف (الحجم، النوع، إلخ)
+- `500 Server Error` - خطأ في الخادم أثناء رفع الملف
 
-- يجب أن يبدأ بـ "acct_"
-- يجب أن يكون معرف حساب Stripe Connect صحيح
-- يمكن تحديثه بشكل مستقل
-- **ملاحظة**: Group Admin فقط يمكنه إضافة/تحديث Stripe Account ID
+---
 
-##### 6. الأمان والموثوقية
+### 4. رفع المستندات (PDF Documents) / Upload PDF Documents
 
-- جميع العمليات تتم داخل transaction
-- في حالة حدوث خطأ، سيتم التراجع عن جميع التغييرات
-- الملفات المرفوعة سيتم حذفها تلقائياً في حالة الفشل
-- يتم التحقق من صحة الملفات قبل بدء المعالجة
-- يتم التحقق من صحة البيانات قبل المعالجة
+**الوصف / Description:**
+يمكن رفع مستندات PDF كجزء من تحديث الـ Profile. يمكن إنشاء مستندات جديدة أو تحديث مستندات موجودة.
 
-#### سيناريوهات الاستخدام
+You can upload PDF documents as part of profile updates. You can create new documents or update existing ones.
 
-##### السيناريو 1: تحديث البيانات النصية فقط
+**أنواع المستندات المدعومة / Supported Document Types:**
+- `license` - رخصة
+- `registration` - تسجيل
+- `certificate` - شهادة
+- `other` - أخرى
 
-**تحديث حقل واحد:**
-- تحديث الهاتف فقط: أرسل `{"phone": "+1234567890"}`
-- تحديث الاسم فقط: أرسل `{"name": "New Name"}`
-- تحديث الموقع الإلكتروني فقط: أرسل `{"website": "https://example.com"}`
-- أي حقل نصي يمكن تحديثه بشكل مستقل
+**المتطلبات / Requirements:**
+- نوع الملف: PDF, JPG, JPEG, PNG
+- الحد الأقصى للحجم: 10MB لكل ملف
+- Content-Type: `multipart/form-data`
 
-**تحديث عدة حقول:**
-- تحديث الاسم والهاتف: أرسل `{"name": "New Name", "phone": "+1234567890"}`
-- تحديث معلومات العنوان: أرسل `{"address": "New Address", "country": "Egypt"}`
-- تحديث أي مجموعة من الحقول النصية
+**هيكل المستندات / Documents Structure:**
 
-##### السيناريو 2: رفع الملفات فقط
+المستندات يتم إرسالها كمصفوفة (array) في الطلب. كل عنصر في المصفوفة يحتوي على:
 
-**رفع الشعار فقط:**
-- استخدم `multipart/form-data` وأرسل `logo` فقط
-- لا حاجة لإرسال أي بيانات نصية
+Documents are sent as an array in the request. Each element in the array contains:
 
-**رفع مستند جديد فقط:**
-- استخدم `multipart/form-data` وأرسل `documents` فقط
-- أرسل `document_type` و `file` لكل مستند
+- `id` (اختياري / optional): معرف المستند الموجود (للتحديث)
+- `document_type` (مطلوب / required): نوع المستند
+- `file` (اختياري / optional): ملف المستند (للمستندات الجديدة أو التحديث)
 
-**تحديث مستند موجود:**
-- أرسل `documents` مع `id` و `file` و `document_type`
+**مثال على الطلب / Request Examples:**
 
-##### السيناريو 3: دمج التحديثات النصية والملفات
+**إنشاء مستند جديد / Create New Document:**
 
-**تحديث بيانات نصية + رفع شعار:**
-- استخدم `multipart/form-data`
-- أرسل الحقول النصية (مثل: `name`, `phone`) + `logo`
+**Using cURL:**
+```bash
+curl -X PUT "https://example.com/api/acc/profile" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: multipart/form-data" \
+  -F "documents[0][document_type]=license" \
+  -F "documents[0][file]=@/path/to/license.pdf"
+```
 
-**تحديث بيانات نصية + رفع مستندات:**
-- استخدم `multipart/form-data`
-- أرسل الحقول النصية + `documents`
+**Using JavaScript (FormData):**
+```javascript
+const formData = new FormData();
+formData.append('documents[0][document_type]', 'license');
+formData.append('documents[0][file]', licenseFile); // licenseFile is a File object
 
-**تحديث شامل:**
-- تحديث بيانات نصية + رفع شعار + رفع مستندات
-- كل شيء في نفس الطلب
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
+```
 
-##### السيناريو 4: مسح الحقول القابلة للتفريغ
+**تحديث مستند موجود / Update Existing Document:**
 
-- مسح الموقع الإلكتروني: أرسل `{"website": ""}`
-- مسح العنوان: أرسل `{"address": ""}`
-- أي حقل nullable يمكن مسحه بإرسال قيمة فارغة
+**Using cURL:**
+```bash
+curl -X PUT "https://example.com/api/acc/profile" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: multipart/form-data" \
+  -F "documents[0][id]=1" \
+  -F "documents[0][document_type]=license" \
+  -F "documents[0][file]=@/path/to/new_license.pdf"
+```
 
-#### Response Success (200)
+**Using JavaScript (FormData):**
+```javascript
+const formData = new FormData();
+formData.append('documents[0][id]', '1');
+formData.append('documents[0][document_type]', 'license');
+formData.append('documents[0][file]', newLicenseFile);
 
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
+```
+
+**تحديث نوع المستند فقط (بدون رفع ملف جديد) / Update Document Type Only:**
+
+**Using cURL:**
+```bash
+curl -X PUT "https://example.com/api/acc/profile" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "documents": [
+      {
+        "id": 1,
+        "document_type": "certificate"
+      }
+    ]
+  }'
+```
+
+**رفع عدة مستندات في نفس الوقت / Upload Multiple Documents:**
+
+**Using JavaScript (FormData):**
+```javascript
+const formData = new FormData();
+
+// Document 1 - New document
+formData.append('documents[0][document_type]', 'license');
+formData.append('documents[0][file]', licenseFile);
+
+// Document 2 - Update existing document
+formData.append('documents[1][id]', '2');
+formData.append('documents[1][document_type]', 'registration');
+formData.append('documents[1][file]', registrationFile);
+
+// Document 3 - Update type only
+formData.append('documents[2][id]', '3');
+formData.append('documents[2][document_type]', 'certificate');
+
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
+```
+
+**Response (200):**
+```json
+{
+  "message": "Profile updated successfully",
+  "profile": {
+    "id": 1,
+    "documents": [
+      {
+        "id": 1,
+        "document_type": "license",
+        "document_url": "https://example.com/storage/accs/1/documents/1234567890_1_license.pdf",
+        "uploaded_at": "2024-01-01T00:00:00.000000Z",
+        "verified": false,
+        "verified_by": null,
+        "verified_at": null
+      }
+    ],
+    ...
+  }
+}
+```
+
+**Error Responses:**
+- `422 Validation Error` - خطأ في التحقق من صحة الملف أو نوع المستند
+  ```json
+  {
+    "message": "Validation failed",
+    "errors": {
+      "documents.0.document_type": ["The selected document type is invalid."],
+      "documents.0.file": ["The file must be a file of type: pdf, jpg, jpeg, png."]
+    }
+  }
+  ```
+- `500 Server Error` - خطأ في الخادم أثناء رفع الملف
+
+---
+
+### 5. تحديث البيانات والمستندات معاً / Update Data and Documents Together
+
+**الوصف / Description:**
+يمكن تحديث البيانات الأساسية والشعار والمستندات في نفس الطلب.
+
+You can update basic data, logo, and documents in the same request.
+
+**مثال شامل / Complete Example:**
+
+**Using JavaScript (FormData):**
+```javascript
+const formData = new FormData();
+
+// Basic information
+formData.append('name', 'Updated ACC Name');
+formData.append('phone', '+1234567890');
+formData.append('website', 'https://newwebsite.com');
+
+// Logo
+formData.append('logo', logoFile);
+
+// Documents
+formData.append('documents[0][document_type]', 'license');
+formData.append('documents[0][file]', licenseFile);
+
+formData.append('documents[1][id]', '2');
+formData.append('documents[1][document_type]', 'certificate');
+formData.append('documents[1][file]', certificateFile);
+
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
+```
+
+**Response (200):**
 ```json
 {
   "message": "Profile updated successfully",
   "profile": {
     "id": 1,
     "name": "Updated ACC Name",
-    "legal_name": "Updated ACC Legal Name",
-    "registration_number": "REG123456",
-    "email": "info@example.com",
-    "phone": "+9876543210",
-    "country": "Egypt",
-    "address": "New Address",
-    "mailing_address": {
-      "street": "123 Main St",
-      "city": "Cairo",
-      "country": "Egypt",
-      "postal_code": "12345"
-    },
-    "physical_address": {
-      "street": "456 Business Ave",
-      "city": "Cairo",
-      "country": "Egypt",
-      "postal_code": "12345"
-    },
+    "phone": "+1234567890",
     "website": "https://newwebsite.com",
-    "logo_url": "https://your-domain.com/storage/accs/1/logo/1234567890_1_logo.png",
-    "status": "active",
-    "commission_percentage": 10.00,
-    "stripe_account_id": "acct_xxxxxxxxxxxxx",
-    "stripe_account_configured": true,
+    "logo_url": "https://example.com/storage/accs/1/logo/new_logo.png",
     "documents": [
       {
         "id": 1,
         "document_type": "license",
-        "document_url": "https://your-domain.com/storage/accs/1/documents/abc123def456.pdf",
-        "uploaded_at": "2024-01-20T15:45:00.000000Z",
-        "verified": false,
-        "verified_by": null,
-        "verified_at": null,
-        "created_at": "2024-01-15T10:30:00.000000Z",
-        "updated_at": "2024-01-20T15:45:00.000000Z"
+        "document_url": "https://example.com/storage/accs/1/documents/new_license.pdf",
+        ...
+      },
+      {
+        "id": 2,
+        "document_type": "certificate",
+        "document_url": "https://example.com/storage/accs/1/documents/new_certificate.pdf",
+        ...
       }
     ],
-    "user": {
-      "id": 2,
-      "name": "Updated ACC Name",
-      "email": "info@example.com",
-      "role": "acc_admin",
-      "status": "active"
-    },
-    "created_at": "2024-01-01T00:00:00.000000Z",
-    "updated_at": "2024-01-20T15:45:00.000000Z"
+    ...
   }
-}
-```
-
-#### Response: No Changes (200)
-
-إذا لم يتم إرسال أي تغييرات:
-
-```json
-{
-  "message": "No changes provided. Profile remains unchanged.",
-  "profile": {
-    // ... profile data unchanged
-  }
-}
-```
-
-#### Error Responses
-
-**401 Unauthorized**
-```json
-{
-  "message": "Unauthenticated"
-}
-```
-
-**404 Not Found**
-```json
-{
-  "message": "ACC not found"
-}
-```
-
-**422 Validation Error**
-```json
-{
-  "message": "Validation failed",
-  "errors": {
-    "name": [
-      "The name field must not exceed 255 characters."
-    ],
-    "logo": [
-      "The logo must be an image.",
-      "The logo must not be greater than 5120 kilobytes."
-    ],
-    "stripe_account_id": [
-      "The Stripe account ID must start with \"acct_\" and be a valid Stripe account ID."
-    ],
-    "documents.0.document_type": [
-      "The documents.0.document_type field is required when documents.0.file is present."
-    ]
-  }
-}
-```
-
-**500 Server Error**
-```json
-{
-  "message": "Profile update failed"
-}
-```
-
-أو في حالة debug mode:
-```json
-{
-  "message": "Profile update failed: [detailed error message]"
 }
 ```
 
 ---
 
-### 3. التحقق من حساب Stripe
+### 6. التحقق من Stripe Account / Verify Stripe Account
 
-**POST** `/acc/profile/verify-stripe-account`
+**Endpoint:** `POST /api/acc/profile/verify-stripe-account`
 
-#### الوصف
-يتحقق من صحة معرف حساب Stripe Connect ويرجع معلومات الحساب إذا كان صحيحاً ومتصلاً بالمنصة.
+**الوصف / Description:**
+التحقق من صحة معرف حساب Stripe Connect قبل إضافته إلى الـ Profile.
 
-#### Headers
-```
-Authorization: Bearer {token}
-Content-Type: application/json
-```
+Verify the validity of a Stripe Connect account ID before adding it to the Profile.
 
-#### Request Body
+**المتطلبات / Requirements:**
+- Authentication: مطلوب (Bearer Token)
+- Role: `acc_admin`
+- Content-Type: `application/json`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `stripe_account_id` | string | Yes | معرف حساب Stripe Connect للتحقق منه |
-
-#### Request Example
-
+**Request Body:**
 ```json
 {
   "stripe_account_id": "acct_xxxxxxxxxxxxx"
 }
 ```
 
-#### Response Success (200)
-
+**Response (200):**
 ```json
 {
   "valid": true,
   "account": {
     "id": "acct_xxxxxxxxxxxxx",
     "type": "express",
-    "country": "US",
-    "email": "acc@example.com",
-    "charges_enabled": true,
-    "payouts_enabled": true
+    "country": "US"
   },
   "message": "Stripe account is valid and connected"
 }
 ```
 
-#### Response Fields Description
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `valid` | boolean | هل الحساب صحيح ومتصلاً |
-| `account` | object/nullable | معلومات حساب Stripe (إذا كان صحيحاً) |
-| `error` | string/nullable | رسالة الخطأ (إذا كان الحساب غير صحيح) |
-| `message` | string | رسالة توضيحية |
-
-#### Error Responses
-
-**400 Bad Request - Stripe Not Configured**
-```json
-{
-  "valid": false,
-  "error": "Stripe is not configured"
-}
-```
-
-**400 Bad Request - Invalid Account**
+**Error Response (400):**
 ```json
 {
   "valid": false,
@@ -576,272 +476,206 @@ Content-Type: application/json
 }
 ```
 
-**401 Unauthorized**
-```json
-{
-  "message": "Unauthenticated"
-}
-```
+---
 
-**422 Validation Error**
+## ملاحظات مهمة للمطورين / Important Notes for Developers
+
+### 1. رفع الملفات / File Uploads
+
+- **Content-Type**: يجب استخدام `multipart/form-data` عند رفع الملفات
+- **File Size Limits**:
+  - الشعار (Logo): حد أقصى 5MB
+  - المستندات (Documents): حد أقصى 10MB لكل ملف
+- **File Types**:
+  - الشعار: JPG, JPEG, PNG
+  - المستندات: PDF, JPG, JPEG, PNG
+
+- **Content-Type**: Must use `multipart/form-data` when uploading files
+- **File Size Limits**:
+  - Logo: Maximum 5MB
+  - Documents: Maximum 10MB per file
+- **File Types**:
+  - Logo: JPG, JPEG, PNG
+  - Documents: PDF, JPG, JPEG, PNG
+
+### 2. هيكل المستندات / Documents Structure
+
+عند إرسال المستندات، يجب اتباع الهيكل التالي:
+
+When sending documents, you must follow this structure:
+
+- **للمستندات الجديدة / For New Documents:**
+  ```
+  documents[0][document_type] = "license"
+  documents[0][file] = <file>
+  ```
+
+- **لتحديث مستند موجود / For Updating Existing Documents:**
+  ```
+  documents[0][id] = 1
+  documents[0][document_type] = "license"
+  documents[0][file] = <file>
+  ```
+
+- **لتحديث نوع المستند فقط / For Updating Document Type Only:**
+  ```
+  documents[0][id] = 1
+  documents[0][document_type] = "certificate"
+  ```
+
+### 3. Partial Updates
+
+- يمكن تحديث أي حقل بشكل منفصل
+- لا حاجة لإرسال جميع الحقول في كل طلب
+- الحقول غير المرسلة ستبقى كما هي
+
+- Any field can be updated separately
+- No need to send all fields in every request
+- Fields not sent will remain unchanged
+
+### 4. حذف الملفات القديمة / Old File Deletion
+
+- عند رفع شعار جديد، يتم حذف الشعار القديم تلقائياً
+- عند تحديث مستند موجود، يتم حذف الملف القديم تلقائياً
+- الحذف يتم بعد التأكد من نجاح رفع الملف الجديد
+
+- When uploading a new logo, the old logo is automatically deleted
+- When updating an existing document, the old file is automatically deleted
+- Deletion occurs after confirming successful upload of the new file
+
+### 5. معالجة الأخطاء / Error Handling
+
+**أخطاء التحقق / Validation Errors (422):**
 ```json
 {
-  "message": "The given data was invalid.",
+  "message": "Validation failed",
   "errors": {
-    "stripe_account_id": [
-      "The stripe account id field is required."
-    ]
+    "logo": ["The logo must be an image."],
+    "documents.0.file": ["The file must not be greater than 10240 kilobytes."]
   }
 }
 ```
 
+**أخطاء الخادم / Server Errors (500):**
+```json
+{
+  "message": "Profile update failed"
+}
+```
+
+في وضع التطوير (debug mode)، قد يتم إرجاع تفاصيل أكثر عن الخطأ.
+
+In development mode (debug mode), more error details may be returned.
+
+### 6. URLs للملفات / File URLs
+
+- جميع روابط الملفات يتم إرجاعها كـ URLs كاملة
+- الملفات مخزنة في `storage/app/public/accs/{acc_id}/`
+- الشعار: `storage/app/public/accs/{acc_id}/logo/`
+- المستندات: `storage/app/public/accs/{acc_id}/documents/`
+
+- All file links are returned as full URLs
+- Files are stored in `storage/app/public/accs/{acc_id}/`
+- Logo: `storage/app/public/accs/{acc_id}/logo/`
+- Documents: `storage/app/public/accs/{acc_id}/documents/`
+
 ---
 
-## أمثلة استخدام متقدمة
+## أمثلة كاملة / Complete Examples
 
-### مثال 1: تحديث الشعار فقط
+### مثال 1: تحديث البيانات الأساسية فقط / Example 1: Update Basic Data Only
 
-**cURL:**
-```bash
-curl -X PUT "https://your-domain.com/api/acc/profile" \
-  -H "Authorization: Bearer {token}" \
-  -F "logo=@/path/to/logo.png"
-```
-
-**JavaScript (Fetch):**
 ```javascript
-const formData = new FormData();
-formData.append('logo', fileInput.files[0]);
-
-fetch('https://your-domain.com/api/acc/profile', {
+fetch('https://example.com/api/acc/profile', {
   method: 'PUT',
   headers: {
-    'Authorization': `Bearer ${token}`
-  },
-  body: formData
-})
-.then(response => response.json())
-.then(data => console.log(data));
-```
-
-### مثال 2: رفع عدة مستندات معاً
-
-**cURL:**
-```bash
-curl -X PUT "https://your-domain.com/api/acc/profile" \
-  -H "Authorization: Bearer {token}" \
-  -F "documents[0][document_type]=license" \
-  -F "documents[0][file]=@/path/to/license.pdf" \
-  -F "documents[1][document_type]=registration" \
-  -F "documents[1][file]=@/path/to/registration.pdf"
-```
-
-**JavaScript (Fetch):**
-```javascript
-const formData = new FormData();
-formData.append('documents[0][document_type]', 'license');
-formData.append('documents[0][file]', licenseFile);
-formData.append('documents[1][document_type]', 'registration');
-formData.append('documents[1][file]', registrationFile);
-
-fetch('https://your-domain.com/api/acc/profile', {
-  method: 'PUT',
-  headers: {
-    'Authorization': `Bearer ${token}`
-  },
-  body: formData
-})
-.then(response => response.json())
-.then(data => console.log(data));
-```
-
-### مثال 3: تحديث معلومات مع رفع شعار ومستند
-
-**cURL:**
-```bash
-curl -X PUT "https://your-domain.com/api/acc/profile" \
-  -H "Authorization: Bearer {token}" \
-  -F "name=New ACC Name" \
-  -F "phone=+1234567890" \
-  -F "logo=@/path/to/logo.png" \
-  -F "documents[0][document_type]=license" \
-  -F "documents[0][file]=@/path/to/license.pdf"
-```
-
-### مثال 4: استخدام JSON فقط (بدون ملفات)
-
-**cURL:**
-```bash
-curl -X PUT "https://your-domain.com/api/acc/profile" \
-  -H "Authorization: Bearer {token}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Updated Name",
-    "phone": "+1234567890",
-    "website": "https://example.com",
-    "logo_url": "https://external-site.com/logo.png"
-  }'
-```
-
-**JavaScript (Fetch):**
-```javascript
-fetch('https://your-domain.com/api/acc/profile', {
-  method: 'PUT',
-  headers: {
-    'Authorization': `Bearer ${token}`,
+    'Authorization': 'Bearer YOUR_TOKEN',
     'Content-Type': 'application/json'
   },
   body: JSON.stringify({
     name: 'Updated Name',
     phone: '+1234567890',
-    website: 'https://example.com',
-    logo_url: 'https://external-site.com/logo.png'
+    website: 'https://example.com'
   })
-})
-.then(response => response.json())
-.then(data => console.log(data));
+});
+```
+
+### مثال 2: رفع شعار فقط / Example 2: Upload Logo Only
+
+```javascript
+const formData = new FormData();
+formData.append('logo', logoFile);
+
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
+```
+
+### مثال 3: رفع مستند جديد فقط / Example 3: Upload New Document Only
+
+```javascript
+const formData = new FormData();
+formData.append('documents[0][document_type]', 'license');
+formData.append('documents[0][file]', documentFile);
+
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
+```
+
+### مثال 4: تحديث شامل / Example 4: Complete Update
+
+```javascript
+const formData = new FormData();
+
+// Basic data
+formData.append('name', 'New Name');
+formData.append('phone', '+1234567890');
+
+// Logo
+formData.append('logo', logoFile);
+
+// Multiple documents
+formData.append('documents[0][document_type]', 'license');
+formData.append('documents[0][file]', licenseFile);
+
+formData.append('documents[1][id]', '2');
+formData.append('documents[1][document_type]', 'certificate');
+formData.append('documents[1][file]', certificateFile);
+
+fetch('https://example.com/api/acc/profile', {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  },
+  body: formData
+});
 ```
 
 ---
 
-## ملاحظات مهمة للمطورين
+## Error Codes
 
-### 1. معالجة الأخطاء
-
-- جميع الأخطاء يتم إرجاعها مع رسائل واضحة
-- في حالة فشل رفع ملف، سيتم حذف الملفات المرفوعة تلقائياً
-- في حالة فشل تحديث قاعدة البيانات، سيتم التراجع عن جميع التغييرات (Rollback)
-
-### 2. الأمان
-
-- جميع الـ endpoints تتطلب مصادقة
-- يمكن للـ ACC تحديث ملفه الشخصي فقط
-- المستندات يتم التحقق منها من قبل Group Admin
-- عند تحديث مستند، يتم إعادة تعيين حالة التحقق
-
-### 3. الأداء
-
-- الملفات يتم حفظها في `storage/app/public`
-- الشعارات في: `accs/{acc_id}/logo/`
-- المستندات في: `accs/{acc_id}/documents/`
-- الملفات القديمة يتم حذفها تلقائياً عند رفع ملفات جديدة
-
-### 4. الحدود والقيود
-
-- حجم الشعار: 5MB كحد أقصى
-- حجم المستند: 10MB كحد أقصى
-- صيغ الشعار المدعومة: JPEG, JPG, PNG
-- صيغ المستندات المدعومة: PDF, JPEG, JPG, PNG
-
-### 5. التوافق والتحديث الجزئي
-
-- **يدعم `application/json` و `multipart/form-data`**: يمكن استخدام أي تنسيق
-- **تحديث جزئي كامل**: يمكن تحديث حقل واحد فقط دون الحاجة لإرسال باقي الحقول
-- **جميع الحقول اختيارية**: لا يوجد حقول إلزامية للتحديث
-- **مرونة في التحديث**: يمكن تحديث البيانات النصية والملفات بشكل مستقل أو معاً
-- **أمان في المعالجة**: جميع التحديثات تتم داخل transaction مع إمكانية التراجع التلقائي
+| Code | Description | الحالة |
+|------|-------------|--------|
+| 200 | Success | نجاح |
+| 401 | Unauthorized | غير مصرح |
+| 404 | Not Found | غير موجود |
+| 422 | Validation Error | خطأ في التحقق |
+| 500 | Server Error | خطأ في الخادم |
 
 ---
 
-## حالات الاستخدام الشائعة
+## Support
 
-### السيناريو 1: تسجيل ACC جديد وتحديث الملف الشخصي
+للمساعدة والدعم الفني، يرجى التواصل مع فريق التطوير.
 
-1. تسجيل حساب جديد عبر `/auth/register`
-2. تسجيل الدخول والحصول على token
-3. تحديث الملف الشخصي برفع الشعار والمستندات عبر `/acc/profile`
-
-### السيناريو 2: تحديث معلومات الاتصال
-
-1. تحديث الهاتف فقط: أرسل `phone` فقط في الطلب
-2. تحديث الهاتف والموقع: أرسل `phone` و `website` فقط
-3. تحديث معلومات الاتصال الكاملة: أرسل جميع حقول الاتصال التي تريد تحديثها
-4. **لا حاجة لإرسال باقي الحقول** - فقط الحقول التي تريد تحديثها
-
-### السيناريو 3: ربط حساب Stripe
-
-1. إنشاء حساب Stripe Connect
-2. التحقق من الحساب عبر `/acc/profile/verify-stripe-account`
-3. إضافة معرف الحساب في الملف الشخصي عبر `/acc/profile`
-
-### السيناريو 4: تحديث المستندات
-
-1. **رفع مستند جديد فقط**: أرسل `documents` مع `document_type` و `file` فقط
-2. **تحديث مستند موجود**: أرسل `documents` مع `id` و `file` و `document_type`
-3. **تحديث نوع مستند فقط**: أرسل `documents` مع `id` و `document_type` فقط (بدون `file`)
-4. **رفع عدة مستندات**: أرسل مصفوفة من المستندات في نفس الطلب
-5. **لا حاجة لتحديث باقي البيانات** - يمكن رفع المستندات بشكل مستقل تماماً
-
----
-
-## استكشاف الأخطاء
-
-### المشكلة: خطأ 401 Unauthorized
-
-**السبب:** Token غير صحيح أو منتهي الصلاحية
-
-**الحل:** 
-- تأكد من إرسال Token في header
-- تأكد من صحة Token
-- قم بتسجيل الدخول مرة أخرى للحصول على token جديد
-
-### المشكلة: خطأ 422 Validation Error
-
-**السبب:** البيانات المرسلة غير صحيحة
-
-**الحل:**
-- راجع قواعد التحقق (Validation Rules)
-- تأكد من صحة تنسيق البيانات
-- تأكد من حجم الملفات (5MB للشعار، 10MB للمستندات)
-- **تذكر**: يمكنك إرسال حقل واحد فقط - لا حاجة لإرسال جميع الحقول
-- إذا كان الخطأ متعلق بحجم الملف، تحقق من إعدادات PHP (upload_max_filesize, post_max_size)
-
-### المشكلة: خطأ 500 Server Error
-
-**السبب:** خطأ في الخادم
-
-**الحل:**
-- راجع سجلات الخادم (Logs)
-- تأكد من صلاحيات المجلدات
-- تأكد من إعدادات التخزين (Storage)
-
-### المشكلة: الملفات لا ترفع
-
-**السبب:** مشاكل في التخزين أو الصلاحيات
-
-**الحل:**
-- تأكد من وجود مجلد `storage/app/public`
-- تأكد من صلاحيات الكتابة على المجلد
-- تأكد من ربط `storage` بـ `public` عبر `php artisan storage:link`
-
----
-
-## الدعم والمساعدة
-
-للمزيد من المساعدة أو الإبلاغ عن مشاكل، يرجى التواصل مع فريق الدعم الفني.
-
----
-
----
-
-## ملخص التحديثات الجديدة
-
-### التحديث الجزئي (Partial Updates)
-
-الآن يمكنك تحديث ملف ACC الشخصي بشكل جزئي تماماً:
-
-- ✅ **تحديث حقل واحد فقط**: لا حاجة لإرسال جميع الحقول
-- ✅ **تحديث البيانات النصية بشكل مستقل**: أي حقل نصي يمكن تحديثه وحده
-- ✅ **رفع الملفات بشكل مستقل**: يمكن رفع الشعار أو المستندات فقط
-- ✅ **الدمج المرن**: يمكن دمج أي تحديثات نصية مع رفع الملفات
-- ✅ **يعمل مع JSON و Form-Data**: نفس المرونة في كلا التنسيقين
-
-### أمثلة سريعة
-
-- تحديث الهاتف فقط: `{"phone": "+1234567890"}`
-- رفع الشعار فقط: أرسل `logo` في multipart/form-data
-- تحديث الاسم والهاتف: `{"name": "New Name", "phone": "+1234567890"}`
-- رفع شعار مع تحديث الهاتف: أرسل `logo` و `phone` في multipart/form-data
-
-**آخر تحديث:** 2024-01-20
-
+For help and technical support, please contact the development team.
