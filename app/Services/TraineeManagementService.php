@@ -158,9 +158,19 @@ class TraineeManagementService
         try {
             DB::beginTransaction();
 
-            $updateData = $request->only([
-                'first_name', 'last_name', 'email', 'phone', 'id_number', 'status'
-            ]);
+            // Collect update data - only include fields that are present in the request
+            // Use only() to filter allowed fields, but also check request data directly
+            // to handle form-data properly
+            $allowedFields = ['first_name', 'last_name', 'email', 'phone', 'id_number', 'status'];
+            $requestData = $request->all();
+            $updateData = [];
+            
+            foreach ($allowedFields as $field) {
+                // Check if field exists in request (works with both JSON and form-data)
+                if (array_key_exists($field, $requestData)) {
+                    $updateData[$field] = $request->input($field);
+                }
+            }
 
             $uploadedFiles = [];
             $filesToCleanup = [];
@@ -215,7 +225,12 @@ class TraineeManagementService
                 }
             }
 
-            $trainee->update($updateData);
+            // Only update if there's data to update
+            if (!empty($updateData)) {
+                $trainee->update($updateData);
+                // Refresh the model to get updated attributes
+                $trainee->refresh();
+            }
 
             // Cleanup old files after successful update
             foreach ($filesToCleanup as $filePath) {
