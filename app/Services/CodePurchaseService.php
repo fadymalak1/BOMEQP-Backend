@@ -357,7 +357,7 @@ class CodePurchaseService
                 'course_id' => $course->id,
                 'quantity' => $request->quantity,
                 'total_amount' => $finalAmount,
-                'payment_method' => $paymentMethod === 'credit_card' ? 'credit_card' : ($paymentMethod === 'wallet' ? 'wallet' : 'bank_transfer'),
+                'payment_method' => $paymentMethod, // Store payment method directly (credit_card, wallet, or manual_payment)
                 'transaction_id' => (string)$transaction->id,
                 'purchase_date' => now(),
                 'payment_status' => $paymentStatus,
@@ -541,7 +541,7 @@ class CodePurchaseService
             'currency' => $currency,
             'type' => 'code_purchase',
             'status' => 'completed',
-            'payment_method' => $paymentMethod === 'credit_card' ? 'credit_card' : 'bank_transfer',
+            'payment_method' => $paymentMethod === 'wallet' ? 'wallet' : ($paymentMethod === 'manual_payment' ? 'manual_payment' : 'credit_card'),
         ];
 
         if ($paymentMethod === 'wallet') {
