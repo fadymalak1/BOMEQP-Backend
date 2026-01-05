@@ -10,7 +10,6 @@ use App\Models\Course;
 use App\Models\DiscountCode;
 use App\Models\TrainingCenter;
 use App\Models\TrainingCenterAccAuthorization;
-use App\Models\TrainingCenterWallet;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -357,7 +356,7 @@ class CodePurchaseService
                 'course_id' => $course->id,
                 'quantity' => $request->quantity,
                 'total_amount' => $finalAmount,
-                'payment_method' => $paymentMethod, // Store payment method directly (credit_card, wallet, or manual_payment)
+                'payment_method' => $paymentMethod, // Store payment method directly (credit_card or manual_payment)
                 'transaction_id' => (string)$transaction->id,
                 'purchase_date' => now(),
                 'payment_status' => $paymentStatus,
@@ -541,24 +540,10 @@ class CodePurchaseService
             'currency' => $currency,
             'type' => 'code_purchase',
             'status' => 'completed',
-            'payment_method' => $paymentMethod === 'wallet' ? 'wallet' : ($paymentMethod === 'manual_payment' ? 'manual_payment' : 'credit_card'),
+            'payment_method' => $paymentMethod === 'manual_payment' ? 'manual_payment' : 'credit_card',
         ];
 
-        if ($paymentMethod === 'wallet') {
-            // Deduct from wallet
-            $wallet = TrainingCenterWallet::where('training_center_id', $trainingCenter->id)->first();
-            if (!$wallet || $wallet->balance < $finalAmount) {
-                return [
-                    'success' => false,
-                    'message' => 'Insufficient wallet balance'
-                ];
-            }
-
-            $wallet->decrement('balance', $finalAmount);
-            $paymentStatus = 'completed';
-            $transactionData['status'] = 'completed';
-
-        } elseif ($paymentMethod === 'credit_card') {
+        if ($paymentMethod === 'credit_card') {
             // Verify payment intent with enhanced error handling
             try {
                 // First, retrieve the payment intent to check its status
