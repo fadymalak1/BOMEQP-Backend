@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\TrainingCenter;
 
 use App\Http\Controllers\Controller;
+use App\Models\CodeBatch;
 use App\Models\TrainingCenter;
 use App\Services\CodePurchaseService;
 use Illuminate\Http\Request;

@@ -538,11 +538,6 @@ class InstructorManagementService
             $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
             $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
             $accCommissionAmount = $authorization->authorization_price - $groupCommissionAmount;
-
-            // Calculate commission amounts
-            $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
-            $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
-            $accCommissionAmount = $authorization->authorization_price - $groupCommissionAmount;
             
             // Determine payment type
             $paymentType = 'standard';
@@ -559,7 +554,11 @@ class InstructorManagementService
                 ]);
             }
 
+            // Load instructor relationship for description
+            $authorization->load('instructor');
+            
             // Create transaction
+            $instructorName = ($authorization->instructor->first_name ?? '') . ' ' . ($authorization->instructor->last_name ?? '');
             $transaction = \App\Models\Transaction::create([
                 'transaction_type' => 'subscription',
                 'payer_type' => 'training_center',
@@ -575,18 +574,9 @@ class InstructorManagementService
                 'payment_gateway_transaction_id' => $request->payment_intent_id,
                 'status' => 'completed',
                 'completed_at' => now(),
-                'description' => 'Instructor authorization payment for ' . 
-                    ($authorization->instructor->first_name ?? '') . ' ' . 
-                    ($authorization->instructor->last_name ?? ''),
+                'description' => 'Instructor authorization payment for ' . trim($instructorName),
                 'reference_type' => 'InstructorAccAuthorization',
                 'reference_id' => $authorization->id,
-            ]);
-
-            // Update authorization payment status
-            $authorization->update([
-                'payment_status' => 'paid',
-                'payment_date' => now(),
-                'transaction_id' => $transaction->id,
             ]);
 
             // Update authorization payment status
