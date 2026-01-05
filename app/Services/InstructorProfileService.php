@@ -40,6 +40,7 @@ class InstructorProfileService
             'country' => $instructor->country,
             'city' => $instructor->city,
             'cv_url' => $instructor->cv_url,
+            'photo_url' => $instructor->photo_url,
             'certificates' => $instructor->certificates_json ?? [],
             'specializations' => $instructor->specializations ?? [],
             'status' => $instructor->status,
@@ -104,6 +105,16 @@ class InstructorProfileService
                 }
                 $updateData['cv_url'] = $cvResult['url'];
                 $uploadedFiles[] = $cvResult['file_path'];
+            }
+
+            // Handle profile image upload
+            if ($request->hasFile('photo')) {
+                $photoResult = $this->uploadPhoto($request, $instructor);
+                if (!$photoResult['success']) {
+                    throw new \Exception($photoResult['error'] ?? 'Profile image upload failed');
+                }
+                $updateData['photo_url'] = $photoResult['url'];
+                $uploadedFiles[] = $photoResult['file_path'];
             }
 
             // Handle certificates
@@ -235,6 +246,110 @@ class InstructorProfileService
 
         } catch (\Exception $e) {
             Log::error('Error uploading CV file', [
+                'instructor_id' => $instructor->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Upload profile image file
+     *
+     * @param Request $request
+     * @param Instructor $instructor
+     * @return array
+     */
+    private function uploadPhoto(Request $request, Instructor $instructor): array
+    {
+        try {
+            $photoFile = $request->file('photo');
+
+            // Validate file (image formats: jpg, jpeg, png, max 5MB)
+            $validation = $this->fileUploadService->validateFile($photoFile, 5, ['image/jpeg', 'image/jpg', 'image/png']);
+            if (!$validation['valid']) {
+                return [
+                    'success' => false,
+                    'error' => $validation['message']
+                ];
+            }
+
+            // Check available disk space
+            $fileSize = $photoFile->getSize();
+            $freeSpace = disk_free_space(storage_path('app/public'));
+            if ($freeSpace !== false && $freeSpace < $fileSize * 2) {
+                return [
+                    'success' => false,
+                    'error' => 'Insufficient disk space to upload file'
+                ];
+            }
+
+            // Delete old photo if exists
+            if ($instructor->photo_url) {
+                try {
+                    // Extract filename from URL (format: /api/storage/instructors/photo/{filename})
+                    $urlParts = parse_url($instructor->photo_url);
+                    $path = ltrim($urlParts['path'] ?? '', '/');
+                    if (preg_match('#api/storage/instructors/photo/(.+)$#', $path, $matches)) {
+                        $oldFileName = $matches[1];
+                        $oldFilePath = 'instructors/photo/' . $oldFileName;
+                        if (Storage::disk('public')->exists($oldFilePath)) {
+                            Storage::disk('public')->delete($oldFilePath);
+                            Log::info('Deleted old instructor photo', [
+                                'instructor_id' => $instructor->id,
+                                'file_path' => $oldFilePath
+                            ]);
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to delete old instructor photo', [
+                        'instructor_id' => $instructor->id,
+                        'photo_url' => $instructor->photo_url,
+                        'error' => $e->getMessage()
+                    ]);
+                    // Don't throw - continue with upload even if deletion fails
+                }
+            }
+
+            // Upload new photo
+            $originalName = $photoFile->getClientOriginalName();
+            $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+            $fileName = time() . '_' . $instructor->id . '_' . $sanitizedName;
+
+            // Ensure directory exists
+            $directory = 'instructors/photo';
+            if (!Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->makeDirectory($directory);
+            }
+
+            // Store file
+            $photoPath = $photoFile->storeAs($directory, $fileName, 'public');
+
+            if (!$photoPath || !Storage::disk('public')->exists($photoPath)) {
+                throw new \Exception('Failed to store profile image file');
+            }
+
+            // Generate URL using the API route
+            $photoUrl = url('/api/storage/instructors/photo/' . $fileName);
+
+            Log::info('Profile image uploaded successfully', [
+                'instructor_id' => $instructor->id,
+                'file_name' => $fileName,
+                'photo_url' => $photoUrl,
+            ]);
+
+            return [
+                'success' => true,
+                'url' => $photoUrl,
+                'file_path' => $photoPath
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error uploading profile image', [
                 'instructor_id' => $instructor->id,
                 'error' => $e->getMessage()
             ]);

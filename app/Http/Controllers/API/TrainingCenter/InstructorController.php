@@ -32,7 +32,26 @@ class InstructorController extends Controller
                 description: "Instructors retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "instructors", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(
+                            property: "instructors", 
+                            type: "array", 
+                            items: new OA\Items(
+                                type: "object",
+                                properties: [
+                                    new OA\Property(property: "id", type: "integer"),
+                                    new OA\Property(property: "first_name", type: "string"),
+                                    new OA\Property(property: "last_name", type: "string"),
+                                    new OA\Property(property: "email", type: "string"),
+                                    new OA\Property(property: "phone", type: "string"),
+                                    new OA\Property(
+                                        property: "courses",
+                                        type: "array",
+                                        description: "Courses the instructor is authorized to teach",
+                                        items: new OA\Items(type: "object")
+                                    )
+                                ]
+                            )
+                        )
                     ]
                 )
             ),
@@ -49,7 +68,12 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $instructors = Instructor::where('training_center_id', $trainingCenter->id)->get();
+        $instructors = Instructor::where('training_center_id', $trainingCenter->id)
+            ->with(['courses' => function($query) {
+                $query->with(['subCategory', 'acc']);
+            }])
+            ->get();
+            
         return response()->json(['instructors' => $instructors]);
     }
 

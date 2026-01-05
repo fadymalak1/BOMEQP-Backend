@@ -71,6 +71,7 @@ class ProfileController extends Controller
                         new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890", description: "Phone number"),
                         new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt", description: "Country"),
                         new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo", description: "City"),
+                        new OA\Property(property: "photo", type: "string", format: "binary", nullable: true, description: "Profile image file (jpg, jpeg, png, max 5MB)"),
                         new OA\Property(property: "cv", type: "string", format: "binary", nullable: true, description: "CV file (PDF, max 10MB)"),
                         new OA\Property(
                             property: "certificates", 
@@ -147,6 +148,7 @@ class ProfileController extends Controller
             'phone' => 'sometimes|string|max:255',
             'country' => 'sometimes|string|max:255',
             'city' => 'sometimes|string|max:255',
+            'photo' => 'nullable|image|mimes:jpeg,jpg,png|max:5120', // Max 5MB
             'cv' => 'nullable|file|mimes:pdf|max:10240',
             'certificates' => 'nullable|array',
             'certificates.*.name' => 'required_with:certificates|string|max:255',
