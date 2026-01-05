@@ -299,423 +299,521 @@ class CodePurchaseService
         ];
     }
 
-    /**
-     * Process code purchase
-     *
-     * @param Request $request
-     * @param TrainingCenter $trainingCenter
-     * @param array $validationResult
-     * @param array $priceCalculation
-     * @return array
-     * @throws \Exception
-     */
-    public function processPurchase(
-        Request $request,
-        TrainingCenter $trainingCenter,
-        array $validationResult,
-        array $priceCalculation
-    ): array {
-        $acc = $validationResult['acc'];
-        $course = $validationResult['course'];
-        $pricing = $validationResult['pricing'];
-        $finalAmount = $priceCalculation['final_amount'];
-        $discountCode = $priceCalculation['discount_code'];
 
-        $paymentMethod = $request->payment_method;
-        $uploadedFiles = [];
+/**
+ * Process code purchase
+ *
+ * @param Request $request
+ * @param TrainingCenter $trainingCenter
+ * @param array $validationResult
+ * @param array $priceCalculation
+ * @return array
+ * @throws \Exception
+ */
+public function processPurchase(
+    Request $request,
+    TrainingCenter $trainingCenter,
+    array $validationResult,
+    array $priceCalculation
+): array {
+    $acc = $validationResult['acc'];
+    $course = $validationResult['course'];
+    $pricing = $validationResult['pricing'];
+    $finalAmount = $priceCalculation['final_amount'];
+    $discountCode = $priceCalculation['discount_code'];
 
-        try {
-            DB::beginTransaction();
+    $paymentMethod = $request->payment_method;
+    $uploadedFiles = [];
 
-            // Handle payment based on payment method
-            $paymentResult = $this->processPayment(
-                $request,
-                $trainingCenter,
-                $acc,
-                $finalAmount,
-                $pricing->currency ?? 'USD'
-            );
+    try {
+        DB::beginTransaction();
 
-            if (!$paymentResult['success']) {
-                throw new \Exception($paymentResult['message'] ?? 'Payment processing failed');
-            }
+        // Handle payment based on payment method
+        $paymentResult = $this->processPayment(
+            $request,
+            $trainingCenter,
+            $acc,
+            $finalAmount,
+            $pricing->currency ?? 'USD'
+        );
 
-            $transactionData = $paymentResult['transaction_data'];
-            $uploadedFiles = $paymentResult['uploaded_files'] ?? [];
-            $paymentStatus = $paymentResult['payment_status'] ?? 'completed';
-            $paymentReceiptUrl = $paymentResult['payment_receipt_url'] ?? null;
-            $paymentAmount = $paymentResult['payment_amount'] ?? null;
-
-            // Create transaction first (before batch)
-            $transaction = Transaction::create($transactionData);
-
-            // Create batch
-            $batchData = [
+        // Check if payment processing failed
+        if (!$paymentResult['success']) {
+            Log::error('Payment processing failed in processPurchase', [
                 'training_center_id' => $trainingCenter->id,
                 'acc_id' => $acc->id,
-                'course_id' => $course->id,
-                'quantity' => $request->quantity,
-                'total_amount' => $finalAmount,
-                'payment_method' => $paymentMethod, // Store payment method directly (credit_card or manual_payment)
-                'transaction_id' => (string)$transaction->id,
-                'purchase_date' => now(),
-                'payment_status' => $paymentStatus,
-            ];
-
-            if ($paymentReceiptUrl) {
-                $batchData['payment_receipt_url'] = $paymentReceiptUrl;
-            }
-            if ($paymentAmount) {
-                $batchData['payment_amount'] = $paymentAmount;
-            }
-
-            $batch = CodeBatch::create($batchData);
-
-            // Update transaction with batch reference
-            $transaction->update([
-                'reference_id' => $batch->id,
-                'reference_type' => 'code_batch',
+                'payment_result' => $paymentResult,
             ]);
+            
+            // Rollback transaction
+            DB::rollBack();
+            
+            // Return the error directly instead of throwing exception
+            return [
+                'success' => false,
+                'message' => $paymentResult['message'] ?? 'Payment processing failed',
+                'error' => $paymentResult['error'] ?? null,
+                'error_code' => $paymentResult['error_code'] ?? 'payment_failed',
+                'expected_amount' => $paymentResult['expected_amount'] ?? null,
+                'provided_amount' => $paymentResult['provided_amount'] ?? null,
+                'difference' => $paymentResult['difference'] ?? null,
+            ];
+        }
 
-            // Generate codes only if payment is completed
-            $codes = [];
-            $codeModels = [];
+        $transactionData = $paymentResult['transaction_data'];
+        $uploadedFiles = $paymentResult['uploaded_files'] ?? [];
+        $paymentStatus = $paymentResult['payment_status'] ?? 'completed';
+        $paymentReceiptUrl = $paymentResult['payment_receipt_url'] ?? null;
+        $paymentAmount = $paymentResult['payment_amount'] ?? null;
+
+        // Create transaction first (before batch)
+        $transaction = Transaction::create($transactionData);
+
+        // Create batch
+        $batchData = [
+            'training_center_id' => $trainingCenter->id,
+            'acc_id' => $acc->id,
+            'course_id' => $course->id,
+            'quantity' => $request->quantity,
+            'total_amount' => $finalAmount,
+            'payment_method' => $paymentMethod, // Store payment method directly (credit_card or manual_payment)
+            'transaction_id' => (string)$transaction->id,
+            'purchase_date' => now(),
+            'payment_status' => $paymentStatus,
+        ];
+
+        if ($paymentReceiptUrl) {
+            $batchData['payment_receipt_url'] = $paymentReceiptUrl;
+        }
+        if ($paymentAmount) {
+            $batchData['payment_amount'] = $paymentAmount;
+        }
+
+        $batch = CodeBatch::create($batchData);
+
+        // Update transaction with batch reference
+        $transaction->update([
+            'reference_id' => $batch->id,
+            'reference_type' => 'code_batch',
+        ]);
+
+        // Generate codes only if payment is completed
+        $codes = [];
+        $codeModels = [];
+        if ($paymentStatus === 'completed') {
+            $codes = $this->generateCodes($course->id, $request->quantity);
+
+            // Create certificate codes
+            foreach ($codes as $code) {
+                $codeModel = CertificateCode::create([
+                    'code' => $code,
+                    'batch_id' => $batch->id,
+                    'training_center_id' => $trainingCenter->id,
+                    'acc_id' => $acc->id,
+                    'course_id' => $course->id,
+                    'purchased_price' => $priceCalculation['unit_price'],
+                    'discount_applied' => $priceCalculation['discount_amount'] > 0,
+                    'discount_code_id' => $priceCalculation['discount_code_id'],
+                    'status' => 'available',
+                    'purchased_at' => now(),
+                ]);
+                $codeModels[] = $codeModel;
+            }
+
+            // Update discount code usage if applicable
+            if ($discountCode && $discountCode->discount_type === 'quantity_based') {
+                $discountCode->increment('used_quantity', $request->quantity);
+                if ($discountCode->used_quantity >= $discountCode->total_quantity) {
+                    $discountCode->update(['status' => 'depleted']);
+                }
+            }
+
+            // Create commission ledger entry
+            $groupCommissionPercentage = $acc->commission_percentage ?? 0;
+            $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
+            $accCommissionAmount = $finalAmount - $groupCommissionAmount;
+            $accCommissionPercentage = 100 - $groupCommissionPercentage;
+
+            try {
+                \App\Models\CommissionLedger::create([
+                    'transaction_id' => $transaction->id,
+                    'acc_id' => $acc->id,
+                    'training_center_id' => $trainingCenter->id,
+                    'group_commission_amount' => $groupCommissionAmount,
+                    'group_commission_percentage' => $groupCommissionPercentage,
+                    'acc_commission_amount' => $accCommissionAmount,
+                    'acc_commission_percentage' => $accCommissionPercentage,
+                    'settlement_status' => 'pending',
+                ]);
+            } catch (\Exception $e) {
+                Log::warning('Failed to create commission ledger entry', [
+                    'error' => $e->getMessage(),
+                    'transaction_id' => $transaction->id,
+                ]);
+            }
+        }
+
+        DB::commit();
+
+        // Send notifications (wrap in try-catch to prevent failures)
+        try {
+            $user = \App\Models\User::where('email', $trainingCenter->email)->first();
+            
             if ($paymentStatus === 'completed') {
-                $codes = $this->generateCodes($course->id, $request->quantity);
-
-                // Create certificate codes
-                foreach ($codes as $code) {
-                    $codeModel = CertificateCode::create([
-                        'code' => $code,
-                        'batch_id' => $batch->id,
-                        'training_center_id' => $trainingCenter->id,
-                        'acc_id' => $acc->id,
-                        'course_id' => $course->id,
-                        'purchased_price' => $priceCalculation['unit_price'],
-                        'discount_applied' => $priceCalculation['discount_amount'] > 0,
-                        'discount_code_id' => $priceCalculation['discount_code_id'],
-                        'status' => 'available',
-                        'purchased_at' => now(),
-                    ]);
-                    $codeModels[] = $codeModel;
+                if ($user) {
+                    $this->notificationService->notifyCodePurchaseSuccess(
+                        $user->id,
+                        $batch->id,
+                        $request->quantity,
+                        $finalAmount
+                    );
                 }
-
-                // Update discount code usage if applicable
-                if ($discountCode && $discountCode->discount_type === 'quantity_based') {
-                    $discountCode->increment('used_quantity', $request->quantity);
-                    if ($discountCode->used_quantity >= $discountCode->total_quantity) {
-                        $discountCode->update(['status' => 'depleted']);
-                    }
-                }
-
-                // Create commission ledger entry
+                
                 $groupCommissionPercentage = $acc->commission_percentage ?? 0;
                 $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
-                $accCommissionAmount = $finalAmount - $groupCommissionAmount;
-                $accCommissionPercentage = 100 - $groupCommissionPercentage;
-
-                try {
-                    \App\Models\CommissionLedger::create([
-                        'transaction_id' => $transaction->id,
-                        'acc_id' => $acc->id,
-                        'training_center_id' => $trainingCenter->id,
-                        'group_commission_amount' => $groupCommissionAmount,
-                        'group_commission_percentage' => $groupCommissionPercentage,
-                        'acc_commission_amount' => $accCommissionAmount,
-                        'acc_commission_percentage' => $accCommissionPercentage,
-                        'settlement_status' => 'pending',
-                    ]);
-                } catch (\Exception $e) {
-                    Log::warning('Failed to create commission ledger entry', [
-                        'error' => $e->getMessage(),
-                        'transaction_id' => $transaction->id,
-                    ]);
-                }
-            }
-
-            DB::commit();
-
-            // Send notifications (wrap in try-catch to prevent failures)
-            try {
-                $user = \App\Models\User::where('email', $trainingCenter->email)->first();
                 
-                if ($paymentStatus === 'completed') {
-                    if ($user) {
-                        $this->notificationService->notifyCodePurchaseSuccess(
+                // Notify admin
+                if (method_exists($this->notificationService, 'notifyAdminCodePurchase')) {
+                    $this->notificationService->notifyAdminCodePurchase(
+                        $batch->id,
+                        $trainingCenter->name,
+                        $request->quantity,
+                        $finalAmount,
+                        $groupCommissionAmount
+                    );
+                }
+            } else {
+                // Manual payment notifications
+                if ($user) {
+                    if (method_exists($this->notificationService, 'notifyManualPaymentPending')) {
+                        $this->notificationService->notifyManualPaymentPending(
                             $user->id,
                             $batch->id,
                             $request->quantity,
                             $finalAmount
                         );
                     }
-                    
-                    $groupCommissionPercentage = $acc->commission_percentage ?? 0;
-                    $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
-                    
-                    // Notify admin
-                    if (method_exists($this->notificationService, 'notifyAdminCodePurchase')) {
-                        $this->notificationService->notifyAdminCodePurchase(
-                            $batch->id,
-                            $trainingCenter->name,
-                            $request->quantity,
-                            $finalAmount,
-                            $groupCommissionAmount
-                        );
-                    }
-                } else {
-                    // Manual payment notifications
-                    if ($user) {
-                        if (method_exists($this->notificationService, 'notifyManualPaymentPending')) {
-                            $this->notificationService->notifyManualPaymentPending(
-                                $user->id,
-                                $batch->id,
-                                $request->quantity,
-                                $finalAmount
-                            );
-                        }
-                    }
                 }
-            } catch (\Exception $e) {
-                Log::warning('Notification sending failed', [
-                    'error' => $e->getMessage(),
-                    'batch_id' => $batch->id,
-                ]);
             }
-
-            return [
-                'success' => true,
-                'batch' => $batch->load(['course', 'acc']),
-                'codes' => $codeModels,
-                'transaction' => $transaction,
-                'payment_status' => $paymentStatus,
-            ];
-
         } catch (\Exception $e) {
-            DB::rollBack();
-
-            // Cleanup uploaded files
-            $this->fileUploadService->cleanupFiles($uploadedFiles);
-
-            Log::error('Code purchase failed', [
-                'training_center_id' => $trainingCenter->id,
-                'acc_id' => $acc->id,
-                'course_id' => $course->id,
+            Log::warning('Notification sending failed', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'batch_id' => $batch->id,
             ]);
-
-            throw $e;
         }
-    }
-
-    /**
-     * Process payment based on payment method
-     *
-     * @param Request $request
-     * @param TrainingCenter $trainingCenter
-     * @param ACC $acc
-     * @param float $finalAmount
-     * @param string $currency
-     * @return array
-     */
-    private function processPayment(
-        Request $request,
-        TrainingCenter $trainingCenter,
-        ACC $acc,
-        float $finalAmount,
-        string $currency
-    ): array {
-        $paymentMethod = $request->payment_method;
-        $uploadedFiles = [];
-        $paymentStatus = 'completed';
-        $paymentReceiptUrl = null;
-        $paymentAmount = null;
-        
-        $transactionData = [
-            'payer_type' => 'training_center',
-            'payer_id' => $trainingCenter->id,
-            'payee_type' => 'acc',
-            'payee_id' => $acc->id,
-            'amount' => $finalAmount,
-            'currency' => $currency,
-            'type' => 'code_purchase',
-            'status' => 'completed',
-            'payment_method' => $paymentMethod === 'manual_payment' ? 'manual_payment' : 'credit_card',
-        ];
-
-        if ($paymentMethod === 'credit_card') {
-            // Verify payment intent with enhanced error handling
-            try {
-                // First, retrieve the payment intent to check its status
-                $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
-                
-                if (!$paymentIntent) {
-                    return [
-                        'success' => false,
-                        'message' => 'Payment intent not found',
-                        'error' => 'Invalid payment intent ID'
-                    ];
-                }
-                
-                // If payment method ID is provided and payment intent requires payment method, attach it
-                if ($request->payment_method_id && $paymentIntent->status === 'requires_payment_method') {
-                    try {
-                        $paymentIntent = \Stripe\PaymentIntent::retrieve($request->payment_intent_id);
-                        $paymentIntent = $paymentIntent->update([
-                            'payment_method' => $request->payment_method_id,
-                        ]);
-                        
-                        Log::info('Payment method attached to payment intent', [
-                            'payment_intent_id' => $request->payment_intent_id,
-                            'payment_method_id' => $request->payment_method_id,
-                            'new_status' => $paymentIntent->status
-                        ]);
-                    } catch (\Exception $attachError) {
-                        Log::error('Failed to attach payment method', [
-                            'payment_intent_id' => $request->payment_intent_id,
-                            'payment_method_id' => $request->payment_method_id,
-                            'error' => $attachError->getMessage()
-                        ]);
-                        return [
-                            'success' => false,
-                            'message' => 'Failed to attach payment method to payment intent',
-                            'error' => $attachError->getMessage(),
-                            'error_code' => 'payment_method_attach_failed'
-                        ];
-                    }
-                }
-                
-                // Refresh payment intent status after potential attachment
-                if ($request->payment_method_id) {
-                    $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
-                }
-                
-                // If payment intent requires confirmation and has a payment method, try to confirm it
-                if ($paymentIntent->status === 'requires_confirmation' && $paymentIntent->payment_method) {
-                    try {
-                        $confirmResult = $this->stripeService->confirmPaymentIntent($request->payment_intent_id);
-                        if ($confirmResult['success']) {
-                            $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
-                        }
-                    } catch (\Exception $confirmError) {
-                        Log::warning('Failed to auto-confirm payment intent', [
-                            'payment_intent_id' => $request->payment_intent_id,
-                            'error' => $confirmError->getMessage()
-                        ]);
-                    }
-                }
-                
-                // Now verify the payment intent
-                $this->stripeService->verifyPaymentIntent(
-                    $request->payment_intent_id,
-                    $finalAmount,
-                    [
-                        'payer_id' => (string)$trainingCenter->id,
-                        'payee_id' => (string)$acc->id,
-                        'course_id' => (string)$request->course_id,
-                        'quantity' => (string)$request->quantity,
-                        'type' => 'code_purchase',
-                    ]
-                );
-
-                $transactionData['stripe_payment_intent_id'] = $request->payment_intent_id;
-                $transactionData['status'] = 'completed';
-            } catch (\Exception $e) {
-                $errorMessage = $e->getMessage();
-                
-                // Provide helpful error messages based on payment status
-                if (strpos($errorMessage, 'requires_payment_method') !== false) {
-                    return [
-                        'success' => false,
-                        'message' => 'Payment method not attached. Please provide payment_method_id or attach a payment method on the frontend before submitting the purchase.',
-                        'error' => $errorMessage,
-                        'error_code' => 'payment_not_confirmed'
-                    ];
-                } elseif (strpos($errorMessage, 'requires_confirmation') !== false) {
-                    return [
-                        'success' => false,
-                        'message' => 'Payment requires confirmation.',
-                        'error' => $errorMessage,
-                        'error_code' => 'payment_requires_confirmation'
-                    ];
-                } elseif (strpos($errorMessage, 'processing') !== false) {
-                    return [
-                        'success' => false,
-                        'message' => 'Payment is still processing. Please wait a moment and try again.',
-                        'error' => $errorMessage,
-                        'error_code' => 'payment_processing'
-                    ];
-                }
-                
-                return [
-                    'success' => false,
-                    'message' => 'Payment verification failed',
-                    'error' => $errorMessage
-                ];
-            }
-
-        } elseif ($paymentMethod === 'manual_payment') {
-            // Validate payment amount matches calculated amount
-            $paymentAmount = $request->payment_amount;
-            $amountDifference = abs($paymentAmount - $finalAmount);
-            if ($amountDifference > 0.01) {
-                return [
-                    'success' => false,
-                    'message' => 'Payment amount does not match the calculated total amount',
-                    'expected_amount' => $finalAmount,
-                    'provided_amount' => $paymentAmount
-                ];
-            }
-
-            // Handle manual payment receipt upload
-            if ($request->hasFile('payment_receipt')) {
-                $receiptResult = $this->fileUploadService->uploadDocument(
-                    $request->file('payment_receipt'),
-                    $trainingCenter->id,
-                    'training_center',
-                    'receipt'
-                );
-
-                if ($receiptResult['success']) {
-                    $paymentReceiptUrl = $receiptResult['url'];
-                    $uploadedFiles[] = $receiptResult['file_path'];
-                } else {
-                    return [
-                        'success' => false,
-                        'message' => 'Failed to upload payment receipt: ' . ($receiptResult['error'] ?? 'Unknown error')
-                    ];
-                }
-            } else {
-                return [
-                    'success' => false,
-                    'message' => 'Payment receipt is required for manual payment'
-                ];
-            }
-
-            $paymentStatus = 'pending';
-            $transactionData['payment_receipt_url'] = $paymentReceiptUrl;
-            $transactionData['payment_amount'] = $paymentAmount;
-            $transactionData['status'] = 'pending';
-        }
-
-        // Calculate commissions
-        $groupCommissionPercentage = $acc->commission_percentage ?? 0;
-        $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
-        $accCommissionAmount = $finalAmount - $groupCommissionAmount;
-
-        $transactionData['group_commission_percentage'] = $groupCommissionPercentage;
-        $transactionData['group_commission_amount'] = $groupCommissionAmount;
-        $transactionData['acc_commission_amount'] = $accCommissionAmount;
 
         return [
             'success' => true,
-            'transaction_data' => $transactionData,
-            'uploaded_files' => $uploadedFiles,
+            'batch' => $batch->load(['course', 'acc']),
+            'codes' => $codeModels,
+            'transaction' => $transaction,
             'payment_status' => $paymentStatus,
-            'payment_receipt_url' => $paymentReceiptUrl,
-            'payment_amount' => $paymentAmount,
         ];
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+
+        // Cleanup uploaded files
+        $this->fileUploadService->cleanupFiles($uploadedFiles);
+
+        Log::error('Code purchase failed with exception', [
+            'training_center_id' => $trainingCenter->id,
+            'acc_id' => $acc->id,
+            'course_id' => $course->id,
+            'error' => $e->getMessage(),
+            'error_class' => get_class($e),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        throw $e;
     }
+}
+
+
+/**
+ * Process payment based on payment method
+ *
+ * @param Request $request
+ * @param TrainingCenter $trainingCenter
+ * @param ACC $acc
+ * @param float $finalAmount
+ * @param string $currency
+ * @return array
+ */
+private function processPayment(
+    Request $request,
+    TrainingCenter $trainingCenter,
+    ACC $acc,
+    float $finalAmount,
+    string $currency
+): array {
+    $paymentMethod = $request->payment_method;
+    $uploadedFiles = [];
+    $paymentStatus = 'completed';
+    $paymentReceiptUrl = null;
+    $paymentAmount = null;
+    
+    $transactionData = [
+        'payer_type' => 'training_center',
+        'payer_id' => $trainingCenter->id,
+        'payee_type' => 'acc',
+        'payee_id' => $acc->id,
+        'amount' => $finalAmount,
+        'currency' => $currency,
+        'type' => 'code_purchase',
+        'status' => 'completed',
+        'payment_method' => $paymentMethod === 'manual_payment' ? 'manual_payment' : 'credit_card',
+    ];
+
+    if ($paymentMethod === 'credit_card') {
+        // Verify payment intent with enhanced error handling
+        try {
+            // First, retrieve the payment intent to check its status
+            $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+            
+            if (!$paymentIntent) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment intent not found',
+                    'error' => 'Invalid payment intent ID'
+                ];
+            }
+            
+            // If payment method ID is provided and payment intent requires payment method, attach it
+            if ($request->payment_method_id && $paymentIntent->status === 'requires_payment_method') {
+                try {
+                    $paymentIntent = \Stripe\PaymentIntent::retrieve($request->payment_intent_id);
+                    $paymentIntent = $paymentIntent->update([
+                        'payment_method' => $request->payment_method_id,
+                    ]);
+                    
+                    Log::info('Payment method attached to payment intent', [
+                        'payment_intent_id' => $request->payment_intent_id,
+                        'payment_method_id' => $request->payment_method_id,
+                        'new_status' => $paymentIntent->status
+                    ]);
+                } catch (\Exception $attachError) {
+                    Log::error('Failed to attach payment method', [
+                        'payment_intent_id' => $request->payment_intent_id,
+                        'payment_method_id' => $request->payment_method_id,
+                        'error' => $attachError->getMessage()
+                    ]);
+                    return [
+                        'success' => false,
+                        'message' => 'Failed to attach payment method to payment intent',
+                        'error' => $attachError->getMessage(),
+                        'error_code' => 'payment_method_attach_failed'
+                    ];
+                }
+            }
+            
+            // Refresh payment intent status after potential attachment
+            if ($request->payment_method_id) {
+                $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+            }
+            
+            // If payment intent requires confirmation and has a payment method, try to confirm it
+            if ($paymentIntent->status === 'requires_confirmation' && $paymentIntent->payment_method) {
+                try {
+                    $confirmResult = $this->stripeService->confirmPaymentIntent($request->payment_intent_id);
+                    if ($confirmResult['success']) {
+                        $paymentIntent = $this->stripeService->retrievePaymentIntent($request->payment_intent_id);
+                    }
+                } catch (\Exception $confirmError) {
+                    Log::warning('Failed to auto-confirm payment intent', [
+                        'payment_intent_id' => $request->payment_intent_id,
+                        'error' => $confirmError->getMessage()
+                    ]);
+                }
+            }
+            
+            // Now verify the payment intent
+            $this->stripeService->verifyPaymentIntent(
+                $request->payment_intent_id,
+                $finalAmount,
+                [
+                    'payer_id' => (string)$trainingCenter->id,
+                    'payee_id' => (string)$acc->id,
+                    'course_id' => (string)$request->course_id,
+                    'quantity' => (string)$request->quantity,
+                    'type' => 'code_purchase',
+                ]
+            );
+
+            $transactionData['stripe_payment_intent_id'] = $request->payment_intent_id;
+            $transactionData['status'] = 'completed';
+        } catch (\Exception $e) {
+            $errorMessage = $e->getMessage();
+            
+            // Provide helpful error messages based on payment status
+            if (strpos($errorMessage, 'requires_payment_method') !== false) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment method not attached. Please provide payment_method_id or attach a payment method on the frontend before submitting the purchase.',
+                    'error' => $errorMessage,
+                    'error_code' => 'payment_not_confirmed'
+                ];
+            } elseif (strpos($errorMessage, 'requires_confirmation') !== false) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment requires confirmation.',
+                    'error' => $errorMessage,
+                    'error_code' => 'payment_requires_confirmation'
+                ];
+            } elseif (strpos($errorMessage, 'processing') !== false) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment is still processing. Please wait a moment and try again.',
+                    'error' => $errorMessage,
+                    'error_code' => 'payment_processing'
+                ];
+            }
+            
+            return [
+                'success' => false,
+                'message' => 'Payment verification failed',
+                'error' => $errorMessage
+            ];
+        }
+
+    } elseif ($paymentMethod === 'manual_payment') {
+        // Log the incoming request data for debugging
+        Log::info('Processing manual payment', [
+            'training_center_id' => $trainingCenter->id,
+            'acc_id' => $acc->id,
+            'has_file' => $request->hasFile('payment_receipt'),
+            'payment_amount' => $request->payment_amount,
+            'final_amount' => $finalAmount,
+            'files' => $request->allFiles(),
+        ]);
+
+        // Validate payment amount exists
+        if (!$request->has('payment_amount') || $request->payment_amount === null) {
+            return [
+                'success' => false,
+                'message' => 'Payment amount is required for manual payment'
+            ];
+        }
+
+        // Validate payment amount matches calculated amount
+        $paymentAmount = floatval($request->payment_amount);
+        $amountDifference = abs($paymentAmount - $finalAmount);
+        
+        Log::info('Payment amount validation', [
+            'payment_amount' => $paymentAmount,
+            'final_amount' => $finalAmount,
+            'difference' => $amountDifference,
+        ]);
+
+        if ($amountDifference > 0.01) {
+            return [
+                'success' => false,
+                'message' => 'Payment amount does not match the calculated total amount',
+                'expected_amount' => $finalAmount,
+                'provided_amount' => $paymentAmount,
+                'difference' => $amountDifference
+            ];
+        }
+
+        // Handle manual payment receipt upload
+        if (!$request->hasFile('payment_receipt')) {
+            Log::error('Payment receipt file not found', [
+                'has_file' => $request->hasFile('payment_receipt'),
+                'all_files' => $request->allFiles(),
+                'input_keys' => array_keys($request->all()),
+            ]);
+            
+            return [
+                'success' => false,
+                'message' => 'Payment receipt is required for manual payment. Please ensure the file is being uploaded correctly.'
+            ];
+        }
+
+        $file = $request->file('payment_receipt');
+        
+        // Validate file
+        if (!$file->isValid()) {
+            Log::error('Invalid payment receipt file', [
+                'file_error' => $file->getError(),
+                'file_error_message' => $file->getErrorMessage(),
+            ]);
+            
+            return [
+                'success' => false,
+                'message' => 'Payment receipt file is invalid: ' . $file->getErrorMessage()
+            ];
+        }
+
+        Log::info('Uploading payment receipt', [
+            'file_name' => $file->getClientOriginalName(),
+            'file_size' => $file->getSize(),
+            'file_mime' => $file->getMimeType(),
+        ]);
+
+        try {
+            $receiptResult = $this->fileUploadService->uploadDocument(
+                $file,
+                $trainingCenter->id,
+                'training_center',
+                'receipt'
+            );
+
+            if (!$receiptResult['success']) {
+                Log::error('File upload service failed', [
+                    'error' => $receiptResult['error'] ?? 'Unknown error',
+                    'result' => $receiptResult,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'message' => 'Failed to upload payment receipt: ' . ($receiptResult['error'] ?? 'Unknown error')
+                ];
+            }
+
+            $paymentReceiptUrl = $receiptResult['url'];
+            $uploadedFiles[] = $receiptResult['file_path'];
+            
+            Log::info('Payment receipt uploaded successfully', [
+                'url' => $paymentReceiptUrl,
+                'file_path' => $receiptResult['file_path'],
+            ]);
+
+        } catch (\Exception $uploadError) {
+            Log::error('Exception during file upload', [
+                'error' => $uploadError->getMessage(),
+                'trace' => $uploadError->getTraceAsString(),
+            ]);
+            
+            return [
+                'success' => false,
+                'message' => 'Failed to upload payment receipt: ' . $uploadError->getMessage()
+            ];
+        }
+
+        $paymentStatus = 'pending';
+        $transactionData['payment_receipt_url'] = $paymentReceiptUrl;
+        $transactionData['payment_amount'] = $paymentAmount;
+        $transactionData['status'] = 'pending';
+    }
+
+    // Calculate commissions
+    $groupCommissionPercentage = $acc->commission_percentage ?? 0;
+    $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
+    $accCommissionAmount = $finalAmount - $groupCommissionAmount;
+
+    $transactionData['group_commission_percentage'] = $groupCommissionPercentage;
+    $transactionData['group_commission_amount'] = $groupCommissionAmount;
+    $transactionData['acc_commission_amount'] = $accCommissionAmount;
+
+    return [
+        'success' => true,
+        'transaction_data' => $transactionData,
+        'uploaded_files' => $uploadedFiles,
+        'payment_status' => $paymentStatus,
+        'payment_receipt_url' => $paymentReceiptUrl,
+        'payment_amount' => $paymentAmount,
+    ];
+}
 
     /**
      * Generate unique certificate codes

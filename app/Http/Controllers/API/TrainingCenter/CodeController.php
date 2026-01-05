@@ -206,6 +206,7 @@ class CodeController extends Controller
             new OA\Response(response: 422, description: "Validation error")
         ]
     )]
+
     public function purchase(Request $request)
     {
         // Check Content-Type header for manual payment with file upload
@@ -231,7 +232,7 @@ class CodeController extends Controller
                 ], 400);
             }
         }
-
+    
         $request->validate([
             'acc_id' => 'required|integer|exists:accs,id',
             'course_id' => 'required|integer|exists:courses,id',
@@ -251,20 +252,20 @@ class CodeController extends Controller
             'payment_amount.numeric' => 'Payment amount must be a valid number.',
             'payment_amount.min' => 'Payment amount must be greater than 0.',
         ]);
-
+    
         $user = $request->user();
         $trainingCenter = TrainingCenter::where('email', $user->email)->first();
-
+    
         if (!$trainingCenter) {
             return response()->json(['message' => 'Training center not found'], 404);
         }
-
+    
         // Validate purchase request
         $validationResult = $this->codePurchaseService->validatePurchaseRequest($request, $trainingCenter);
         if (!$validationResult['valid']) {
             return response()->json(['message' => $validationResult['message']], $validationResult['code']);
         }
-
+    
         // Calculate price with discount
         $priceCalculation = $this->codePurchaseService->calculatePrice(
             $validationResult['pricing'],
@@ -273,11 +274,11 @@ class CodeController extends Controller
             $request->acc_id,
             $request->course_id
         );
-
+    
         if (!$priceCalculation['success']) {
             return response()->json(['message' => $priceCalculation['message']], 422);
         }
-
+    
         // Process purchase using service
         try {
             $result = $this->codePurchaseService->processPurchase(
@@ -286,12 +287,30 @@ class CodeController extends Controller
                 $validationResult,
                 $priceCalculation
             );
-
+    
+            // Check if processPurchase returned an error (from processPayment)
+            if (isset($result['success']) && !$result['success']) {
+                Log::error('Code purchase service returned error', [
+                    'error' => $result,
+                    'user_id' => $user->id ?? null,
+                    'training_center_id' => $trainingCenter->id,
+                ]);
+    
+                return response()->json([
+                    'message' => $result['message'] ?? 'Purchase failed',
+                    'error' => $result['error'] ?? null,
+                    'error_code' => $result['error_code'] ?? 'purchase_failed',
+                    'expected_amount' => $result['expected_amount'] ?? null,
+                    'provided_amount' => $result['provided_amount'] ?? null,
+                    'difference' => $result['difference'] ?? null,
+                ], 400);
+            }
+    
             $paymentStatus = $result['payment_status'] ?? 'completed';
             $batch = $result['batch'];
             $codes = $result['codes'] ?? [];
             $transaction = $result['transaction'];
-
+    
             // Format response
             $response = [
                 'message' => $paymentStatus === 'completed'
@@ -311,7 +330,7 @@ class CodeController extends Controller
                     'created_at' => $batch->created_at->toIso8601String(),
                 ],
             ];
-
+    
             if ($paymentStatus === 'completed' && !empty($codes)) {
                 $response['codes'] = array_map(function($code) {
                     return [
@@ -321,36 +340,38 @@ class CodeController extends Controller
                     ];
                 }, $codes);
             }
-
+    
             return response()->json($response, 200);
-
+    
         } catch (\Exception $e) {
-            Log::error('Code purchase failed', [
+            Log::error('Code purchase failed with exception', [
                 'error' => $e->getMessage(),
                 'error_class' => get_class($e),
                 'trace' => $e->getTraceAsString(),
                 'user_id' => $user->id ?? null,
                 'training_center_id' => $trainingCenter->id ?? null,
+                'request_data' => [
+                    'acc_id' => $request->acc_id,
+                    'course_id' => $request->course_id,
+                    'quantity' => $request->quantity,
+                    'payment_method' => $request->payment_method,
+                    'has_file' => $request->hasFile('payment_receipt'),
+                ],
             ]);
-
+    
             $errorMessage = $e->getMessage();
-            $errorCode = 'internal_server_error';
-            $statusCode = 500;
-
-            // Handle specific error types
-            if (strpos($errorMessage, 'Payment') !== false || strpos($errorMessage, 'payment') !== false) {
-                $statusCode = 400;
-                $errorCode = 'payment_error';
-            } elseif (strpos($errorMessage, 'Invalid') !== false || strpos($errorMessage, 'validation') !== false) {
-                $statusCode = 422;
-                $errorCode = 'validation_error';
-            }
-
+    
+            // Return the actual error message for debugging
             return response()->json([
-                'message' => $statusCode === 422 ? $errorMessage : 'Purchase failed. Please try again.',
-                'error' => config('app.debug') ? $errorMessage : ($statusCode === 422 ? $errorMessage : 'Internal server error'),
-                'error_code' => $errorCode
-            ], $statusCode);
+                'message' => 'Purchase failed: ' . $errorMessage,
+                'error' => config('app.debug') ? $errorMessage : 'Internal server error',
+                'error_code' => 'purchase_exception',
+                'debug_info' => config('app.debug') ? [
+                    'exception_class' => get_class($e),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ] : null,
+            ], 500);
         }
     }
 
