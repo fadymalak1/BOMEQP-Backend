@@ -609,6 +609,54 @@ class InstructorManagementService
 
             DB::commit();
 
+            // Send notifications
+            try {
+                $authorization->load(['instructor', 'acc', 'trainingCenter']);
+                $instructor = $authorization->instructor;
+                $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
+                
+                $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
+                $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
+                
+                // Get training center user for notification
+                $trainingCenterUser = User::where('email', $trainingCenter->email)
+                    ->where('role', 'training_center_admin')
+                    ->first();
+                
+                if ($trainingCenterUser) {
+                    $this->notificationService->notifyInstructorAuthorizationPaymentSuccess(
+                        $trainingCenterUser->id,
+                        $authorization->id,
+                        $instructorName,
+                        $authorization->authorization_price
+                    );
+                }
+                
+                $this->notificationService->notifyInstructorAuthorizationPaid(
+                    $authorization->id,
+                    $instructorName,
+                    $authorization->authorization_price,
+                    $groupCommissionAmount
+                );
+                
+                if ($groupCommissionAmount > 0) {
+                    $acc = $authorization->acc;
+                    $this->notificationService->notifyAdminCommissionReceived(
+                        $transaction->id,
+                        'instructor_authorization',
+                        $groupCommissionAmount,
+                        $authorization->authorization_price,
+                        $trainingCenter->name,
+                        $acc ? $acc->name : null
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::warning('Failed to send notifications', [
+                    'authorization_id' => $authorization->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
             return [
                 'success' => true,
                 'authorization' => $authorization->fresh(),

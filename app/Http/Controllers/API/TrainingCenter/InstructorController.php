@@ -523,50 +523,9 @@ class InstructorController extends Controller
                 return response()->json(['message' => $result['message']], $result['code']);
             }
 
-            // Send notifications
-            try {
-                $authorization->load(['instructor', 'acc', 'trainingCenter']);
-                $instructor = $authorization->instructor;
-                $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
-                
-                $groupCommissionPercentage = $authorization->commission_percentage ?? 0;
-                $groupCommissionAmount = ($authorization->authorization_price * $groupCommissionPercentage) / 100;
-                
-                $this->instructorService->notificationService->notifyInstructorAuthorizationPaymentSuccess(
-                    $user->id,
-                    $authorization->id,
-                    $instructorName,
-                    $authorization->authorization_price
-                );
-                
-                $this->instructorService->notificationService->notifyInstructorAuthorizationPaid(
-                    $authorization->id,
-                    $instructorName,
-                    $authorization->authorization_price,
-                    $groupCommissionAmount
-                );
-                
-                if ($groupCommissionAmount > 0) {
-                    $acc = $authorization->acc;
-                    $this->instructorService->notificationService->notifyAdminCommissionReceived(
-                        $result['transaction']->id,
-                        'instructor_authorization',
-                        $groupCommissionAmount,
-                        $authorization->authorization_price,
-                        $trainingCenter->name,
-                        $acc ? $acc->name : null
-                    );
-                }
-            } catch (\Exception $e) {
-                Log::warning('Failed to send notifications', [
-                    'authorization_id' => $authorization->id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-
             return response()->json([
                 'message' => 'Payment successful. Instructor is now officially authorized.',
-                'authorization' => $authorization->fresh()->load(['instructor', 'acc', 'trainingCenter']),
+                'authorization' => $result['authorization']->load(['instructor', 'acc', 'trainingCenter']),
                 'transaction' => $result['transaction']
             ], 200);
 
