@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\TrainingCenter;
 
 use App\Http\Controllers\Controller;
 use App\Models\TrainingCenter;
+use App\Models\User;
 use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -203,6 +204,14 @@ class ProfileController extends Controller
 
             if (!empty($updateData)) {
                 $trainingCenter->update($updateData);
+                
+                // Sync user name if training center name was updated
+                if (isset($updateData['name']) && $updateData['name']) {
+                    $userAccount = User::where('email', $user->email)->first();
+                    if ($userAccount && $userAccount->name !== $updateData['name']) {
+                        $userAccount->update(['name' => $updateData['name']]);
+                    }
+                }
             }
 
             // Refresh the model to get updated data

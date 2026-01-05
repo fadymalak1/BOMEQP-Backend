@@ -181,7 +181,7 @@ class AuthController extends Controller
     #[OA\Get(
         path: "/auth/profile",
         summary: "Get user profile",
-        description: "Get the authenticated user's profile information.",
+        description: "Get the authenticated user's profile information. The name field is synced with the Training Center or ACC profile based on the user's role.",
         tags: ["Authentication"],
         security: [["sanctum" => []]],
         responses: [
@@ -199,7 +199,29 @@ class AuthController extends Controller
     )]
     public function profile(Request $request)
     {
-        return response()->json(['user' => $request->user()]);
+        $user = $request->user();
+        $profileName = null;
+
+        // Sync name from Training Center or ACC profile based on role
+        if ($user->role === 'training_center_admin') {
+            $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+            if ($trainingCenter && $trainingCenter->name) {
+                $profileName = $trainingCenter->name;
+            }
+        } elseif ($user->role === 'acc_admin') {
+            $acc = \App\Models\ACC::where('email', $user->email)->first();
+            if ($acc && $acc->name) {
+                $profileName = $acc->name;
+            }
+        }
+
+        // Update user name if profile name exists and is different
+        if ($profileName && $user->name !== $profileName) {
+            $user->update(['name' => $profileName]);
+            $user->refresh();
+        }
+
+        return response()->json(['user' => $user]);
     }
 
     #[OA\Put(
