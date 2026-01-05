@@ -22,6 +22,7 @@ class Instructor extends Model
         'country',
         'city',
         'cv_url',
+        'photo_url',
         'certificates_json',
         'specializations',
         'status',
