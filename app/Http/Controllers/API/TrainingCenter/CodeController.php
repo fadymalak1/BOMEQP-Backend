@@ -146,22 +146,45 @@ class CodeController extends Controller
     #[OA\Post(
         path: "/training-center/codes/purchase",
         summary: "Purchase certificate codes",
-        description: "Purchase certificate codes after payment intent is confirmed. Generates codes and creates batch.",
+        description: "Purchase certificate codes after payment intent is confirmed. Generates codes and creates batch. Use multipart/form-data when uploading payment_receipt for manual payment. DO NOT manually set Content-Type header when using FormData - let the browser set it automatically.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
             required: true,
-            content: new OA\JsonContent(
-                required: ["acc_id", "course_id", "quantity", "payment_method", "payment_intent_id"],
-                properties: [
-                    new OA\Property(property: "acc_id", type: "integer", example: 1),
-                    new OA\Property(property: "course_id", type: "integer", example: 1),
-                    new OA\Property(property: "quantity", type: "integer", example: 10, minimum: 1),
-                    new OA\Property(property: "discount_code", type: "string", nullable: true, example: "DISCOUNT10"),
-                    new OA\Property(property: "payment_method", type: "string", enum: ["credit_card"], example: "credit_card"),
-                    new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx")
-                ]
-            )
+            content: [
+                new OA\MediaType(
+                    mediaType: "multipart/form-data",
+                    schema: new OA\Schema(
+                        required: ["acc_id", "course_id", "quantity", "payment_method"],
+                        properties: [
+                            new OA\Property(property: "acc_id", type: "integer", example: 1),
+                            new OA\Property(property: "course_id", type: "integer", example: 1),
+                            new OA\Property(property: "quantity", type: "integer", example: 10, minimum: 1),
+                            new OA\Property(property: "discount_code", type: "string", nullable: true, example: "DISCOUNT10"),
+                            new OA\Property(property: "payment_method", type: "string", enum: ["wallet", "credit_card", "manual_payment"], example: "credit_card"),
+                            new OA\Property(property: "payment_intent_id", type: "string", nullable: true, example: "pi_xxx", description: "Required if payment_method is credit_card"),
+                            new OA\Property(property: "payment_method_id", type: "string", nullable: true, example: "pm_xxx"),
+                            new OA\Property(property: "payment_receipt", type: "string", format: "binary", nullable: true, description: "Required if payment_method is manual_payment. File must be PDF, JPG, JPEG, or PNG, max 10MB. IMPORTANT: When using FormData, do NOT manually set Content-Type header - let browser set it automatically."),
+                            new OA\Property(property: "payment_amount", type: "number", nullable: true, example: 1000.00, description: "Required if payment_method is manual_payment"),
+                        ]
+                    )
+                ),
+                new OA\MediaType(
+                    mediaType: "application/json",
+                    schema: new OA\Schema(
+                        required: ["acc_id", "course_id", "quantity", "payment_method"],
+                        properties: [
+                            new OA\Property(property: "acc_id", type: "integer", example: 1),
+                            new OA\Property(property: "course_id", type: "integer", example: 1),
+                            new OA\Property(property: "quantity", type: "integer", example: 10, minimum: 1),
+                            new OA\Property(property: "discount_code", type: "string", nullable: true, example: "DISCOUNT10"),
+                            new OA\Property(property: "payment_method", type: "string", enum: ["wallet", "credit_card"], example: "credit_card", description: "Note: manual_payment requires multipart/form-data for file upload"),
+                            new OA\Property(property: "payment_intent_id", type: "string", example: "pi_xxx", description: "Required if payment_method is credit_card"),
+                            new OA\Property(property: "payment_method_id", type: "string", nullable: true, example: "pm_xxx"),
+                        ]
+                    )
+                )
+            ]
         ),
         responses: [
             new OA\Response(
@@ -185,6 +208,30 @@ class CodeController extends Controller
     )]
     public function purchase(Request $request)
     {
+        // Check Content-Type header for manual payment with file upload
+        $contentType = $request->header('Content-Type', '');
+        $isManualPayment = $request->input('payment_method') === 'manual_payment';
+        
+        if ($isManualPayment && $request->hasFile('payment_receipt')) {
+            // Validate Content-Type is multipart/form-data
+            if (!str_contains($contentType, 'multipart/form-data')) {
+                Log::warning('Code purchase: Invalid Content-Type for file upload', [
+                    'content_type' => $contentType,
+                    'payment_method' => $request->input('payment_method'),
+                    'has_file' => $request->hasFile('payment_receipt'),
+                    'user_id' => $request->user()->id ?? null,
+                ]);
+                
+                return response()->json([
+                    'message' => 'Invalid Content-Type header. When uploading payment_receipt, you must use multipart/form-data. Do NOT manually set Content-Type header when using FormData - let the browser set it automatically.',
+                    'error' => 'invalid_content_type',
+                    'received_content_type' => $contentType,
+                    'expected_content_type' => 'multipart/form-data',
+                    'hint' => 'Remove the Content-Type header from your request when using FormData. The browser will automatically set it to multipart/form-data with the correct boundary.'
+                ], 400);
+            }
+        }
+
         $request->validate([
             'acc_id' => 'required|integer|exists:accs,id',
             'course_id' => 'required|integer|exists:courses,id',
@@ -196,8 +243,8 @@ class CodeController extends Controller
             'payment_receipt' => 'required_if:payment_method,manual_payment|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
             'payment_amount' => 'required_if:payment_method,manual_payment|nullable|numeric|min:0',
         ], [
-            'payment_receipt.required_if' => 'Payment receipt is required for manual payment. Please ensure you are sending the file as multipart/form-data.',
-            'payment_receipt.file' => 'Payment receipt must be a valid file upload.',
+            'payment_receipt.required_if' => 'Payment receipt is required for manual payment. Please ensure you are sending the file as multipart/form-data. Do NOT manually set Content-Type header when using FormData.',
+            'payment_receipt.file' => 'Payment receipt must be a valid file upload. Ensure you are using multipart/form-data and not manually setting Content-Type header.',
             'payment_receipt.mimes' => 'Payment receipt must be a PDF, JPG, JPEG, or PNG file.',
             'payment_receipt.max' => 'Payment receipt file size must not exceed 10MB.',
             'payment_amount.required_if' => 'Payment amount is required for manual payment.',
