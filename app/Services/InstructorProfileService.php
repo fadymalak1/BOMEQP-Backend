@@ -363,6 +363,7 @@ class InstructorProfileService
 
     /**
      * Handle certificates with file uploads
+     * Merges new certificates with existing ones
      *
      * @param Request $request
      * @param Instructor $instructor
@@ -370,12 +371,16 @@ class InstructorProfileService
      */
     private function handleCertificates(Request $request, Instructor $instructor): array
     {
-        $certificates = $request->input('certificates', []);
+        $newCertificates = $request->input('certificates', []);
         $certificateFiles = $request->file('certificate_files', []);
         $uploadedFiles = [];
         $processedCertificates = [];
 
-        foreach ($certificates as $index => $cert) {
+        // Start with existing certificates from the database
+        $existingCertificates = $instructor->certificates_json ?? [];
+        
+        // Process new certificates from the request
+        foreach ($newCertificates as $index => $cert) {
             if (!is_array($cert)) {
                 continue;
             }
@@ -424,8 +429,11 @@ class InstructorProfileService
             $processedCertificates[] = $certificateData;
         }
 
+        // Merge new certificates with existing ones
+        $allCertificates = array_merge($existingCertificates, $processedCertificates);
+
         return [
-            'certificates' => $processedCertificates,
+            'certificates' => $allCertificates,
             'uploaded_files' => $uploadedFiles
         ];
     }
