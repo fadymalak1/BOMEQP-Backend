@@ -41,5 +41,12 @@ class Trainee extends Model
             ->withPivot('status', 'enrolled_at', 'completed_at')
             ->withTimestamps();
     }
+
+    public function classes(): BelongsToMany
+    {
+        return $this->belongsToMany(ClassModel::class, 'class_trainee', 'trainee_id', 'class_id')
+            ->withPivot('status', 'enrolled_at', 'completed_at')
+            ->withTimestamps();
+    }
 }
 

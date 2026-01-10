@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClassModel;
+use App\Models\Trainee;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
 
@@ -33,7 +34,7 @@ class ClassController extends Controller
     )]
     public function index(Request $request)
     {
-        $query = ClassModel::with('course');
+        $query = ClassModel::with(['course', 'trainees']);
 
         if ($request->has('course_id')) {
             $query->where('course_id', $request->course_id);
@@ -46,7 +47,7 @@ class ClassController extends Controller
     #[OA\Post(
         path: "/admin/classes",
         summary: "Create class",
-        description: "Create a new class model.",
+        description: "Create a new class model with optional trainees.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
@@ -56,7 +57,8 @@ class ClassController extends Controller
                 properties: [
                     new OA\Property(property: "course_id", type: "integer", example: 1),
                     new OA\Property(property: "name", type: "string", example: "Class A"),
-                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active"),
+                    new OA\Property(property: "trainee_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], nullable: true, description: "Array of trainee IDs to enroll in this class")
                 ]
             )
         ),
@@ -66,7 +68,8 @@ class ClassController extends Controller
                 description: "Class created successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "class", type: "object")
+                        new OA\Property(property: "class", type: "object"),
+                        new OA\Property(property: "message", type: "string", example: "Class created successfully")
                     ]
                 )
             ),
@@ -80,6 +83,8 @@ class ClassController extends Controller
             'course_id' => 'required|exists:courses,id',
             'name' => 'required|string|max:255|unique:classes,name',
             'status' => 'required|in:active,inactive',
+            'trainee_ids' => 'nullable|array',
+            'trainee_ids.*' => 'exists:trainees,id',
         ]);
 
         $class = ClassModel::create([
@@ -89,13 +94,30 @@ class ClassController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
-        return response()->json(['class' => $class], 201);
+        // Attach trainees if provided
+        if ($request->has('trainee_ids') && is_array($request->trainee_ids)) {
+            $pivotData = [];
+            foreach ($request->trainee_ids as $traineeId) {
+                $pivotData[$traineeId] = [
+                    'status' => 'enrolled',
+                    'enrolled_at' => now(),
+                ];
+            }
+            $class->trainees()->attach($pivotData);
+        }
+
+        $class->load('trainees', 'course');
+
+        return response()->json([
+            'message' => 'Class created successfully',
+            'class' => $class
+        ], 201);
     }
 
     #[OA\Get(
         path: "/admin/classes/{id}",
         summary: "Get class details",
-        description: "Get detailed information about a specific class.",
+        description: "Get detailed information about a specific class including enrolled trainees.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
@@ -117,14 +139,14 @@ class ClassController extends Controller
     )]
     public function show($id)
     {
-        $class = ClassModel::with('course')->findOrFail($id);
+        $class = ClassModel::with(['course', 'trainees'])->findOrFail($id);
         return response()->json(['class' => $class]);
     }
 
     #[OA\Put(
         path: "/admin/classes/{id}",
         summary: "Update class",
-        description: "Update class information.",
+        description: "Update class information and manage enrolled trainees.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
@@ -136,7 +158,8 @@ class ClassController extends Controller
                 properties: [
                     new OA\Property(property: "course_id", type: "integer", nullable: true),
                     new OA\Property(property: "name", type: "string", nullable: true),
-                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], nullable: true)
+                    new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], nullable: true),
+                    new OA\Property(property: "trainee_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], nullable: true, description: "Array of trainee IDs to sync with this class (replaces existing enrollments)")
                 ]
             )
         ),
@@ -164,9 +187,25 @@ class ClassController extends Controller
             'course_id' => 'sometimes|exists:courses,id',
             'name' => 'sometimes|string|max:255|unique:classes,name,' . $id,
             'status' => 'sometimes|in:active,inactive',
+            'trainee_ids' => 'nullable|array',
+            'trainee_ids.*' => 'exists:trainees,id',
         ]);
 
         $class->update($request->only(['course_id', 'name', 'status']));
+
+        // Sync trainees if provided
+        if ($request->has('trainee_ids')) {
+            $pivotData = [];
+            foreach ($request->trainee_ids as $traineeId) {
+                $pivotData[$traineeId] = [
+                    'status' => 'enrolled',
+                    'enrolled_at' => now(),
+                ];
+            }
+            $class->trainees()->sync($pivotData);
+        }
+
+        $class->load('trainees', 'course');
 
         return response()->json(['message' => 'Class updated successfully', 'class' => $class]);
     }

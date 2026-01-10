@@ -243,9 +243,10 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::post('/accs/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'requestAuthorization']);
         Route::get('/authorizations', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'authorizations']);
         
-        // ACC Courses and Sub-categories for instructor authorization
+        // ACC Courses and Categories for instructor authorization
+        Route::get('/accs/{accId}/categories', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'getAccCategories']);
         Route::get('/accs/{accId}/courses', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'getAccCourses']);
-        Route::get('/accs/{accId}/sub-categories', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'getAccSubCategories']);
+        Route::get('/accs/{categoryId}/sub-categories', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'getCategorySubCategories']);
 
         // Instructors
         // Specific routes must come before apiResource to avoid route conflicts

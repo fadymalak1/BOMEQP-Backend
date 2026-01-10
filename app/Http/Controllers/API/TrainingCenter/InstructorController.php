@@ -325,9 +325,9 @@ class InstructorController extends Controller
     }
 
     #[OA\Get(
-        path: "/training-center/accs/{accId}/sub-categories",
-        summary: "Get sub-categories with courses for an ACC",
-        description: "Get all sub-categories that have courses in a specific ACC, with course counts.",
+        path: "/training-center/accs/{accId}/categories",
+        summary: "Get categories for an ACC",
+        description: "Get all categories assigned to a specific ACC.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -336,10 +336,11 @@ class InstructorController extends Controller
         responses: [
             new OA\Response(
                 response: 200,
-                description: "Sub-categories retrieved successfully",
+                description: "Categories retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "sub_categories", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "categories", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "acc", type: "object")
                     ]
                 )
             ),
@@ -347,25 +348,59 @@ class InstructorController extends Controller
             new OA\Response(response: 404, description: "ACC not found")
         ]
     )]
-    public function getAccSubCategories($accId)
+    public function getAccCategories($accId)
     {
         $acc = \App\Models\ACC::findOrFail($accId);
         
-        $subCategories = \App\Models\SubCategory::whereHas('courses', function($query) use ($accId) {
-            $query->where('acc_id', $accId)
-                  ->where('status', 'active');
-        })
-        ->withCount(['courses' => function($query) use ($accId) {
-            $query->where('acc_id', $accId)
-                  ->where('status', 'active');
-        }])
-        ->get();
+        $categories = $acc->categories()->where('status', 'active')->get();
 
         return response()->json([
-            'sub_categories' => $subCategories,
+            'categories' => $categories,
             'acc' => [
                 'id' => $acc->id,
                 'name' => $acc->name,
+            ]
+        ]);
+    }
+
+    #[OA\Get(
+        path: "/training-center/accs/{categoryId}/sub-categories",
+        summary: "Get sub-categories for a category",
+        description: "Get all sub-categories that belong to a specific category.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "categoryId", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Sub-categories retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "sub_categories", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "category", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Category not found")
+        ]
+    )]
+    public function getCategorySubCategories($categoryId)
+    {
+        $category = \App\Models\Category::findOrFail($categoryId);
+        
+        $subCategories = \App\Models\SubCategory::where('category_id', $categoryId)
+            ->where('status', 'active')
+            ->get();
+
+        return response()->json([
+            'sub_categories' => $subCategories,
+            'category' => [
+                'id' => $category->id,
+                'name' => $category->name,
+                'name_ar' => $category->name_ar,
             ]
         ]);
     }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ClassModel extends Model
@@ -38,6 +39,13 @@ class ClassModel extends Model
     public function certificates(): HasMany
     {
         return $this->hasMany(Certificate::class, 'class_id');
+    }
+
+    public function trainees(): BelongsToMany
+    {
+        return $this->belongsToMany(Trainee::class, 'class_trainee', 'class_id', 'trainee_id')
+            ->withPivot('status', 'enrolled_at', 'completed_at')
+            ->withTimestamps();
     }
 }
 
