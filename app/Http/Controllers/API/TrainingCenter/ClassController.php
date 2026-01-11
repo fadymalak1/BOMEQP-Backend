@@ -111,7 +111,8 @@ class ClassController extends Controller
                     new OA\Property(property: "exam_score", type: "number", format: "float", nullable: true, example: 85.50),
                     new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], example: "physical"),
-                    new OA\Property(property: "location_details", type: "string", nullable: true, example: "Room 101")
+                    new OA\Property(property: "location_details", type: "string", nullable: true, example: "Room 101"),
+                    new OA\Property(property: "trainee_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], nullable: true, description: "Array of trainee IDs to enroll in this training class")
                 ]
             )
         ),
@@ -144,6 +145,8 @@ class ClassController extends Controller
             'schedule_json' => 'nullable|array',
             'location' => 'required|in:physical,online',
             'location_details' => 'nullable|string',
+            'trainee_ids' => 'nullable|array',
+            'trainee_ids.*' => 'exists:trainees,id',
         ]);
 
         $user = $request->user();
@@ -163,6 +166,20 @@ class ClassController extends Controller
             return response()->json(['message' => 'Course not available. ACC authorization required.'], 403);
         }
 
+        // Validate trainees belong to the training center before creating the class
+        if ($request->has('trainee_ids') && is_array($request->trainee_ids) && !empty($request->trainee_ids)) {
+            $validTraineeIds = \App\Models\Trainee::where('training_center_id', $trainingCenter->id)
+                ->whereIn('id', $request->trainee_ids)
+                ->pluck('id')
+                ->toArray();
+            
+            if (count($validTraineeIds) !== count($request->trainee_ids)) {
+                return response()->json([
+                    'message' => 'Some trainee IDs do not belong to your training center'
+                ], 422);
+            }
+        }
+
         $class = TrainingClass::create([
             'training_center_id' => $trainingCenter->id,
             'course_id' => $request->course_id,
@@ -179,7 +196,20 @@ class ClassController extends Controller
             'location_details' => $request->location_details,
         ]);
 
-        return response()->json(['class' => $class->load(['course', 'instructor'])], 201);
+        // Attach trainees if provided
+        if ($request->has('trainee_ids') && is_array($request->trainee_ids) && !empty($request->trainee_ids)) {
+            $pivotData = [];
+            foreach ($request->trainee_ids as $traineeId) {
+                $pivotData[$traineeId] = [
+                    'status' => 'enrolled',
+                    'enrolled_at' => now(),
+                ];
+            }
+            $class->trainees()->attach($pivotData);
+            $class->increment('enrolled_count', count($pivotData));
+        }
+
+        return response()->json(['class' => $class->load(['course', 'instructor', 'trainees'])], 201);
     }
 
     #[OA\Get(
@@ -207,7 +237,15 @@ class ClassController extends Controller
     )]
     public function show($id)
     {
-        $class = TrainingClass::with(['course', 'instructor', 'trainingCenter', 'classModel', 'completion'])
+        $user = request()->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $class = TrainingClass::where('training_center_id', $trainingCenter->id)
+            ->with(['course', 'instructor', 'trainingCenter', 'classModel', 'completion', 'trainees'])
             ->findOrFail($id);
         return response()->json(['class' => $class]);
     }
@@ -234,7 +272,8 @@ class ClassController extends Controller
                     new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], nullable: true),
                     new OA\Property(property: "location_details", type: "string", nullable: true),
-                    new OA\Property(property: "status", type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], nullable: true)
+                    new OA\Property(property: "status", type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"], nullable: true),
+                    new OA\Property(property: "trainee_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], nullable: true, description: "Array of trainee IDs to sync with this training class (replaces existing enrollments)")
                 ]
             )
         ),
@@ -277,6 +316,8 @@ class ClassController extends Controller
             'location' => 'sometimes|in:physical,online',
             'location_details' => 'nullable|string',
             'status' => 'sometimes|in:scheduled,in_progress,completed,cancelled',
+            'trainee_ids' => 'nullable|array',
+            'trainee_ids.*' => 'exists:trainees,id',
         ]);
 
         $updateData = $request->only([
@@ -290,7 +331,34 @@ class ClassController extends Controller
 
         $class->update($updateData);
 
-        return response()->json(['message' => 'Class updated successfully', 'class' => $class]);
+        // Sync trainees if provided (validate they belong to the training center)
+        if ($request->has('trainee_ids')) {
+            $validTraineeIds = \App\Models\Trainee::where('training_center_id', $trainingCenter->id)
+                ->whereIn('id', $request->trainee_ids)
+                ->pluck('id')
+                ->toArray();
+            
+            if (count($validTraineeIds) !== count($request->trainee_ids)) {
+                return response()->json([
+                    'message' => 'Some trainee IDs do not belong to your training center'
+                ], 422);
+            }
+
+            $oldCount = $class->trainees()->count();
+            $pivotData = [];
+            foreach ($validTraineeIds as $traineeId) {
+                $pivotData[$traineeId] = [
+                    'status' => 'enrolled',
+                    'enrolled_at' => now(),
+                ];
+            }
+            $class->trainees()->sync($pivotData);
+            $newCount = count($pivotData);
+            $class->enrolled_count = $newCount;
+            $class->save();
+        }
+
+        return response()->json(['message' => 'Class updated successfully', 'class' => $class->load(['course', 'instructor', 'trainees'])]);
     }
 
     #[OA\Delete(
