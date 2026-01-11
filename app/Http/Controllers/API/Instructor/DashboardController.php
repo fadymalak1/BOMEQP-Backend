@@ -34,7 +34,11 @@ class DashboardController extends Controller
                         new OA\Property(property: "earnings", type: "object"),
                         new OA\Property(property: "training_centers", type: "array", items: new OA\Items(type: "object")),
                         new OA\Property(property: "accs", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "unread_notifications_count", type: "integer", example: 3)
+                        new OA\Property(property: "unread_notifications_count", type: "integer", example: 3),
+                        new OA\Property(property: "charts", type: "object", properties: [
+                            new OA\Property(property: "earnings_over_time", type: "array", items: new OA\Items(type: "object"), description: "Earnings data for last 6 months"),
+                            new OA\Property(property: "classes_status_distribution", type: "array", items: new OA\Items(type: "object"), description: "Distribution of classes by status")
+                        ])
                     ]
                 )
             ),
@@ -207,6 +211,32 @@ class DashboardController extends Controller
         // Unread notifications count
         $unreadNotificationsCount = $user->unreadNotifications()->count();
 
+        // Earnings chart data (last 6 months)
+        $earningsChart = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $monthEarnings = Transaction::where('payee_type', 'instructor')
+                ->where('payee_id', $instructor->id)
+                ->where('status', 'completed')
+                ->whereMonth('completed_at', $month->month)
+                ->whereYear('completed_at', $month->year)
+                ->sum('amount');
+            
+            $earningsChart[] = [
+                'month' => $month->format('Y-m'),
+                'month_name' => $month->format('M Y'),
+                'earnings' => round((float) $monthEarnings, 2),
+            ];
+        }
+
+        // Classes status distribution
+        $classesStatusDistribution = [
+            ['label' => 'Total', 'value' => $totalClasses],
+            ['label' => 'Upcoming', 'value' => $upcomingClasses],
+            ['label' => 'In Progress', 'value' => $inProgress],
+            ['label' => 'Completed', 'value' => $completed],
+        ];
+
         return response()->json([
             // Profile summary for dashboard UI
             'profile' => $profile,
@@ -232,6 +262,10 @@ class DashboardController extends Controller
             'training_centers' => $trainingCenters,
             'accs' => $accs,
             'unread_notifications_count' => $unreadNotificationsCount,
+            'charts' => [
+                'earnings_over_time' => $earningsChart,
+                'classes_status_distribution' => $classesStatusDistribution,
+            ],
         ]);
     }
 }

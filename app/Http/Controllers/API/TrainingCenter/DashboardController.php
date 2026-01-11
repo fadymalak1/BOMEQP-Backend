@@ -27,11 +27,16 @@ class DashboardController extends Controller
                         new OA\Property(property: "authorized_accreditations", type: "integer", example: 3, description: "Total number of ACC authorizations (all statuses)"),
                         new OA\Property(property: "classes", type: "integer", example: 4, description: "Total number of classes (all statuses)"),
                         new OA\Property(property: "instructors", type: "integer", example: 10, description: "Total number of instructors (all statuses)"),
+                        new OA\Property(property: "trainees", type: "integer", example: 25, description: "Total number of trainees (all statuses)"),
                         new OA\Property(property: "certificates", type: "integer", example: 0, description: "Total number of certificates (all statuses)"),
                         new OA\Property(property: "training_center_state", type: "object", properties: [
                             new OA\Property(property: "status", type: "string", example: "active", description: "Training center status"),
                             new OA\Property(property: "registration_date", type: "string", format: "date", nullable: true, example: "2024-01-15", description: "Registration date"),
                             new OA\Property(property: "accreditation_status", type: "string", example: "Verified", description: "Accreditation status")
+                        ]),
+                        new OA\Property(property: "charts", type: "object", properties: [
+                            new OA\Property(property: "classes_over_time", type: "array", items: new OA\Items(type: "object"), description: "Classes count for last 6 months"),
+                            new OA\Property(property: "classes_status_distribution", type: "array", items: new OA\Items(type: "object"), description: "Distribution of classes by status")
                         ])
                     ]
                 )
@@ -59,6 +64,9 @@ class DashboardController extends Controller
         // Get total instructors
         $instructors = \App\Models\Instructor::where('training_center_id', $trainingCenter->id)->count();
 
+        // Get total trainees
+        $trainees = \App\Models\Trainee::where('training_center_id', $trainingCenter->id)->count();
+
         // Get total certificates
         $certificates = \App\Models\Certificate::where('training_center_id', $trainingCenter->id)->count();
 
@@ -72,15 +80,44 @@ class DashboardController extends Controller
         
         $accreditationStatus = $hasApprovedAuthorization ? 'Verified' : 'Not Verified';
 
+        // Classes chart data (last 6 months)
+        $classesChart = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $monthClasses = TrainingClass::where('training_center_id', $trainingCenter->id)
+                ->whereMonth('created_at', $month->month)
+                ->whereYear('created_at', $month->year)
+                ->count();
+            
+            $classesChart[] = [
+                'month' => $month->format('Y-m'),
+                'month_name' => $month->format('M Y'),
+                'count' => $monthClasses,
+            ];
+        }
+
+        // Classes status distribution
+        $classesStatusDistribution = [
+            ['label' => 'Scheduled', 'value' => TrainingClass::where('training_center_id', $trainingCenter->id)->where('status', 'scheduled')->count()],
+            ['label' => 'In Progress', 'value' => TrainingClass::where('training_center_id', $trainingCenter->id)->where('status', 'in_progress')->count()],
+            ['label' => 'Completed', 'value' => TrainingClass::where('training_center_id', $trainingCenter->id)->where('status', 'completed')->count()],
+            ['label' => 'Cancelled', 'value' => TrainingClass::where('training_center_id', $trainingCenter->id)->where('status', 'cancelled')->count()],
+        ];
+
         return response()->json([
             'authorized_accreditations' => $authorizedAccreditations,
             'classes' => $classes,
             'instructors' => $instructors,
+            'trainees' => $trainees,
             'certificates' => $certificates,
             'training_center_state' => [
                 'status' => $trainingCenter->status,
                 'registration_date' => $registrationDate,
                 'accreditation_status' => $accreditationStatus,
+            ],
+            'charts' => [
+                'classes_over_time' => $classesChart,
+                'classes_status_distribution' => $classesStatusDistribution,
             ],
         ]);
     }

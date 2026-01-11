@@ -52,7 +52,11 @@ class DashboardController extends Controller
                                 new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt"),
                                 new OA\Property(property: "postal_code", type: "string", nullable: true, example: "12345")
                             ]
-                        )
+                        ),
+                        new OA\Property(property: "charts", type: "object", properties: [
+                            new OA\Property(property: "revenue_over_time", type: "array", items: new OA\Items(type: "object"), description: "Revenue data for last 6 months"),
+                            new OA\Property(property: "certificates_over_time", type: "array", items: new OA\Items(type: "object"), description: "Certificates generated count for last 6 months")
+                        ])
                     ]
                 )
             ),
@@ -110,6 +114,45 @@ class DashboardController extends Controller
         // Calculate total pending requests
         $totalPendingRequests = $pendingRequests + $pendingInstructorRequests;
 
+        // Revenue chart data (last 6 months)
+        $revenueChart = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $monthRevenue = Transaction::where('payee_type', 'acc')
+                ->where('payee_id', $acc->id)
+                ->where('status', 'completed')
+                ->whereMonth('completed_at', $month->month)
+                ->whereYear('completed_at', $month->year)
+                ->get()
+                ->sum(function ($transaction) {
+                    return $transaction->provider_amount ?? $transaction->amount;
+                });
+            
+            $revenueChart[] = [
+                'month' => $month->format('Y-m'),
+                'month_name' => $month->format('M Y'),
+                'revenue' => (float) $monthRevenue,
+            ];
+        }
+
+        // Certificates chart data (last 6 months)
+        $certificatesChart = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $monthCertificates = \App\Models\Certificate::whereHas('course', function($q) use ($acc) {
+                $q->where('acc_id', $acc->id);
+            })
+            ->whereMonth('created_at', $month->month)
+            ->whereYear('created_at', $month->year)
+            ->count();
+            
+            $certificatesChart[] = [
+                'month' => $month->format('Y-m'),
+                'month_name' => $month->format('M Y'),
+                'count' => $monthCertificates,
+            ];
+        }
+
         return response()->json([
             'pending_requests' => $totalPendingRequests,
             'active_training_centers' => $activeTrainingCenters,
@@ -130,6 +173,10 @@ class DashboardController extends Controller
                 'city' => $acc->physical_city,
                 'country' => $acc->physical_country,
                 'postal_code' => $acc->physical_postal_code,
+            ],
+            'charts' => [
+                'revenue_over_time' => $revenueChart,
+                'certificates_over_time' => $certificatesChart,
             ],
         ]);
     }
