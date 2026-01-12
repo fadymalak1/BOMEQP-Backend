@@ -32,20 +32,43 @@ class CertificatePdfService
             size: A4 ' . $orientation . ';
             margin: 0;
         }
-        body {
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
             margin: 0;
             padding: 0;
             font-family: "Times New Roman", serif;
+            overflow: hidden;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         .certificate {
             width: ' . $width . ';
             height: ' . $height . ';
+            min-height: ' . $height . ';
+            max-height: ' . $height . ';
             border: ' . $borderWidth . ' solid ' . $borderColor . ';
             padding: 40px;
             text-align: center;
             background-color: ' . $backgroundColor . ';
             position: relative;
-            ' . ($backgroundImageUrl ? 'background-image: url(\'' . $backgroundImageUrl . '\'); background-size: cover; background-position: center;' : '') . '
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            page-break-after: avoid;
+            page-break-before: avoid;
+            ' . ($backgroundImageUrl ? 'background-image: url(\'' . $backgroundImageUrl . '\'); background-size: cover; background-position: center; background-repeat: no-repeat;' : '') . '
         }';
 
         // Title styles
@@ -90,12 +113,14 @@ class CertificatePdfService
         .subtitle {
             font-size: 18px;
             color: #7f8c8d;
-            margin-bottom: 40px;
+            margin: 10px 0;
         }
         .details {
-            margin-top: 50px;
+            margin-top: auto;
+            padding-top: 30px;
             font-size: 14px;
             color: #7f8c8d;
+            width: 100%;
         }
         .verification {
             position: absolute;
@@ -104,31 +129,43 @@ class CertificatePdfService
             font-size: 10px;
             color: #95a5a6;
         }
+        .certificate-content {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+        }';
     </style>
 </head>
 <body>
-    <div class="certificate">';
+    <div class="certificate">
+        <div class="certificate-content">';
 
         // Title
         if (isset($config['title']) && ($config['title']['show'] ?? true)) {
             $titleText = $config['title']['text'] ?? 'Certificate of Completion';
             $html .= '
-        <div class="title">' . htmlspecialchars($titleText) . '</div>
-        <div class="subtitle">This is to certify that</div>';
+            <div class="title">' . htmlspecialchars($titleText) . '</div>
+            <div class="subtitle">This is to certify that</div>';
         }
 
         // Trainee name
         if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
             $html .= '
-        <div class="trainee-name">{{trainee_name}}</div>
-        <div class="subtitle">has successfully completed the course</div>';
+            <div class="trainee-name">{{trainee_name}}</div>
+            <div class="subtitle">has successfully completed the course</div>';
         }
 
         // Course name
         if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
             $html .= '
-        <div class="course-name">{{course_name}}</div>';
+            <div class="course-name">{{course_name}}</div>';
         }
+
+        $html .= '
+        </div>';
 
         // Details
         $html .= '
@@ -171,11 +208,17 @@ class CertificatePdfService
         $certificate->load(['template', 'course', 'trainingCenter', 'instructor', 'classModel']);
         $template = $certificate->template;
         
+        // Get orientation from template config
+        $orientation = 'landscape';
+        if ($template->template_config && isset($template->template_config['layout']['orientation'])) {
+            $orientation = $template->template_config['layout']['orientation'];
+        }
+        
         // Get HTML content
         $html = $this->prepareHtml($certificate, $template);
         
-        // Generate PDF
-        $pdf = $this->createPdf($html);
+        // Generate PDF with correct orientation
+        $pdf = $this->createPdf($html, $orientation);
         
         // Save PDF file
         $fileName = Str::random(20) . '.pdf';
@@ -249,7 +292,7 @@ class CertificatePdfService
     /**
      * Create PDF from HTML
      */
-    private function createPdf(string $html): string
+    private function createPdf(string $html, $orientation = 'landscape'): string
     {
         // Use dompdf directly (works with Laravel 12)
         if (!class_exists(\Dompdf\Dompdf::class)) {
@@ -259,11 +302,18 @@ class CertificatePdfService
         // Create new DomPDF instance
         $dompdf = new \Dompdf\Dompdf();
         
+        // Set options to prevent page breaks
+        $options = $dompdf->getOptions();
+        $options->set('isHtml5ParserEnabled', true);
+        $options->set('isRemoteEnabled', true);
+        $options->set('isPhpEnabled', false);
+        $dompdf->setOptions($options);
+        
         // Load HTML
         $dompdf->loadHtml($html);
         
         // Set paper size and orientation
-        $dompdf->setPaper('A4', 'landscape');
+        $dompdf->setPaper('A4', $orientation);
         
         // Render PDF
         $dompdf->render();
