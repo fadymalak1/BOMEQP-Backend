@@ -130,12 +130,11 @@ class CertificateTemplateController extends Controller
             'name' => 'required|string|max:255',
             'template_config' => 'nullable|array',
             'template_html' => 'nullable|string',
-            'background_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max
+            'background_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
             'background_image_url' => 'nullable|string',
             'status' => 'required|in:active,inactive',
         ]);
 
-        // Either template_config or template_html must be provided
         if (!$request->has('template_config') && !$request->has('template_html')) {
             return response()->json([
                 'message' => 'Either template_config or template_html must be provided'
@@ -149,12 +148,10 @@ class CertificateTemplateController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Handle background image upload
         $backgroundImageUrl = $request->background_image_url;
         if ($request->hasFile('background_image')) {
             try {
                 $file = $request->file('background_image');
-                // Validate file
                 if (!$file->isValid()) {
                     return response()->json([
                         'message' => 'Invalid file uploaded',
@@ -175,19 +172,16 @@ class CertificateTemplateController extends Controller
             }
         }
 
-        // Get template_config and ensure it's an array with all fields preserved
         $templateConfig = $request->input('template_config');
         if (is_string($templateConfig)) {
             $templateConfig = json_decode($templateConfig, true);
         }
 
-        // Generate HTML from template_config if provided
         $templateHtml = $request->template_html;
         if ($request->has('template_config') && !$request->has('template_html')) {
             $templateHtml = $this->generateHtmlFromConfig($templateConfig ?? [], $backgroundImageUrl);
         }
 
-        // Extract variables from template_config
         $templateVariables = $this->extractVariablesFromConfig($templateConfig ?? []);
 
         $template = CertificateTemplate::create([
@@ -195,7 +189,7 @@ class CertificateTemplateController extends Controller
             'category_id' => $request->category_id,
             'name' => $request->name,
             'template_html' => $templateHtml,
-            'template_config' => $templateConfig, // Ensure all fields including position are preserved
+            'template_config' => $templateConfig,
             'template_variables' => $templateVariables,
             'background_image_url' => $backgroundImageUrl,
             'status' => $request->status,
@@ -204,27 +198,19 @@ class CertificateTemplateController extends Controller
         return response()->json(['template' => $template], 201);
     }
 
-    /**
-     * Generate HTML from template configuration
-     */
     private function generateHtmlFromConfig($config, $backgroundImageUrl = null)
     {
         $layout = $config['layout'] ?? [];
         $orientation = $layout['orientation'] ?? 'landscape';
         $borderColor = $layout['border_color'] ?? '#D4AF37';
-        $borderWidth = $layout['border_width'] ?? '15px';
+        $borderWidth = $layout['border_width'] ?? '10px';
         $backgroundColor = $layout['background_color'] ?? '#ffffff';
 
-        // A4 Landscape: 843pt × 596pt (297mm × 210mm)
-        // A4 Portrait: 596pt × 843pt (210mm × 297mm)
-        // Use points in CSS to match PDF dimensions exactly
-        $width = $orientation === 'landscape' ? '1200pt' : '596pt';
-        $height = $orientation === 'landscape' ? '596pt' : '1200pt';
+        $width = $orientation === 'landscape' ? '843pt' : '596pt';
+        $height = $orientation === 'landscape' ? '596pt' : '843pt';
 
-        // Convert background image URL to absolute if needed
         $bgImageStyle = '';
         if ($backgroundImageUrl) {
-            // If it's a relative URL, make it absolute
             if (!filter_var($backgroundImageUrl, FILTER_VALIDATE_URL)) {
                 $backgroundImageUrl = url($backgroundImageUrl);
             }
@@ -284,7 +270,7 @@ class CertificateTemplateController extends Controller
             border-right: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-bottom: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-left: ' . $borderWidth . ' solid ' . $borderColor . ';
-            padding: 20px;
+            padding: 30px 40px;
             text-align: center;
             background-color: ' . $backgroundColor . ';
             position: absolute;
@@ -294,7 +280,7 @@ class CertificateTemplateController extends Controller
             bottom: 0;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -307,24 +293,22 @@ class CertificateTemplateController extends Controller
             ' . $bgImageStyle . '
         }';
 
-        // Title styles
         if (isset($config['title']) && ($config['title']['show'] ?? true)) {
             $title = $config['title'];
             $textAlign = $this->getTextAlign($title['text_align'] ?? 'center');
-            // Convert px to pt for better PDF rendering
-            $fontSize = $title['font_size'] ?? '42pt';
+            $fontSize = $title['font_size'] ?? '32pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '42pt'; // Default size that fits A4 landscape
+                $fontSize = '32pt';
             }
             $html .= '
         .title {
             font-size: ' . $fontSize . ';
             font-weight: ' . ($title['font_weight'] ?? 'bold') . ';
             color: ' . ($title['color'] ?? '#2c3e50') . ';
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             margin-top: 0;
             text-transform: uppercase;
             text-align: ' . $textAlign . ';
@@ -332,118 +316,122 @@ class CertificateTemplateController extends Controller
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.1;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
 
-        // Trainee name styles
         if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
             $trainee = $config['trainee_name'];
             $textAlign = $this->getTextAlign($trainee['text_align'] ?? 'center');
-            // Convert px to pt for better PDF rendering
-            $fontSize = $trainee['font_size'] ?? '32pt';
+            $fontSize = $trainee['font_size'] ?? '26pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '32pt'; // Default size that fits A4 landscape
+                $fontSize = '26pt';
             }
             $html .= '
         .trainee-name {
             font-size: ' . $fontSize . ';
             font-weight: ' . ($trainee['font_weight'] ?? 'bold') . ';
             color: ' . ($trainee['color'] ?? '#2c3e50') . ';
-            margin: 12px 0;
+            margin: 8px 0;
             text-decoration: underline;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.1;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
 
-        // Course name styles
         if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
             $course = $config['course_name'];
             $textAlign = $this->getTextAlign($course['text_align'] ?? 'center');
-            // Convert px to pt for better PDF rendering
-            $fontSize = $course['font_size'] ?? '22pt';
+            $fontSize = $course['font_size'] ?? '18pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '22pt'; // Default size that fits A4 landscape
+                $fontSize = '18pt';
             }
             $html .= '
         .course-name {
             font-size: ' . $fontSize . ';
             color: ' . ($course['color'] ?? '#34495e') . ';
-            margin: 10px 0;
+            margin: 6px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
 
-        // Subtitle styles
         if (isset($config['subtitle']) && ($config['subtitle']['show'] ?? true)) {
             $subtitle = $config['subtitle'];
             $textAlign = $this->getTextAlign($subtitle['text_align'] ?? 'center');
-            // Convert px to pt for better PDF rendering
-            $fontSize = $subtitle['font_size'] ?? '16pt';
+            $fontSize = $subtitle['font_size'] ?? '14pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '16pt'; // Default size that fits A4 landscape
+                $fontSize = '14pt';
             }
             $html .= '
         .subtitle {
             font-size: ' . $fontSize . ';
             color: ' . ($subtitle['color'] ?? '#7f8c8d') . ';
-            margin: 6px 0;
+            margin: 4px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         } else {
             $html .= '
         .subtitle {
-            font-size: 16pt;
+            font-size: 14pt;
             color: #7f8c8d;
-            margin: 6px 0;
+            margin: 4px 0;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
         
-        // Details styles
         $html .= '
         .details {
-            margin-top: auto;
-            padding-top: 15px;
-            font-size: 12pt;
+            margin-top: 0;
+            padding-top: 10px;
+            font-size: 11pt;
             color: #7f8c8d;
             width: 100%;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
+            flex-shrink: 0;
         }
         .details p {
-            margin: 3px 0;
-            font-size: 12pt;
+            margin: 2px 0;
+            font-size: 11pt;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
@@ -451,9 +439,9 @@ class CertificateTemplateController extends Controller
         }
         .verification {
             position: absolute;
-            bottom: 10px;
-            right: 10px;
-            font-size: 10pt;
+            bottom: 8px;
+            right: 8px;
+            font-size: 9pt;
             color: #95a5a6;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -471,7 +459,8 @@ class CertificateTemplateController extends Controller
             widows: 0;
             min-height: 0;
             max-height: 100%;
-            overflow: hidden;
+            overflow: visible;
+            padding: 10px 0;
         }
     </style>
 </head>
@@ -479,13 +468,11 @@ class CertificateTemplateController extends Controller
     <div class="certificate">
         <div class="certificate-content">';
 
-        // Title
         if (isset($config['title']) && ($config['title']['show'] ?? true)) {
             $titleText = $config['title']['text'] ?? 'Certificate of Completion';
             $html .= '
             <div class="title">' . htmlspecialchars($titleText) . '</div>';
             
-            // Subtitle before trainee name
             if (isset($config['subtitle_before']) && ($config['subtitle_before']['show'] ?? true)) {
                 $subtitleText = $config['subtitle_before']['text'] ?? 'This is to certify that';
                 $html .= '
@@ -496,12 +483,10 @@ class CertificateTemplateController extends Controller
             }
         }
 
-        // Trainee name
         if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
             $html .= '
             <div class="trainee-name">{{trainee_name}}</div>';
             
-            // Subtitle after trainee name
             if (isset($config['subtitle_after']) && ($config['subtitle_after']['show'] ?? true)) {
                 $subtitleText = $config['subtitle_after']['text'] ?? 'has successfully completed the course';
                 $html .= '
@@ -512,7 +497,6 @@ class CertificateTemplateController extends Controller
             }
         }
 
-        // Course name
         if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
             $html .= '
             <div class="course-name">{{course_name}}</div>';
@@ -521,7 +505,6 @@ class CertificateTemplateController extends Controller
         $html .= '
         </div>';
 
-        // Details
         $html .= '
         <div class="details">';
         
@@ -538,7 +521,6 @@ class CertificateTemplateController extends Controller
         $html .= '
         </div>';
 
-        // Verification code
         if (isset($config['verification_code']) && ($config['verification_code']['show'] ?? true)) {
             $html .= '
         <div class="verification">
@@ -554,10 +536,6 @@ class CertificateTemplateController extends Controller
         return $html;
     }
 
-    /**
-     * Get CSS text-align value from config
-     * Supports all CSS text-align values: left, right, center, justify, start, end, initial, inherit
-     */
     private function getTextAlign($align): string
     {
         if (empty($align)) {
@@ -566,7 +544,6 @@ class CertificateTemplateController extends Controller
         
         $align = strtolower(trim($align));
         
-        // Standard CSS text-align values
         $validAlignments = [
             'left',
             'right',
@@ -578,12 +555,10 @@ class CertificateTemplateController extends Controller
             'inherit'
         ];
         
-        // Check if it's a valid CSS alignment value
         if (in_array($align, $validAlignments)) {
             return $align;
         }
         
-        // Legacy support for right-center and left-center (for backward compatibility)
         switch ($align) {
             case 'right-center':
             case 'right_center':
@@ -596,9 +571,6 @@ class CertificateTemplateController extends Controller
         }
     }
     
-    /**
-     * Extract variable names from template configuration
-     */
     private function extractVariablesFromConfig($config)
     {
         $variables = [];
@@ -707,7 +679,7 @@ class CertificateTemplateController extends Controller
             'name' => 'sometimes|string|max:255',
             'template_config' => 'nullable|array',
             'template_html' => 'nullable|string',
-            'background_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max
+            'background_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
             'background_image_url' => 'nullable|string',
             'status' => 'sometimes|in:active,inactive',
         ]);
@@ -716,16 +688,13 @@ class CertificateTemplateController extends Controller
             'category_id', 'name', 'status'
         ]);
 
-        // Handle background image upload
         if ($request->hasFile('background_image')) {
             try {
-                // Delete old image if exists
                 if ($template->background_image_url) {
                     $oldPath = str_replace(Storage::disk('public')->url(''), '', $template->background_image_url);
                     Storage::disk('public')->delete($oldPath);
                 }
                 $file = $request->file('background_image');
-                // Validate file
                 if (!$file->isValid()) {
                     return response()->json([
                         'message' => 'Invalid file uploaded',
@@ -748,39 +717,29 @@ class CertificateTemplateController extends Controller
             $updateData['background_image_url'] = $request->background_image_url;
         }
 
-        // Handle template_config
         if ($request->has('template_config')) {
-            // Get template_config and ensure it's an array with all fields preserved
             $templateConfig = $request->input('template_config');
             
-            // Ensure template_config is saved as-is with all fields including position
-            // Convert to array if it's JSON string, otherwise use as-is
             if (is_string($templateConfig)) {
                 $templateConfig = json_decode($templateConfig, true);
             }
             
-            // Ensure all nested fields are preserved
             $updateData['template_config'] = $templateConfig;
             
-            // Generate HTML from config if template_html not provided
             if (!$request->has('template_html')) {
                 $updateData['template_html'] = $this->generateHtmlFromConfig(
                     $templateConfig, 
                     $updateData['background_image_url'] ?? $template->background_image_url
                 );
             }
-            // Extract variables
             $updateData['template_variables'] = $this->extractVariablesFromConfig($templateConfig);
         }
 
-        // Handle template_html if provided
         if ($request->has('template_html')) {
             $updateData['template_html'] = $request->template_html;
         }
 
         $template->update($updateData);
-
-        // Refresh template to ensure all data is loaded correctly
         $template->refresh();
 
         return response()->json([
@@ -869,7 +828,6 @@ class CertificateTemplateController extends Controller
 
         $template = CertificateTemplate::findOrFail($id);
         
-        // Generate HTML preview with sample data
         $config = $template->template_config ?? [];
         
         if (empty($config)) {
@@ -879,10 +837,8 @@ class CertificateTemplateController extends Controller
             ], 400);
         }
         
-        // Generate HTML from config
         $html = $this->generateHtmlFromConfig($config, $template->background_image_url);
         
-        // Replace variables with sample data
         $sampleData = $request->sample_data;
         $replacements = [
             '{{trainee_name}}' => $sampleData['trainee_name'] ?? 'John Doe',
@@ -899,7 +855,6 @@ class CertificateTemplateController extends Controller
             '{{acc_name}}' => $sampleData['acc_name'] ?? 'Sample ACC',
         ];
         
-        // Format dates
         if (isset($sampleData['issue_date'])) {
             $replacements['{{issue_date_formatted}}'] = date('F d, Y', strtotime($sampleData['issue_date']));
         }
@@ -907,13 +862,9 @@ class CertificateTemplateController extends Controller
             $replacements['{{expiry_date_formatted}}'] = date('F d, Y', strtotime($sampleData['expiry_date']));
         }
         
-        // Replace all variables
         foreach ($replacements as $variable => $value) {
             $html = str_replace($variable, htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8'), $html);
         }
-        
-        // Background image URL is already handled in generateHtmlFromConfig
-        // No need to replace it again here as it's already included in the HTML
         
         return response()->json([
             'html' => $html,
@@ -921,4 +872,3 @@ class CertificateTemplateController extends Controller
         ]);
     }
 }
-

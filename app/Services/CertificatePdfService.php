@@ -17,14 +17,14 @@ class CertificatePdfService
         $layout = $config['layout'] ?? [];
         $orientation = $layout['orientation'] ?? 'landscape';
         $borderColor = $layout['border_color'] ?? '#D4AF37';
-        $borderWidth = $layout['border_width'] ?? '15px';
+        $borderWidth = $layout['border_width'] ?? '10px';
         $backgroundColor = $layout['background_color'] ?? '#ffffff';
 
         // A4 Landscape: 843pt × 596pt (297mm × 210mm)
         // A4 Portrait: 596pt × 843pt (210mm × 297mm)
         // Use points in CSS to match PDF dimensions exactly
-        $width = $orientation === 'landscape' ? '1200pt' : '596pt';
-        $height = $orientation === 'landscape' ? '596pt' : '1200pt';
+        $width = $orientation === 'landscape' ? '843pt' : '596pt';
+        $height = $orientation === 'landscape' ? '596pt' : '843pt';
 
         // Convert background image URL to absolute if needed
         $bgImageStyle = '';
@@ -90,7 +90,7 @@ class CertificatePdfService
             border-right: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-bottom: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-left: ' . $borderWidth . ' solid ' . $borderColor . ';
-            padding: 20px;
+            padding: 30px 40px;
             text-align: center;
             background-color: ' . $backgroundColor . ';
             position: absolute;
@@ -100,7 +100,7 @@ class CertificatePdfService
             bottom: 0;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -118,19 +118,19 @@ class CertificatePdfService
             $title = $config['title'];
             $textAlign = $this->getTextAlign($title['text_align'] ?? 'center');
             // Convert px to pt for better PDF rendering (1px ≈ 0.75pt)
-            $fontSize = $title['font_size'] ?? '42pt';
+            $fontSize = $title['font_size'] ?? '32pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '42pt'; // Default size that fits A4 landscape
+                $fontSize = '32pt'; // Default size that fits A4 landscape
             }
             $html .= '
         .title {
             font-size: ' . $fontSize . ';
             font-weight: ' . ($title['font_weight'] ?? 'bold') . ';
             color: ' . ($title['color'] ?? '#2c3e50') . ';
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             margin-top: 0;
             text-transform: uppercase;
             text-align: ' . $textAlign . ';
@@ -138,7 +138,9 @@ class CertificatePdfService
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.1;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
 
@@ -147,26 +149,28 @@ class CertificatePdfService
             $trainee = $config['trainee_name'];
             $textAlign = $this->getTextAlign($trainee['text_align'] ?? 'center');
             // Convert px to pt for better PDF rendering
-            $fontSize = $trainee['font_size'] ?? '32pt';
+            $fontSize = $trainee['font_size'] ?? '26pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '32pt'; // Default size that fits A4 landscape
+                $fontSize = '26pt'; // Default size that fits A4 landscape
             }
             $html .= '
         .trainee-name {
             font-size: ' . $fontSize . ';
             font-weight: ' . ($trainee['font_weight'] ?? 'bold') . ';
             color: ' . ($trainee['color'] ?? '#2c3e50') . ';
-            margin: 12px 0;
+            margin: 8px 0;
             text-decoration: underline;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.1;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
 
@@ -175,24 +179,26 @@ class CertificatePdfService
             $course = $config['course_name'];
             $textAlign = $this->getTextAlign($course['text_align'] ?? 'center');
             // Convert px to pt for better PDF rendering
-            $fontSize = $course['font_size'] ?? '22pt';
+            $fontSize = $course['font_size'] ?? '18pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '22pt'; // Default size that fits A4 landscape
+                $fontSize = '18pt'; // Default size that fits A4 landscape
             }
             $html .= '
         .course-name {
             font-size: ' . $fontSize . ';
             color: ' . ($course['color'] ?? '#34495e') . ';
-            margin: 10px 0;
+            margin: 6px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
 
@@ -201,55 +207,60 @@ class CertificatePdfService
             $subtitle = $config['subtitle'];
             $textAlign = $this->getTextAlign($subtitle['text_align'] ?? 'center');
             // Convert px to pt for better PDF rendering
-            $fontSize = $subtitle['font_size'] ?? '16pt';
+            $fontSize = $subtitle['font_size'] ?? '14pt';
             if (strpos($fontSize, 'px') !== false) {
                 $pxValue = (float) str_replace('px', '', $fontSize);
                 $fontSize = ($pxValue * 0.75) . 'pt';
             } elseif (strpos($fontSize, 'pt') === false) {
-                $fontSize = '16pt'; // Default size that fits A4 landscape
+                $fontSize = '14pt'; // Default size that fits A4 landscape
             }
             $html .= '
         .subtitle {
             font-size: ' . $fontSize . ';
             color: ' . ($subtitle['color'] ?? '#7f8c8d') . ';
-            margin: 6px 0;
+            margin: 4px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         } else {
             $html .= '
         .subtitle {
-            font-size: 16pt;
+            font-size: 14pt;
             color: #7f8c8d;
-            margin: 6px 0;
+            margin: 4px 0;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
+            max-width: 100%;
+            word-wrap: break-word;
         }';
         }
         
         // Details styles
         $html .= '
         .details {
-            margin-top: auto;
-            padding-top: 15px;
-            font-size: 12pt;
+            margin-top: 0;
+            padding-top: 10px;
+            font-size: 11pt;
             color: #7f8c8d;
             width: 100%;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
+            flex-shrink: 0;
         }
         .details p {
-            margin: 3px 0;
-            font-size: 12pt;
+            margin: 2px 0;
+            font-size: 11pt;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
@@ -257,9 +268,9 @@ class CertificatePdfService
         }
         .verification {
             position: absolute;
-            bottom: 10px;
-            right: 10px;
-            font-size: 10pt;
+            bottom: 8px;
+            right: 8px;
+            font-size: 9pt;
             color: #95a5a6;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -277,7 +288,8 @@ class CertificatePdfService
             widows: 0;
             min-height: 0;
             max-height: 100%;
-            overflow: hidden;
+            overflow: visible;
+            padding: 10px 0;
         }
     </style>
 </head>
@@ -430,6 +442,24 @@ class CertificatePdfService
             throw new \Exception('Template HTML is empty. Template ID: ' . $template->id . '. Please ensure template has either template_html or template_config in certificate_templates table.');
         }
         
+        // Check for long text that might not fit
+        $maxTraineeNameLength = 50;
+        $maxCourseNameLength = 100;
+
+        if (isset($certificate->trainee_name) && strlen($certificate->trainee_name) > $maxTraineeNameLength) {
+            \Log::warning('Trainee name too long', [
+                'certificate_id' => $certificate->id,
+                'length' => strlen($certificate->trainee_name)
+            ]);
+        }
+
+        if (isset($certificate->course->name) && strlen($certificate->course->name) > $maxCourseNameLength) {
+            \Log::warning('Course name too long', [
+                'certificate_id' => $certificate->id,
+                'length' => strlen($certificate->course->name)
+            ]);
+        }
+        
         // Replace variables with actual data
         $replacements = [
             '{{trainee_name}}' => $certificate->trainee_name ?? '',
@@ -543,10 +573,10 @@ class CertificatePdfService
             // But user specified 843pt × 596pt for landscape
             if ($orientation === 'landscape') {
                 // A4 Landscape: 843pt × 596pt (297mm × 210mm)
-                $dompdf->setPaper([0, 0, 1200, 596], 'landscape');
+                $dompdf->setPaper([0, 0, 843, 596], 'landscape');
             } else {
                 // A4 Portrait: 596pt × 843pt (210mm × 297mm)
-                $dompdf->setPaper([0, 0, 596, 1200], 'portrait');
+                $dompdf->setPaper([0, 0, 596, 843], 'portrait');
             }
             
             // Render PDF
@@ -590,4 +620,3 @@ class CertificatePdfService
         return $certificate->fresh();
     }
 }
-
