@@ -175,21 +175,27 @@ class CertificateTemplateController extends Controller
             }
         }
 
+        // Get template_config and ensure it's an array with all fields preserved
+        $templateConfig = $request->input('template_config');
+        if (is_string($templateConfig)) {
+            $templateConfig = json_decode($templateConfig, true);
+        }
+
         // Generate HTML from template_config if provided
         $templateHtml = $request->template_html;
         if ($request->has('template_config') && !$request->has('template_html')) {
-            $templateHtml = $this->generateHtmlFromConfig($request->template_config, $backgroundImageUrl);
+            $templateHtml = $this->generateHtmlFromConfig($templateConfig ?? [], $backgroundImageUrl);
         }
 
         // Extract variables from template_config
-        $templateVariables = $this->extractVariablesFromConfig($request->template_config ?? []);
+        $templateVariables = $this->extractVariablesFromConfig($templateConfig ?? []);
 
         $template = CertificateTemplate::create([
             'acc_id' => $acc->id,
             'category_id' => $request->category_id,
             'name' => $request->name,
             'template_html' => $templateHtml,
-            'template_config' => $request->template_config,
+            'template_config' => $templateConfig, // Ensure all fields including position are preserved
             'template_variables' => $templateVariables,
             'background_image_url' => $backgroundImageUrl,
             'status' => $request->status,
@@ -661,16 +667,27 @@ class CertificateTemplateController extends Controller
 
         // Handle template_config
         if ($request->has('template_config')) {
-            $updateData['template_config'] = $request->template_config;
+            // Get template_config and ensure it's an array with all fields preserved
+            $templateConfig = $request->input('template_config');
+            
+            // Ensure template_config is saved as-is with all fields including position
+            // Convert to array if it's JSON string, otherwise use as-is
+            if (is_string($templateConfig)) {
+                $templateConfig = json_decode($templateConfig, true);
+            }
+            
+            // Ensure all nested fields are preserved
+            $updateData['template_config'] = $templateConfig;
+            
             // Generate HTML from config if template_html not provided
             if (!$request->has('template_html')) {
                 $updateData['template_html'] = $this->generateHtmlFromConfig(
-                    $request->template_config, 
+                    $templateConfig, 
                     $updateData['background_image_url'] ?? $template->background_image_url
                 );
             }
             // Extract variables
-            $updateData['template_variables'] = $this->extractVariablesFromConfig($request->template_config);
+            $updateData['template_variables'] = $this->extractVariablesFromConfig($templateConfig);
         }
 
         // Handle template_html if provided
@@ -680,7 +697,13 @@ class CertificateTemplateController extends Controller
 
         $template->update($updateData);
 
-        return response()->json(['message' => 'Template updated successfully', 'template' => $template]);
+        // Refresh template to ensure all data is loaded correctly
+        $template->refresh();
+
+        return response()->json([
+            'message' => 'Template updated successfully',
+            'template' => $template,
+        ]);
     }
 
     #[OA\Delete(
