@@ -29,6 +29,7 @@ class CertificateController extends Controller
                 properties: [
                     new OA\Property(property: "training_class_id", type: "integer", example: 1),
                     new OA\Property(property: "code_id", type: "integer", example: 1),
+                    new OA\Property(property: "template_id", type: "integer", nullable: true, example: 20, description: "Specific template ID to use (from /acc/certificate-templates/{id}). If not provided, will search by acc_id and category_id."),
                     new OA\Property(property: "trainee_name", type: "string", example: "John Doe"),
                     new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
                     new OA\Property(property: "issue_date", type: "string", format: "date", nullable: true, example: "2024-01-15"),
@@ -59,6 +60,7 @@ class CertificateController extends Controller
             $request->validate([
                 'training_class_id' => 'required|exists:training_classes,id',
                 'code_id' => 'required|exists:certificate_codes,id',
+                'template_id' => 'nullable|exists:certificate_templates,id',
                 'trainee_name' => 'required|string|max:255',
                 'trainee_id_number' => 'nullable|string',
                 'issue_date' => 'nullable|date',
@@ -87,37 +89,59 @@ class CertificateController extends Controller
                 ->where('status', 'available')
                 ->firstOrFail();
 
-            // Load course relationships
-            $trainingClass->load(['course.subCategory']);
-            
-            // Get category ID from course
-            $categoryId = null;
-            if ($trainingClass->course && $trainingClass->course->subCategory) {
-                $categoryId = $trainingClass->course->subCategory->category_id;
-            }
-
-            if (!$categoryId) {
-                return response()->json([
-                    'message' => 'Course category not found. Please ensure course has a valid subcategory.',
-                    'course_id' => $trainingClass->course_id
-                ], 400);
-            }
-            
             // Get certificate template
-            $template = \App\Models\CertificateTemplate::where('acc_id', $code->acc_id)
-                ->where('category_id', $categoryId)
-                ->where('status', 'active')
-                ->first();
+            // If template_id is provided, use it directly (same template from /acc/certificate-templates/{id})
+            // Otherwise, search by acc_id and category_id
+            if ($request->has('template_id') && $request->template_id) {
+                // Use specific template ID (from /acc/certificate-templates/{id} API)
+                $template = \App\Models\CertificateTemplate::where('id', $request->template_id)
+                    ->where('acc_id', $code->acc_id) // Ensure template belongs to the same ACC
+                    ->where('status', 'active')
+                    ->first();
 
-            if (!$template) {
-                return response()->json([
-                    'message' => 'Certificate template not found',
-                    'details' => [
-                        'acc_id' => $code->acc_id,
-                        'category_id' => $categoryId,
-                        'suggestion' => 'Please ensure there is an active certificate template for this ACC and category.'
-                    ]
-                ], 404);
+                if (!$template) {
+                    return response()->json([
+                        'message' => 'Certificate template not found or not accessible',
+                        'details' => [
+                            'template_id' => $request->template_id,
+                            'acc_id' => $code->acc_id,
+                            'suggestion' => 'Please ensure the template exists, is active, and belongs to the same ACC as the certificate code.'
+                        ]
+                    ], 404);
+                }
+            } else {
+                // Load course relationships
+                $trainingClass->load(['course.subCategory']);
+                
+                // Get category ID from course
+                $categoryId = null;
+                if ($trainingClass->course && $trainingClass->course->subCategory) {
+                    $categoryId = $trainingClass->course->subCategory->category_id;
+                }
+
+                if (!$categoryId) {
+                    return response()->json([
+                        'message' => 'Course category not found. Please ensure course has a valid subcategory.',
+                        'course_id' => $trainingClass->course_id
+                    ], 400);
+                }
+                
+                // Search for template by acc_id and category_id
+                $template = \App\Models\CertificateTemplate::where('acc_id', $code->acc_id)
+                    ->where('category_id', $categoryId)
+                    ->where('status', 'active')
+                    ->first();
+
+                if (!$template) {
+                    return response()->json([
+                        'message' => 'Certificate template not found',
+                        'details' => [
+                            'acc_id' => $code->acc_id,
+                            'category_id' => $categoryId,
+                            'suggestion' => 'Please ensure there is an active certificate template for this ACC and category, or provide template_id in the request.'
+                        ]
+                    ], 404);
+                }
             }
 
             // Generate certificate
