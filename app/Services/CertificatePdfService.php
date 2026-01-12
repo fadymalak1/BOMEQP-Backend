@@ -323,6 +323,7 @@ class CertificatePdfService
      */
     public function generatePdf(Certificate $certificate): string
     {
+        // Load certificate with all required relationships
         $certificate->load([
             'template', 
             'course.acc', 
@@ -331,10 +332,19 @@ class CertificatePdfService
             'classModel'
         ]);
         
+        // Get template from certificate - this is the same template from certificate_templates table
         $template = $certificate->template;
         
         if (!$template) {
-            throw new \Exception('Certificate template not found');
+            throw new \Exception('Certificate template not found. Template ID: ' . $certificate->template_id);
+        }
+        
+        // Ensure template is fresh from database to get latest template_config and template_html
+        $template->refresh();
+        
+        // Verify template has required data
+        if (empty($template->template_config) && empty($template->template_html)) {
+            throw new \Exception('Template has no content. Template ID: ' . $template->id . '. Please ensure template has either template_config or template_html.');
         }
         
         // Get orientation from template config
@@ -343,7 +353,7 @@ class CertificatePdfService
             $orientation = $template->template_config['layout']['orientation'];
         }
         
-        // Get HTML content
+        // Get HTML content using the template from certificate_templates table
         $html = $this->prepareHtml($certificate, $template);
         
         // Generate PDF with correct orientation
@@ -364,15 +374,18 @@ class CertificatePdfService
      */
     private function prepareHtml(Certificate $certificate, CertificateTemplate $template): string
     {
-        // Use template_config to generate HTML if available, otherwise use template_html
+        // Use template_config to generate HTML if available (preferred method)
+        // This uses the same template_config that is returned by /acc/certificate-templates/{id} API
         if ($template->template_config && is_array($template->template_config) && !empty($template->template_config)) {
+            // Generate HTML from template_config - this is the same config from certificate_templates table
             $html = $this->generateHtmlFromConfig($template->template_config, $template->background_image_url);
         } else {
+            // Fallback to template_html if template_config is not available
             $html = $template->template_html ?? '';
         }
         
         if (empty($html)) {
-            throw new \Exception('Template HTML is empty. Please ensure template has either template_html or template_config.');
+            throw new \Exception('Template HTML is empty. Template ID: ' . $template->id . '. Please ensure template has either template_html or template_config in certificate_templates table.');
         }
         
         // Replace variables with actual data

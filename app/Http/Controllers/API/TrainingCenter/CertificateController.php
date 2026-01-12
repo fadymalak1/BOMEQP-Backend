@@ -138,9 +138,22 @@ class CertificateController extends Controller
                 'code_used_id' => $code->id,
             ]);
             
-            // Generate PDF
+            // Generate PDF using the template from certificate_templates table
+            // The template is already loaded and saved in template_id field
             try {
+                // Ensure template is loaded with all fields
+                $certificate->load('template');
+                
+                // Verify template exists and has content
+                if (!$certificate->template) {
+                    return response()->json([
+                        'message' => 'Template not found for certificate',
+                        'template_id' => $certificate->template_id
+                    ], 404);
+                }
+                
                 $pdfService = new CertificatePdfService();
+                // This will use the template from certificate_templates table (same as API endpoint)
                 $certificate = $pdfService->generateAndUpdate($certificate);
             } catch (\Exception $e) {
                 // Log error with full details
