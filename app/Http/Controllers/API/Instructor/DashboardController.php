@@ -72,9 +72,8 @@ class DashboardController extends Controller
         // Classes statistics - matching dashboard cards
         $totalClasses = TrainingClass::where('instructor_id', $instructor->id)->count();
         
-        $upcomingClasses = TrainingClass::where('instructor_id', $instructor->id)
+        $scheduled = TrainingClass::where('instructor_id', $instructor->id)
             ->where('status', 'scheduled')
-            ->where('start_date', '>=', now()->startOfDay())
             ->count();
         
         $inProgress = TrainingClass::where('instructor_id', $instructor->id)
@@ -232,7 +231,7 @@ class DashboardController extends Controller
         // Classes status distribution
         $classesStatusDistribution = [
             ['label' => 'Total', 'value' => $totalClasses],
-            ['label' => 'Upcoming', 'value' => $upcomingClasses],
+            ['label' => 'Scheduled', 'value' => $scheduled],
             ['label' => 'In Progress', 'value' => $inProgress],
             ['label' => 'Completed', 'value' => $completed],
         ];
@@ -244,7 +243,7 @@ class DashboardController extends Controller
             // Statistics matching dashboard cards
             'statistics' => [
                 'total_classes' => $totalClasses,
-                'upcoming_classes' => $upcomingClasses,
+                'scheduled' => $scheduled,
                 'in_progress' => $inProgress,
                 'completed' => $completed,
             ],
