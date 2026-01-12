@@ -152,9 +152,27 @@ class CertificateTemplateController extends Controller
         // Handle background image upload
         $backgroundImageUrl = $request->background_image_url;
         if ($request->hasFile('background_image')) {
-            $file = $request->file('background_image');
-            $path = $file->store('certificate-templates/backgrounds', 'public');
-            $backgroundImageUrl = Storage::disk('public')->url($path);
+            try {
+                $file = $request->file('background_image');
+                // Validate file
+                if (!$file->isValid()) {
+                    return response()->json([
+                        'message' => 'Invalid file uploaded',
+                        'errors' => ['background_image' => ['The uploaded file is not valid']]
+                    ], 422);
+                }
+                $path = $file->store('certificate-templates/backgrounds', 'public');
+                $backgroundImageUrl = Storage::disk('public')->url($path);
+            } catch (\Exception $e) {
+                \Log::error('Background image upload failed', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json([
+                    'message' => 'Failed to upload background image',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
         }
 
         // Generate HTML from template_config if provided
@@ -194,6 +212,16 @@ class CertificateTemplateController extends Controller
         $width = $orientation === 'landscape' ? '297mm' : '210mm';
         $height = $orientation === 'landscape' ? '210mm' : '297mm';
 
+        // Convert background image URL to absolute if needed
+        $bgImageStyle = '';
+        if ($backgroundImageUrl) {
+            // If it's a relative URL, make it absolute
+            if (!filter_var($backgroundImageUrl, FILTER_VALIDATE_URL)) {
+                $backgroundImageUrl = url($backgroundImageUrl);
+            }
+            $bgImageStyle = 'background-image: url(\'' . htmlspecialchars($backgroundImageUrl, ENT_QUOTES) . '\'); background-size: cover; background-position: center; background-repeat: no-repeat;';
+        }
+        
         $html = '<!DOCTYPE html>
 <html>
 <head>
@@ -202,28 +230,36 @@ class CertificateTemplateController extends Controller
         @page {
             size: A4 ' . $orientation . ';
             margin: 0;
+            padding: 0;
         }
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
-        html, body {
+        html {
+            width: ' . $width . ';
+            height: ' . $height . ';
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        body {
             width: ' . $width . ';
             height: ' . $height . ';
             margin: 0;
             padding: 0;
             font-family: "Times New Roman", serif;
             overflow: hidden;
-        }
-        body {
-            width: ' . $width . ';
-            height: ' . $height . ';
             display: flex;
             justify-content: center;
             align-items: center;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            page-break-after: avoid !important;
+            page-break-before: avoid !important;
         }
         .certificate {
             width: ' . $width . ';
@@ -244,7 +280,7 @@ class CertificateTemplateController extends Controller
             page-break-after: avoid !important;
             page-break-before: avoid !important;
             overflow: hidden;
-            ' . ($backgroundImageUrl ? 'background-image: url(\'' . $backgroundImageUrl . '\'); background-size: cover; background-position: center; background-repeat: no-repeat;' : '') . '
+            ' . $bgImageStyle . '
         }';
 
         // Title styles
@@ -431,16 +467,35 @@ class CertificateTemplateController extends Controller
 
     /**
      * Get CSS text-align value from config
+     * Supports all CSS text-align values: left, right, center, justify, start, end, initial, inherit
      */
     private function getTextAlign($align): string
     {
+        if (empty($align)) {
+            return 'center';
+        }
+        
+        $align = strtolower(trim($align));
+        
+        // Standard CSS text-align values
+        $validAlignments = [
+            'left',
+            'right',
+            'center',
+            'justify',
+            'start',
+            'end',
+            'initial',
+            'inherit'
+        ];
+        
+        // Check if it's a valid CSS alignment value
+        if (in_array($align, $validAlignments)) {
+            return $align;
+        }
+        
+        // Legacy support for right-center and left-center (for backward compatibility)
         switch ($align) {
-            case 'left':
-                return 'left';
-            case 'right':
-                return 'right';
-            case 'center':
-                return 'center';
             case 'right-center':
             case 'right_center':
                 return 'right';
@@ -574,14 +629,32 @@ class CertificateTemplateController extends Controller
 
         // Handle background image upload
         if ($request->hasFile('background_image')) {
-            // Delete old image if exists
-            if ($template->background_image_url) {
-                $oldPath = str_replace(Storage::disk('public')->url(''), '', $template->background_image_url);
-                Storage::disk('public')->delete($oldPath);
+            try {
+                // Delete old image if exists
+                if ($template->background_image_url) {
+                    $oldPath = str_replace(Storage::disk('public')->url(''), '', $template->background_image_url);
+                    Storage::disk('public')->delete($oldPath);
+                }
+                $file = $request->file('background_image');
+                // Validate file
+                if (!$file->isValid()) {
+                    return response()->json([
+                        'message' => 'Invalid file uploaded',
+                        'errors' => ['background_image' => ['The uploaded file is not valid']]
+                    ], 422);
+                }
+                $path = $file->store('certificate-templates/backgrounds', 'public');
+                $updateData['background_image_url'] = Storage::disk('public')->url($path);
+            } catch (\Exception $e) {
+                \Log::error('Background image upload failed', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json([
+                    'message' => 'Failed to upload background image',
+                    'error' => $e->getMessage()
+                ], 500);
             }
-            $file = $request->file('background_image');
-            $path = $file->store('certificate-templates/backgrounds', 'public');
-            $updateData['background_image_url'] = Storage::disk('public')->url($path);
         } elseif ($request->has('background_image_url')) {
             $updateData['background_image_url'] = $request->background_image_url;
         }
@@ -733,16 +806,8 @@ class CertificateTemplateController extends Controller
             $html = str_replace($variable, htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8'), $html);
         }
         
-        // Handle background image URL - convert relative URLs to absolute
-        if ($template->background_image_url) {
-            $backgroundUrl = $template->background_image_url;
-            // If it's a relative URL, make it absolute
-            if (!filter_var($backgroundUrl, FILTER_VALIDATE_URL)) {
-                $backgroundUrl = url($backgroundUrl);
-            }
-            // Replace background_image_url variable if exists
-            $html = str_replace('{{background_image_url}}', $backgroundUrl, $html);
-        }
+        // Background image URL is already handled in generateHtmlFromConfig
+        // No need to replace it again here as it's already included in the HTML
         
         return response()->json([
             'html' => $html,
