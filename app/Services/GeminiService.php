@@ -20,12 +20,11 @@ class GeminiService
         }
         
         // Use the correct model name for Gemini API
-        // Available models for v1beta: gemini-1.5-pro, gemini-1.5-flash, gemini-pro
-        // Note: gemini-1.5-flash-latest is not available in v1beta, use gemini-1.5-flash instead
-        $this->model = config('services.gemini.model', 'gemini-1.5-flash');
+        // Available models: gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash, gemini-pro
+        $this->model = config('services.gemini.model', 'gemini-2.0-flash');
         
         // Build API URL with correct model
-        $baseUrl = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent');
+        $baseUrl = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models');
         $this->apiUrl = $baseUrl . '/' . $this->model . ':generateContent';
         
         Log::info('GeminiService initialized', [
@@ -167,8 +166,8 @@ Important:
      */
     private function callGeminiApi($base64Image, $mimeType, $prompt): array
     {
-        // Build URL with API key
-        $url = $this->apiUrl . '?key=' . urlencode($this->apiKey);
+        // Build URL (API key will be sent in header)
+        $url = $this->apiUrl;
         
         Log::info('Calling Gemini API', [
             'url' => $url,
@@ -205,6 +204,7 @@ Important:
             $response = Http::timeout(120)
                 ->withHeaders([
                     'Content-Type' => 'application/json',
+                    'X-goog-api-key' => $this->apiKey,
                 ])
                 ->post($url, $payload);
 
