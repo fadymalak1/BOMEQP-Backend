@@ -189,8 +189,12 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/courses/{id}/pricing', [App\Http\Controllers\API\ACC\CourseController::class, 'updatePricing']);
 
         // Certificate Templates
-        Route::apiResource('certificate-templates', App\Http\Controllers\API\ACC\CertificateTemplateController::class);
-        Route::post('/certificate-templates/{id}/preview', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'preview']);
+        // Custom routes must be defined before apiResource to avoid conflicts
+        Route::post('/certificate-templates/generate-from-image', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'generateFromImage'])->name('certificate-templates.generate-from-image');
+        Route::post('/certificate-templates/{id}/preview', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'preview'])->name('certificate-templates.preview')->where('id', '[0-9]+');
+        Route::apiResource('certificate-templates', App\Http\Controllers\API\ACC\CertificateTemplateController::class)->parameters([
+            'certificate-templates' => 'id'
+        ])->where(['id' => '[0-9]+']);
 
         // Discount Codes
         // Specific routes must come before apiResource to avoid route conflicts

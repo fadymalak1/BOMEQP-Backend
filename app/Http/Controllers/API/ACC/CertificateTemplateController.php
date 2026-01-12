@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\ACC;
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\CertificateTemplate;
+use App\Services\GeminiService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use OpenApi\Attributes as OA;
@@ -45,6 +46,114 @@ class CertificateTemplateController extends Controller
             ->get();
 
         return response()->json(['templates' => $templates]);
+    }
+
+    #[OA\Post(
+        path: "/acc/certificate-templates/generate-from-image",
+        summary: "Generate certificate template from image using AI",
+        description: "Upload a certificate image and use AI (Gemini) to automatically analyze it and generate a complete template with HTML and template_config.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["category_id", "name", "certificate_image", "status", "orientation"],
+                    properties: [
+                        new OA\Property(property: "category_id", type: "integer", example: 1),
+                        new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
+                        new OA\Property(property: "certificate_image", type: "string", format: "binary", description: "Certificate image file (JPEG, PNG, JPG - max 10MB)"),
+                        new OA\Property(property: "orientation", type: "string", enum: ["landscape", "portrait"], example: "landscape", description: "Certificate orientation"),
+                        new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: "Template generated successfully from image"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found"),
+            new OA\Response(response: 422, description: "Validation error"),
+            new OA\Response(response: 500, description: "AI analysis failed")
+        ]
+    )]
+    public function generateFromImage(Request $request, GeminiService $geminiService)
+    {
+        $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'name' => 'required|string|max:255',
+            'certificate_image' => 'required|image|mimes:jpeg,png,jpg|max:10240', // 10MB max
+            'orientation' => 'required|in:landscape,portrait',
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        try {
+            // Upload certificate image
+            $imageFile = $request->file('certificate_image');
+            $imagePath = $imageFile->store('certificate-templates/source-images', 'public');
+            
+            // Analyze image using Gemini AI
+            $analysisResult = $geminiService->analyzeCertificateImage($imagePath, $request->orientation);
+            
+            // Get template_config and template_html from AI analysis
+            $templateConfig = $analysisResult['template_config'];
+            $templateHtml = $analysisResult['template_html'];
+            
+            // Ensure orientation matches request
+            if (!isset($templateConfig['layout'])) {
+                $templateConfig['layout'] = [];
+            }
+            $templateConfig['layout']['orientation'] = $request->orientation;
+            
+            // Use the uploaded image as background
+            $backgroundImageUrl = Storage::disk('public')->url($imagePath);
+            
+            // Regenerate HTML with correct background image URL
+            $templateHtml = $this->generateHtmlFromConfig($templateConfig, $backgroundImageUrl);
+            
+            // Extract variables from template_config
+            $templateVariables = $this->extractVariablesFromConfig($templateConfig);
+            
+            // Create template
+            $template = CertificateTemplate::create([
+                'acc_id' => $acc->id,
+                'category_id' => $request->category_id,
+                'name' => $request->name,
+                'template_html' => $templateHtml,
+                'template_config' => $templateConfig,
+                'template_variables' => $templateVariables,
+                'background_image_url' => $backgroundImageUrl,
+                'status' => $request->status,
+            ]);
+            
+            return response()->json([
+                'message' => 'Template generated successfully from image',
+                'template' => $template,
+                'ai_analysis' => [
+                    'source_image' => $backgroundImageUrl,
+                    'orientation' => $request->orientation,
+                ]
+            ], 201);
+            
+        } catch (\Exception $e) {
+            \Log::error('Failed to generate template from image', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to generate template from image',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     #[OA\Post(

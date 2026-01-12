@@ -1,0 +1,252 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+
+class GeminiService
+{
+    private $apiKey;
+    private $apiUrl;
+
+    public function __construct()
+    {
+        $this->apiKey = config('services.gemini.api_key');
+        $this->apiUrl = config('services.gemini.api_url', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent');
+    }
+
+    /**
+     * Analyze certificate image and generate HTML template
+     */
+    public function analyzeCertificateImage($imagePath, $orientation = 'landscape'): array
+    {
+        try {
+            // Read image file
+            $imageData = Storage::disk('public')->get($imagePath);
+            $base64Image = base64_encode($imageData);
+            
+            // Get mime type
+            $mimeType = mime_content_type(Storage::disk('public')->path($imagePath));
+            
+            // Prepare prompt for Gemini
+            $prompt = $this->buildPrompt($orientation);
+            
+            // Call Gemini API
+            $response = $this->callGeminiApi($base64Image, $mimeType, $prompt);
+            
+            // Parse response and extract template_config and HTML
+            return $this->parseGeminiResponse($response);
+            
+        } catch (\Exception $e) {
+            Log::error('Gemini API Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw new \Exception('Failed to analyze certificate image: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Build prompt for Gemini
+     */
+    private function buildPrompt($orientation): string
+    {
+        return "You are an expert at analyzing certificate designs and generating HTML templates.
+
+Analyze this certificate image and generate:
+1. A complete HTML template that matches the design exactly
+2. A JSON configuration (template_config) that describes all elements
+
+Requirements:
+- The certificate is A4 size: " . ($orientation === 'landscape' ? '297mm × 210mm (landscape)' : '210mm × 297mm (portrait)') . "
+- Use exact colors, fonts, sizes, and positioning from the image
+- Identify all text elements: title, trainee name, course name, subtitles, dates, certificate number, verification code
+- Identify background colors, borders, and any background images
+- Extract exact font sizes, colors, and text alignment
+- The HTML should be complete and ready to use with CSS inline styles
+- Use placeholders like {{trainee_name}}, {{course_name}}, {{certificate_number}}, {{issue_date}}, {{verification_code}} for dynamic content
+
+Return your response in this exact JSON format:
+{
+    \"template_config\": {
+        \"layout\": {
+            \"orientation\": \"" . $orientation . "\",
+            \"border_color\": \"#hexcolor\",
+            \"border_width\": \"10px\",
+            \"background_color\": \"#hexcolor\"
+        },
+        \"title\": {
+            \"show\": true,
+            \"text\": \"Certificate Title\",
+            \"position\": \"top-center\",
+            \"font_size\": \"32pt\",
+            \"font_weight\": \"bold\",
+            \"color\": \"#hexcolor\",
+            \"text_align\": \"center\"
+        },
+        \"trainee_name\": {
+            \"show\": true,
+            \"position\": \"center\",
+            \"font_size\": \"26pt\",
+            \"font_weight\": \"bold\",
+            \"color\": \"#hexcolor\",
+            \"text_align\": \"center\"
+        },
+        \"course_name\": {
+            \"show\": true,
+            \"position\": \"center\",
+            \"font_size\": \"18pt\",
+            \"color\": \"#hexcolor\",
+            \"text_align\": \"center\"
+        },
+        \"subtitle_before\": {
+            \"show\": true,
+            \"text\": \"Subtitle text before name\",
+            \"position\": \"center\",
+            \"font_size\": \"14pt\",
+            \"color\": \"#hexcolor\",
+            \"text_align\": \"center\"
+        },
+        \"subtitle_after\": {
+            \"show\": true,
+            \"text\": \"Subtitle text after name\",
+            \"position\": \"center\",
+            \"font_size\": \"14pt\",
+            \"color\": \"#hexcolor\",
+            \"text_align\": \"center\"
+        },
+        \"certificate_number\": {
+            \"show\": true,
+            \"position\": \"bottom-left\",
+            \"text_align\": \"left\"
+        },
+        \"issue_date\": {
+            \"show\": true,
+            \"position\": \"bottom-center\",
+            \"text_align\": \"center\"
+        },
+        \"verification_code\": {
+            \"show\": true,
+            \"position\": \"bottom-right\",
+            \"text_align\": \"right\"
+        }
+    },
+    \"template_html\": \"<complete HTML string here>\"
+}
+
+Important:
+- Only return valid JSON, no markdown, no code blocks
+- Extract exact colors from the image (use color picker values)
+- Extract exact font sizes (estimate from image scale)
+- Identify all text elements and their positions
+- Generate complete HTML with inline CSS that matches the design exactly
+- Use proper HTML structure with all necessary CSS for PDF generation";
+    }
+
+    /**
+     * Call Gemini API with image
+     */
+    private function callGeminiApi($base64Image, $mimeType, $prompt): array
+    {
+        $url = $this->apiUrl . '?key=' . $this->apiKey;
+        
+        $payload = [
+            'contents' => [
+                [
+                    'parts' => [
+                        [
+                            'text' => $prompt
+                        ],
+                        [
+                            'inline_data' => [
+                                'mime_type' => $mimeType,
+                                'data' => $base64Image
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            'generationConfig' => [
+                'temperature' => 0.4,
+                'topK' => 32,
+                'topP' => 1,
+                'maxOutputTokens' => 4096,
+            ]
+        ];
+
+        $response = Http::timeout(60)->post($url, $payload);
+
+        if (!$response->successful()) {
+            throw new \Exception('Gemini API request failed: ' . $response->body());
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * Parse Gemini response and extract template_config and HTML
+     */
+    private function parseGeminiResponse($response): array
+    {
+        try {
+            // Extract text from response
+            $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
+            
+            if (empty($text)) {
+                throw new \Exception('Empty response from Gemini API');
+            }
+
+            // Try to extract JSON from response
+            // Gemini might return JSON wrapped in markdown code blocks
+            $jsonText = $this->extractJsonFromText($text);
+            
+            // Parse JSON
+            $data = json_decode($jsonText, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \Exception('Invalid JSON response from Gemini: ' . json_last_error_msg());
+            }
+
+            // Validate required fields
+            if (!isset($data['template_config']) || !isset($data['template_html'])) {
+                throw new \Exception('Missing required fields in Gemini response');
+            }
+
+            return [
+                'template_config' => $data['template_config'],
+                'template_html' => $data['template_html'],
+                'raw_response' => $text // Keep for debugging
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Failed to parse Gemini response', [
+                'error' => $e->getMessage(),
+                'response' => $response
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Extract JSON from text (handles markdown code blocks)
+     */
+    private function extractJsonFromText($text): string
+    {
+        // Remove markdown code blocks if present
+        $text = preg_replace('/```json\s*/', '', $text);
+        $text = preg_replace('/```\s*/', '', $text);
+        
+        // Try to find JSON object
+        $start = strpos($text, '{');
+        $end = strrpos($text, '}');
+        
+        if ($start !== false && $end !== false && $end > $start) {
+            return substr($text, $start, $end - $start + 1);
+        }
+        
+        return $text;
+    }
+}
+
