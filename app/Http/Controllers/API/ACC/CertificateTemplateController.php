@@ -279,8 +279,6 @@ class CertificateTemplateController extends Controller
             position: absolute;
             top: 0;
             left: 0;
-            right: 0;
-            bottom: 0;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -290,7 +288,6 @@ class CertificateTemplateController extends Controller
             page-break-after: avoid !important;
             page-break-before: avoid !important;
             overflow: hidden;
-            box-sizing: border-box;
             orphans: 0;
             widows: 0;
             ' . $bgImageStyle . '
