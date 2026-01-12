@@ -25,7 +25,7 @@ class GeminiService
         $this->model = config('services.gemini.model', 'gemini-1.5-flash');
         
         // Build API URL with correct model
-        $baseUrl = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models');
+        $baseUrl = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent');
         $this->apiUrl = $baseUrl . '/' . $this->model . ':generateContent';
         
         Log::info('GeminiService initialized', [
