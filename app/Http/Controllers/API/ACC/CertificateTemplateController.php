@@ -215,6 +215,8 @@ class CertificateTemplateController extends Controller
         $borderWidth = $layout['border_width'] ?? '15px';
         $backgroundColor = $layout['background_color'] ?? '#ffffff';
 
+        // A4 Landscape: 297mm × 210mm (843pt × 596pt)
+        // A4 Portrait: 210mm × 297mm (596pt × 843pt)
         $width = $orientation === 'landscape' ? '297mm' : '210mm';
         $height = $orientation === 'landscape' ? '210mm' : '297mm';
 
@@ -273,7 +275,9 @@ class CertificateTemplateController extends Controller
         .certificate {
             width: ' . $width . ';
             height: ' . $height . ';
+            min-width: ' . $width . ';
             min-height: ' . $height . ';
+            max-width: ' . $width . ';
             max-height: ' . $height . ';
             border-top: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-right: ' . $borderWidth . ' solid ' . $borderColor . ';
@@ -285,6 +289,8 @@ class CertificateTemplateController extends Controller
             position: absolute;
             top: 0;
             left: 0;
+            right: 0;
+            bottom: 0;
             display: flex;
             flex-direction: column;
             justify-content: center;
