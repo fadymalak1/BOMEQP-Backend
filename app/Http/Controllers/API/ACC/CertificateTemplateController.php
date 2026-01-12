@@ -262,9 +262,7 @@ class CertificateTemplateController extends Controller
             padding: 0;
             font-family: "Times New Roman", serif;
             overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            position: relative;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             page-break-after: avoid !important;
@@ -277,11 +275,16 @@ class CertificateTemplateController extends Controller
             height: ' . $height . ';
             min-height: ' . $height . ';
             max-height: ' . $height . ';
-            border: ' . $borderWidth . ' solid ' . $borderColor . ';
-            padding: 30px;
+            border-top: ' . $borderWidth . ' solid ' . $borderColor . ';
+            border-right: ' . $borderWidth . ' solid ' . $borderColor . ';
+            border-bottom: ' . $borderWidth . ' solid ' . $borderColor . ';
+            border-left: ' . $borderWidth . ' solid ' . $borderColor . ';
+            padding: 25px;
             text-align: center;
             background-color: ' . $backgroundColor . ';
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 0;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -306,14 +309,15 @@ class CertificateTemplateController extends Controller
             font-size: ' . ($title['font_size'] ?? '48px') . ';
             font-weight: ' . ($title['font_weight'] ?? 'bold') . ';
             color: ' . ($title['color'] ?? '#2c3e50') . ';
-            margin-bottom: 15px;
+            margin-bottom: 12px;
+            margin-top: 0;
             text-transform: uppercase;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.1;
         }';
         }
 
@@ -326,14 +330,14 @@ class CertificateTemplateController extends Controller
             font-size: ' . ($trainee['font_size'] ?? '36px') . ';
             font-weight: ' . ($trainee['font_weight'] ?? 'bold') . ';
             color: ' . ($trainee['color'] ?? '#2c3e50') . ';
-            margin: 20px 0;
+            margin: 15px 0;
             text-decoration: underline;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.1;
         }';
         }
 
@@ -345,7 +349,7 @@ class CertificateTemplateController extends Controller
         .course-name {
             font-size: ' . ($course['font_size'] ?? '24px') . ';
             color: ' . ($course['color'] ?? '#34495e') . ';
-            margin: 15px 0;
+            margin: 12px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -363,25 +367,25 @@ class CertificateTemplateController extends Controller
         .subtitle {
             font-size: ' . ($subtitle['font_size'] ?? '18px') . ';
             color: ' . ($subtitle['color'] ?? '#7f8c8d') . ';
-            margin: 8px 0;
+            margin: 6px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
         }';
         } else {
             $html .= '
         .subtitle {
             font-size: 18px;
             color: #7f8c8d;
-            margin: 8px 0;
+            margin: 6px 0;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.3;
+            line-height: 1.2;
         }';
         }
         
@@ -389,7 +393,7 @@ class CertificateTemplateController extends Controller
         $html .= '
         .details {
             margin-top: auto;
-            padding-top: 20px;
+            padding-top: 15px;
             font-size: 14px;
             color: #7f8c8d;
             width: 100%;
@@ -399,7 +403,7 @@ class CertificateTemplateController extends Controller
             widows: 0;
         }
         .details p {
-            margin: 5px 0;
+            margin: 3px 0;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
@@ -407,8 +411,8 @@ class CertificateTemplateController extends Controller
         }
         .verification {
             position: absolute;
-            bottom: 15px;
-            right: 15px;
+            bottom: 12px;
+            right: 12px;
             font-size: 10px;
             color: #95a5a6;
             page-break-inside: avoid !important;
@@ -426,6 +430,7 @@ class CertificateTemplateController extends Controller
             orphans: 0;
             widows: 0;
             min-height: 0;
+            max-height: 100%;
         }
     </style>
 </head>
