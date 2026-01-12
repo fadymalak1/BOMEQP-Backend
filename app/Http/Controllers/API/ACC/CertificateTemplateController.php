@@ -304,12 +304,20 @@ class CertificateTemplateController extends Controller
         if (isset($config['title']) && ($config['title']['show'] ?? true)) {
             $title = $config['title'];
             $textAlign = $this->getTextAlign($title['text_align'] ?? 'center');
+            // Convert px to pt for better PDF rendering
+            $fontSize = $title['font_size'] ?? '56pt';
+            if (strpos($fontSize, 'px') !== false) {
+                $pxValue = (float) str_replace('px', '', $fontSize);
+                $fontSize = ($pxValue * 0.75) . 'pt';
+            } elseif (strpos($fontSize, 'pt') === false) {
+                $fontSize = '56pt'; // Default larger size
+            }
             $html .= '
         .title {
-            font-size: ' . ($title['font_size'] ?? '48px') . ';
+            font-size: ' . $fontSize . ';
             font-weight: ' . ($title['font_weight'] ?? 'bold') . ';
             color: ' . ($title['color'] ?? '#2c3e50') . ';
-            margin-bottom: 12px;
+            margin-bottom: 15px;
             margin-top: 0;
             text-transform: uppercase;
             text-align: ' . $textAlign . ';
@@ -317,7 +325,7 @@ class CertificateTemplateController extends Controller
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.1;
+            line-height: 1.2;
         }';
         }
 
@@ -325,19 +333,27 @@ class CertificateTemplateController extends Controller
         if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
             $trainee = $config['trainee_name'];
             $textAlign = $this->getTextAlign($trainee['text_align'] ?? 'center');
+            // Convert px to pt for better PDF rendering
+            $fontSize = $trainee['font_size'] ?? '42pt';
+            if (strpos($fontSize, 'px') !== false) {
+                $pxValue = (float) str_replace('px', '', $fontSize);
+                $fontSize = ($pxValue * 0.75) . 'pt';
+            } elseif (strpos($fontSize, 'pt') === false) {
+                $fontSize = '42pt'; // Default larger size
+            }
             $html .= '
         .trainee-name {
-            font-size: ' . ($trainee['font_size'] ?? '36px') . ';
+            font-size: ' . $fontSize . ';
             font-weight: ' . ($trainee['font_weight'] ?? 'bold') . ';
             color: ' . ($trainee['color'] ?? '#2c3e50') . ';
-            margin: 15px 0;
+            margin: 20px 0;
             text-decoration: underline;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.1;
+            line-height: 1.2;
         }';
         }
 
@@ -345,17 +361,25 @@ class CertificateTemplateController extends Controller
         if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
             $course = $config['course_name'];
             $textAlign = $this->getTextAlign($course['text_align'] ?? 'center');
+            // Convert px to pt for better PDF rendering
+            $fontSize = $course['font_size'] ?? '28pt';
+            if (strpos($fontSize, 'px') !== false) {
+                $pxValue = (float) str_replace('px', '', $fontSize);
+                $fontSize = ($pxValue * 0.75) . 'pt';
+            } elseif (strpos($fontSize, 'pt') === false) {
+                $fontSize = '28pt'; // Default larger size
+            }
             $html .= '
         .course-name {
-            font-size: ' . ($course['font_size'] ?? '24px') . ';
+            font-size: ' . $fontSize . ';
             color: ' . ($course['color'] ?? '#34495e') . ';
-            margin: 12px 0;
+            margin: 15px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.3;
         }';
         }
 
@@ -363,29 +387,37 @@ class CertificateTemplateController extends Controller
         if (isset($config['subtitle']) && ($config['subtitle']['show'] ?? true)) {
             $subtitle = $config['subtitle'];
             $textAlign = $this->getTextAlign($subtitle['text_align'] ?? 'center');
+            // Convert px to pt for better PDF rendering
+            $fontSize = $subtitle['font_size'] ?? '22pt';
+            if (strpos($fontSize, 'px') !== false) {
+                $pxValue = (float) str_replace('px', '', $fontSize);
+                $fontSize = ($pxValue * 0.75) . 'pt';
+            } elseif (strpos($fontSize, 'pt') === false) {
+                $fontSize = '22pt'; // Default larger size
+            }
             $html .= '
         .subtitle {
-            font-size: ' . ($subtitle['font_size'] ?? '18px') . ';
+            font-size: ' . $fontSize . ';
             color: ' . ($subtitle['color'] ?? '#7f8c8d') . ';
-            margin: 6px 0;
+            margin: 10px 0;
             text-align: ' . $textAlign . ';
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.3;
         }';
         } else {
             $html .= '
         .subtitle {
-            font-size: 18px;
+            font-size: 22pt;
             color: #7f8c8d;
-            margin: 6px 0;
+            margin: 10px 0;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
             widows: 0;
-            line-height: 1.2;
+            line-height: 1.3;
         }';
         }
         
@@ -393,8 +425,8 @@ class CertificateTemplateController extends Controller
         $html .= '
         .details {
             margin-top: auto;
-            padding-top: 15px;
-            font-size: 14px;
+            padding-top: 20px;
+            font-size: 16pt;
             color: #7f8c8d;
             width: 100%;
             page-break-inside: avoid !important;
@@ -403,7 +435,8 @@ class CertificateTemplateController extends Controller
             widows: 0;
         }
         .details p {
-            margin: 3px 0;
+            margin: 5px 0;
+            font-size: 16pt;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             orphans: 0;
@@ -411,9 +444,9 @@ class CertificateTemplateController extends Controller
         }
         .verification {
             position: absolute;
-            bottom: 12px;
-            right: 12px;
-            font-size: 10px;
+            bottom: 15px;
+            right: 15px;
+            font-size: 12pt;
             color: #95a5a6;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
