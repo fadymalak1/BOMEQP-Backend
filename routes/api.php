@@ -21,6 +21,7 @@ Route::post('/auth/forgot-password', [App\Http\Controllers\API\AuthController::c
 Route::post('/auth/reset-password', [App\Http\Controllers\API\AuthController::class, 'resetPassword']);
 Route::get('/auth/verify-email/{token}', [App\Http\Controllers\API\AuthController::class, 'verifyEmail']);
 Route::get('/certificates/verify/{code}', [App\Http\Controllers\API\CertificateController::class, 'verify']);
+Route::get('/certificates/{filename}', [App\Http\Controllers\API\CertificateDownloadController::class, 'download'])->where('filename', '.*\.pdf$');
 
 // Countries and Cities (Public endpoints for dropdowns)
 Route::get('/countries', [App\Http\Controllers\API\CountryController::class, 'index']);
@@ -291,6 +292,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::post('/certificates/generate', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'generate']);
         Route::get('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'index']);
         Route::get('/certificates/{id}', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'show']);
+        Route::get('/certificates/{id}/download', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'download']);
 
         // Marketplace
         Route::get('/marketplace/materials', [App\Http\Controllers\API\TrainingCenter\MarketplaceController::class, 'materials']);

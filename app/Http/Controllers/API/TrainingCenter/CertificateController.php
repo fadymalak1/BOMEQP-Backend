@@ -8,7 +8,9 @@ use App\Models\CertificateCode;
 use App\Models\TrainingClass;
 use App\Models\ClassCompletion;
 use App\Models\User;
+use App\Services\CertificatePdfService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use OpenApi\Attributes as OA;
 
@@ -106,11 +108,24 @@ class CertificateController extends Controller
             'issue_date' => $request->issue_date ?? now(),
             'expiry_date' => $request->expiry_date,
             'template_id' => $template->id,
-            'certificate_pdf_url' => '/certificates/' . Str::random(20) . '.pdf', // TODO: Generate actual PDF
+            'certificate_pdf_url' => '', // Will be generated below
             'verification_code' => strtoupper(Str::random(12)),
             'status' => 'valid',
             'code_used_id' => $code->id,
         ]);
+        
+        // Generate PDF
+        try {
+            $pdfService = new CertificatePdfService();
+            $certificate = $pdfService->generateAndUpdate($certificate);
+        } catch (\Exception $e) {
+            // Log error but don't fail certificate creation
+            \Log::error('Failed to generate PDF for certificate ' . $certificate->id . ': ' . $e->getMessage());
+            // Set a placeholder URL
+            $certificate->update([
+                'certificate_pdf_url' => '/certificates/' . Str::random(20) . '.pdf'
+            ]);
+        }
 
         // Update code status
         $code->update([
@@ -171,12 +186,12 @@ class CertificateController extends Controller
             );
         }
 
-        // TODO: Generate PDF and store it
-        // TODO: Send certificate to trainee
+        // PDF is generated above
+        // TODO: Send certificate to trainee via email
 
         return response()->json([
             'message' => 'Certificate generated successfully',
-            'certificate' => $certificate,
+            'certificate' => $certificate->fresh(),
         ], 201);
     }
 
@@ -261,6 +276,66 @@ class CertificateController extends Controller
         $certificate = Certificate::with(['course', 'instructor', 'trainingCenter', 'template'])
             ->findOrFail($id);
         return response()->json(['certificate' => $certificate]);
+    }
+
+    #[OA\Get(
+        path: "/training-center/certificates/{id}/download",
+        summary: "Download certificate PDF",
+        description: "Download the PDF file for a certificate.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "PDF file",
+                content: new OA\MediaType(mediaType: "application/pdf")
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Certificate not found")
+        ]
+    )]
+    public function download($id)
+    {
+        $user = request()->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $certificate = Certificate::where('training_center_id', $trainingCenter->id)
+            ->findOrFail($id);
+
+        // Check if PDF exists
+        if (!$certificate->certificate_pdf_url) {
+            return response()->json(['message' => 'PDF not generated yet'], 404);
+        }
+
+        // Extract file path from URL
+        $url = $certificate->certificate_pdf_url;
+        $path = str_replace(Storage::disk('public')->url(''), '', $url);
+        
+        // Check if file exists
+        if (!Storage::disk('public')->exists($path)) {
+            // Try to regenerate PDF
+            try {
+                $pdfService = new CertificatePdfService();
+                $certificate = $pdfService->generateAndUpdate($certificate);
+                $url = $certificate->certificate_pdf_url;
+                $path = str_replace(Storage::disk('public')->url(''), '', $url);
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'Failed to generate PDF: ' . $e->getMessage()], 500);
+            }
+        }
+
+        // Return file
+        return Storage::disk('public')->response($path, basename($path), [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="certificate-' . $certificate->certificate_number . '.pdf"',
+        ]);
     }
 }
 
