@@ -218,8 +218,8 @@ class CertificateTemplateController extends Controller
         // A4 Landscape: 843pt × 596pt (297mm × 210mm)
         // A4 Portrait: 596pt × 843pt (210mm × 297mm)
         // Use points in CSS to match PDF dimensions exactly
-        $width = $orientation === 'landscape' ? '843pt' : '596pt';
-        $height = $orientation === 'landscape' ? '596pt' : '843pt';
+        $width = $orientation === 'landscape' ? '600pt' : '596pt';
+        $height = $orientation === 'landscape' ? '596pt' : '600pt';
 
         // Convert background image URL to absolute if needed
         $bgImageStyle = '';
