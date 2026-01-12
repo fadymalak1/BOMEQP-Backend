@@ -251,15 +251,25 @@ class CertificatePdfService
      */
     private function createPdf(string $html): string
     {
-        // Check if dompdf is available
-        if (!class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
-            throw new \Exception('PDF library not installed. Please run: composer require barryvdh/laravel-dompdf');
+        // Use dompdf directly (works with Laravel 12)
+        if (!class_exists(\Dompdf\Dompdf::class)) {
+            throw new \Exception('PDF library not installed. Please run: composer require dompdf/dompdf');
         }
         
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html);
-        $pdf->setPaper('a4', 'landscape'); // Default to landscape, can be customized
+        // Create new DomPDF instance
+        $dompdf = new \Dompdf\Dompdf();
         
-        return $pdf->output();
+        // Load HTML
+        $dompdf->loadHtml($html);
+        
+        // Set paper size and orientation
+        $dompdf->setPaper('A4', 'landscape');
+        
+        // Render PDF
+        $dompdf->render();
+        
+        // Return PDF output
+        return $dompdf->output();
     }
     
     /**
