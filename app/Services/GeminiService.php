@@ -34,173 +34,171 @@ class GeminiService
     }
 
     /**
-     * Analyze certificate image and generate HTML template
+     * Analyze certificate image and generate HTML template using a 2-step pipeline
      */
     public function analyzeCertificateImage($imagePath, $orientation = 'landscape'): array
     {
         try {
-            // Read image file
-            $imageData = Storage::disk('public')->get($imagePath);
-            $base64Image = base64_encode($imageData);
+            // STEP 1: Vision -> JSON (template_config)
+            Log::info('Gemini Pipeline Step 1: Vision -> JSON');
+            $templateConfig = $this->extractTemplateConfigFromImage($imagePath, $orientation);
             
-            // Get mime type
-            $mimeType = mime_content_type(Storage::disk('public')->path($imagePath));
+            // STEP 2: JSON -> HTML
+            Log::info('Gemini Pipeline Step 2: JSON -> HTML');
+            $templateHtml = $this->generateHtmlFromConfigUsingAi($templateConfig);
             
-            // Prepare prompt for Gemini
-            $prompt = $this->buildPrompt($orientation);
-            
-            // Call Gemini API
-            $response = $this->callGeminiApi($base64Image, $mimeType, $prompt);
-            
-            // Parse response and extract template_config and HTML
-            return $this->parseGeminiResponse($response);
+            return [
+                'template_config' => $templateConfig,
+                'template_html' => $templateHtml
+            ];
             
         } catch (\Exception $e) {
-            Log::error('Gemini API Error', [
+            Log::error('Gemini Pipeline Failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            throw new \Exception('Failed to analyze certificate image: ' . $e->getMessage());
+            throw new \Exception('Failed to generate template from image: ' . $e->getMessage());
         }
     }
 
     /**
-     * Build prompt for Gemini
+     * Step 1: Analyze certificate image and extract template_config
      */
-    private function buildPrompt($orientation): string
+    private function extractTemplateConfigFromImage($imagePath, $orientation, $retry = true): array
     {
-        return "IMPORTANT:
-If the JSON will be incomplete, do NOT start writing it.
+        // Read image file
+        $imageData = Storage::disk('public')->get($imagePath);
+        $base64Image = base64_encode($imageData);
+        
+        // Get mime type
+        $mimeType = mime_content_type(Storage::disk('public')->path($imagePath));
+        
+        // Prepare prompt for Step 1
+        $prompt = $this->buildVisionPrompt($orientation);
+        
+        // Call Gemini API
+        $response = $this->callGeminiApi($prompt, $base64Image, $mimeType);
+        
+        try {
+            $data = $this->parseGeminiJsonResponse($response);
+            
+            if (!isset($data['template_config'])) {
+                throw new \Exception('Gemini response missing template_config');
+            }
+            
+            return $data['template_config'];
+            
+        } catch (\Exception $e) {
+            if ($retry) {
+                Log::warning('Step 1 failed, retrying with stronger instructions...', ['error' => $e->getMessage()]);
+                $retryPrompt = "Your previous response contained invalid JSON. \n" . 
+                              "Return ONLY a VALID JSON object named template_config. \n" . 
+                              "No HTML. No explanations. \n\n" . $prompt;
+                
+                $response = $this->callGeminiApi($retryPrompt, $base64Image, $mimeType);
+                return $this->extractTemplateConfigFromImageAfterRetry($response);
+            }
+            throw $e;
+        }
+    }
 
-        You are an expert at analyzing certificate designs and generating HTML templates.
+    /**
+     * Handle parsing after a retry
+     */
+    private function extractTemplateConfigFromImageAfterRetry($response): array
+    {
+        $data = $this->parseGeminiJsonResponse($response);
+        if (!isset($data['template_config'])) {
+            throw new \Exception('Gemini retry response missing template_config');
+        }
+        return $data['template_config'];
+    }
 
-Analyze this certificate image and generate:
-1. A complete HTML template that matches the design exactly
-2. A JSON configuration (template_config) that describes all elements
-
+    /**
+     * Step 2: Generate HTML from template_config using AI
+     */
+    private function generateHtmlFromConfigUsingAi(array $templateConfig): string
+    {
+        $prompt = "Generate a complete HTML certificate template using the following template_config JSON.
+        
 Requirements:
-- The certificate is A4 size: " . ($orientation === 'landscape' ? '297mm × 210mm (landscape)' : '210mm × 297mm (portrait)') . "
-- Use exact colors, fonts, sizes, and positioning from the image
-- Identify all text elements: title, trainee name, course name, subtitles, dates, certificate number, verification code
-- Identify background colors, borders, and any background images
-- Extract exact font sizes, colors, and text alignment
-- The HTML should be complete and ready to use with CSS inline styles
-- Use placeholders like {{trainee_name}}, {{course_name}}, {{certificate_number}}, {{issue_date}}, {{verification_code}} for dynamic content
+- Return HTML only. No explanations.
+- Use inline CSS styles.
+- The design should match the specifications in the template_config.
+- Use placeholders like {{trainee_name}}, {{course_name}}, {{certificate_number}}, {{issue_date}}, {{verification_code}}.
+- Ensure it's A4 size (" . ($templateConfig['layout']['orientation'] === 'landscape' ? '297mm × 210mm' : '210mm × 297mm') . ").
+- IMPORTANT: Return ONLY the HTML code, starting with <!DOCTYPE html>.
 
-Return ONLY a VALID JSON object.
-Do NOT truncate.
-If you cannot finish, STOP BEFORE STARTING.
- (IMPORTANT: Escape all special characters in strings, use \\\\n for newlines, \\\\\" for quotes):
+JSON Config:
+" . json_encode($templateConfig, JSON_PRETTY_PRINT);
+
+        $response = $this->callGeminiApi($prompt);
+        
+        // For HTML, we don't parse JSON, we just extract the HTML part
+        $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        
+        // Extract HTML if it's wrapped in code blocks
+        if (preg_match('/<!DOCTYPE html>.*<\/html>/is', $text, $matches)) {
+            return $matches[0];
+        }
+        
+        // If not found with regex, try cleaning common markdown
+        $html = preg_replace('/^```html\s*/i', '', $text);
+        $html = preg_replace('/```\s*$/', '', $html);
+        
+        return trim($html);
+    }
+
+    /**
+     * Build Vision prompt for Step 1
+     */
+    private function buildVisionPrompt($orientation): string
+    {
+        return "Analyze the certificate image and extract its design elements.
+        
+Return ONLY a VALID JSON object named \"template_config\".
+Do NOT include HTML. 
+Do NOT include explanations.
+If you cannot finish the JSON, STOP BEFORE STARTING.
+
+Requirements for analysis:
+- The certificate is A4 size: " . ($orientation === 'landscape' ? '297mm × 210mm' : '210mm × 297mm') . "
+- Identify colors (hex), fonts, sizes, and exact positioning.
+- Map elements to this structure: layout, title, trainee_name, course_name, subtitle_before, subtitle_after, certificate_number, issue_date, verification_code.
+
+Return format:
 {
     \"template_config\": {
-        \"layout\": {
-            \"orientation\": \"" . $orientation . "\",
-            \"border_color\": \"#hexcolor\",
-            \"border_width\": \"10px\",
-            \"background_color\": \"#hexcolor\"
-        },
-        \"title\": {
-            \"show\": true,
-            \"text\": \"Certificate Title\",
-            \"position\": \"top-center\",
-            \"font_size\": \"32pt\",
-            \"font_weight\": \"bold\",
-            \"color\": \"#hexcolor\",
-            \"text_align\": \"center\"
-        },
-        \"trainee_name\": {
-            \"show\": true,
-            \"position\": \"center\",
-            \"font_size\": \"26pt\",
-            \"font_weight\": \"bold\",
-            \"color\": \"#hexcolor\",
-            \"text_align\": \"center\"
-        },
-        \"course_name\": {
-            \"show\": true,
-            \"position\": \"center\",
-            \"font_size\": \"18pt\",
-            \"color\": \"#hexcolor\",
-            \"text_align\": \"center\"
-        },
-        \"subtitle_before\": {
-            \"show\": true,
-            \"text\": \"Subtitle text before name\",
-            \"position\": \"center\",
-            \"font_size\": \"14pt\",
-            \"color\": \"#hexcolor\",
-            \"text_align\": \"center\"
-        },
-        \"subtitle_after\": {
-            \"show\": true,
-            \"text\": \"Subtitle text after name\",
-            \"position\": \"center\",
-            \"font_size\": \"14pt\",
-            \"color\": \"#hexcolor\",
-            \"text_align\": \"center\"
-        },
-        \"certificate_number\": {
-            \"show\": true,
-            \"position\": \"bottom-left\",
-            \"text_align\": \"left\"
-        },
-        \"issue_date\": {
-            \"show\": true,
-            \"position\": \"bottom-center\",
-            \"text_align\": \"center\"
-        },
-        \"verification_code\": {
-            \"show\": true,
-            \"position\": \"bottom-right\",
-            \"text_align\": \"right\"
-        }
-    },
-    \"template_html\": \"<complete HTML string here with escaped quotes and newlines>\"
-}
-
-CRITICAL REQUIREMENTS:
-- Return ONLY valid JSON, NO markdown code blocks, NO explanations
-- Escape ALL special characters in strings: use \\\\n for newlines, \\\\\" for quotes, \\\\\\\\ for backslashes
-- Extract exact colors, fonts, and sizes from the image
-- Generate complete HTML with inline CSS matching the design exactly";
+        \"layout\": { \"orientation\": \"$orientation\", \"border_color\": \"#...\", \"border_width\": \"10px\", \"background_color\": \"#...\" },
+        \"title\": { \"show\": true, \"text\": \"...\", \"position\": \"...\", \"font_size\": \"...\", \"color\": \"#...\", \"text_align\": \"...\" },
+        \"trainee_name\": { \"show\": true, \"font_size\": \"...\", \"color\": \"#...\", \"text_align\": \"...\" },
+        ...
+    }
+}";
     }
 
     /**
-     * Call Gemini API with image
+     * Call Gemini API
      */
-    private function callGeminiApi($base64Image, $mimeType, $prompt): array
+    private function callGeminiApi($prompt, $base64Image = null, $mimeType = null): array
     {
-        // Build URL (API key will be sent in header)
         $url = $this->apiUrl;
         
-        Log::info('Calling Gemini API', [
-            'url' => $url,
-            'model' => $this->model,
-            'mime_type' => $mimeType
-        ]);
-        
-        // Prepare payload according to Gemini API format
-        $payload = [
-            'contents' => [
-                [
-                    'parts' => [
-                        [
-                            'text' => $prompt
-                        ],
-                        [
-                            'inline_data' => [
-                                'mime_type' => $mimeType,
-                                'data' => $base64Image
-                            ]
-                        ]
-                    ]
+        $parts = [['text' => $prompt]];
+        if ($base64Image && $mimeType) {
+            $parts[] = [
+                'inline_data' => [
+                    'mime_type' => $mimeType,
+                    'data' => $base64Image
                 ]
-            ],
+            ];
+        }
+
+        $payload = [
+            'contents' => [['parts' => $parts]],
             'generationConfig' => [
-                'temperature' => 0.4,
-                'topK' => 32,
-                'topP' => 1,
-                'maxOutputTokens' => 8192, // Increased to handle larger responses
+                'temperature' => 0.2,
+                'maxOutputTokens' => 4096,
             ]
         ];
 
@@ -213,337 +211,59 @@ CRITICAL REQUIREMENTS:
                 ->post($url, $payload);
 
             if (!$response->successful()) {
-                $errorBody = $response->body();
-                $errorJson = $response->json();
-                
-                Log::error('Gemini API Request Failed', [
-                    'status' => $response->status(),
-                    'url' => $url,
-                    'model' => $this->model,
-                    'error_body' => $errorBody,
-                    'error_json' => $errorJson
-                ]);
-                
-                $errorMessage = 'Gemini API request failed';
-                if (isset($errorJson['error']['message'])) {
-                    $errorMessage .= ': ' . $errorJson['error']['message'];
-                } elseif (isset($errorJson['error'])) {
-                    $errorMessage .= ': ' . json_encode($errorJson['error']);
-                } else {
-                    $errorMessage .= ': ' . $errorBody;
-                }
-                
-                throw new \Exception($errorMessage);
+                throw new \Exception('Gemini API request failed: ' . $response->body());
             }
 
-            $responseData = $response->json();
-            
-            Log::info('Gemini API Response received', [
-                'has_candidates' => isset($responseData['candidates']),
-                'candidates_count' => count($responseData['candidates'] ?? [])
-            ]);
-            
-            if (!isset($responseData['candidates']) || empty($responseData['candidates'])) {
-                Log::error('Gemini API Invalid Response', [
-                    'response' => $responseData
-                ]);
-                throw new \Exception('Invalid response format from Gemini API: No candidates in response');
-            }
+            return $response->json();
 
-            return $responseData;
-
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('Gemini API Connection Error', [
-                'error' => $e->getMessage(),
-                'url' => $url
-            ]);
-            throw new \Exception('Failed to connect to Gemini API: ' . $e->getMessage());
         } catch (\Exception $e) {
-            Log::error('Gemini API Error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'url' => $url,
-                'model' => $this->model
-            ]);
+            Log::error('Gemini API Error', ['error' => $e->getMessage()]);
             throw $e;
         }
     }
 
     /**
-     * Parse Gemini response and extract template_config and HTML
+     * Robust JSON parsing with Guards
      */
-    private function parseGeminiResponse($response): array
+    private function parseGeminiJsonResponse($response): array
     {
-        try {
+        $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        
+        if (empty($text)) {
+            throw new \Exception('Empty response from Gemini API');
+        }
 
-            // Extract text from response
-            $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
-            
+        // Extract JSON if wrapped in markdown
+        $jsonText = trim($text);
+        $jsonText = preg_replace('/^```json\s*/i', '', $jsonText);
+        $jsonText = preg_replace('/```\s*$/', '', $jsonText);
+        $jsonText = trim($jsonText);
 
-            if (empty($text)) {
-                throw new \Exception('Empty response from Gemini API');
-            }
+        // --- THE GOLDEN GUARDS ---
+        
+        // 1. Must end with a closing brace
+        if (!str_ends_with($jsonText, '}')) {
+            throw new \Exception('Gemini returned truncated JSON (No closing brace)');
+        }
 
-            // Check if response was cut off
-            $finishReason = $response['candidates'][0]['finishReason'] ?? '';
-            if ($finishReason === 'MAX_TOKENS') {
-                Log::warning('Gemini response was cut off due to MAX_TOKENS', [
-                    'text_length' => strlen($text)
-                ]);
-            }
+        // 2. Balanced braces
+        if (substr_count($jsonText, '{') !== substr_count($jsonText, '}')) {
+            throw new \Exception('Unbalanced JSON braces (Response was likely cut off)');
+        }
 
-            Log::info('Parsing Gemini response', [
-                'text_length' => strlen($text),
-                'text_preview' => substr($text, 0, 200),
-                'finish_reason' => $finishReason
-            ]);
+        // 3. Attempt parse
+        $data = json_decode($jsonText, true);
 
-            // Try to extract JSON from response
-            // Gemini might return JSON wrapped in markdown code blocks
-            $jsonText = $this->extractJsonFromText($text);
-            
-            // Clean JSON text - remove control characters that might cause issues
-            $jsonText = $this->cleanJsonText($jsonText);
-            
-            // Parse JSON with flags to handle invalid UTF-8
-            $data = json_decode($jsonText, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            // Attempt to clean control characters before giving up
+            $cleaned = preg_replace('/[\x00-\x1F\x7F]/', '', $jsonText);
+            $data = json_decode($cleaned, true);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
-                // Try to fix common JSON issues
-                $jsonText = $this->fixJsonIssues($jsonText);
-                $data = json_decode($jsonText, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE);
-                
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    // Last attempt: try to extract and fix JSON more aggressively
-                    $jsonText = $this->aggressiveJsonFix($jsonText);
-                    $data = json_decode($jsonText, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE);
-                    
-                    if (json_last_error() !== JSON_ERROR_NONE) {
-                        Log::error('JSON Parse Error', [
-                            'error' => json_last_error_msg(),
-                            'json_text_preview' => substr($jsonText, 0, 1000),
-                            'json_text_length' => strlen($jsonText),
-                            'finish_reason' => $finishReason
-                        ]);
-                        throw new \Exception('Invalid JSON response from Gemini: ' . json_last_error_msg() . ($finishReason === 'MAX_TOKENS' ? ' (Response was cut off)' : ''));
-                    }
-                }
+                throw new \Exception('JSON Parse Error: ' . json_last_error_msg());
             }
+        }
 
-            // Validate required fields
-            if (!isset($data['template_config']) || !isset($data['template_html'])) {
-                Log::error('Missing required fields', [
-                    'has_template_config' => isset($data['template_config']),
-                    'has_template_html' => isset($data['template_html']),
-                    'data_keys' => array_keys($data ?? [])
-                ]);
-                throw new \Exception('Missing required fields in Gemini response');
-            }
-
-            Log::info('Gemini response parsed successfully');
-
-            return [
-                'template_config' => $data['template_config'],
-                'template_html' => $data['template_html'],
-                'raw_response' => $text // Keep for debugging
-            ];
-
-        } catch (\Exception $e) {
-            Log::error('Failed to parse Gemini response', [
-                'error' => $e->getMessage(),
-                'response_preview' => isset($response['candidates'][0]['content']['parts'][0]['text']) ? substr($response['candidates'][0]['content']['parts'][0]['text'], 0, 500) : 'No text'
-            ]);
-            throw $e;
-        }
-    }
-
-    /**
-     * Extract JSON from text (handles markdown code blocks)
-     */
-    private function extractJsonFromText($text): string
-    {
-        // Remove markdown code blocks if present
-        $text = preg_replace('/```json\s*/i', '', $text);
-        $text = preg_replace('/```\s*/', '', $text);
-        $text = trim($text);
-        
-        // Try to find JSON object - handle nested braces
-        // But we need to be careful with strings that contain braces
-        $start = strpos($text, '{');
-        if ($start === false) {
-            return $text;
-        }
-        
-        // Find matching closing brace by counting braces
-        // Skip braces inside strings
-        $braceCount = 0;
-        $end = $start;
-        $length = strlen($text);
-        $inString = false;
-        $escapeNext = false;
-        
-        for ($i = $start; $i < $length; $i++) {
-            $char = $text[$i];
-            
-            if ($escapeNext) {
-                $escapeNext = false;
-                continue;
-            }
-            
-            if ($char === '\\') {
-                $escapeNext = true;
-                continue;
-            }
-            
-            if ($char === '"' && !$escapeNext) {
-                $inString = !$inString;
-                continue;
-            }
-            
-            if (!$inString) {
-                if ($char === '{') {
-                    $braceCount++;
-                } elseif ($char === '}') {
-                    $braceCount--;
-                    if ($braceCount === 0) {
-                        $end = $i;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        if ($end > $start) {
-            return substr($text, $start, $end - $start + 1);
-        }
-        
-        return $text;
-    }
-
-    /**
-     * Clean JSON text from control characters and fix encoding issues
-     */
-    private function cleanJsonText($jsonText): string
-    {
-        // First, ensure valid UTF-8 encoding
-        if (!mb_check_encoding($jsonText, 'UTF-8')) {
-            $jsonText = mb_convert_encoding($jsonText, 'UTF-8', 'UTF-8');
-        }
-        
-        // Remove control characters that are not escaped sequences
-        // This regex removes control chars but preserves \n, \t, \r, etc. when escaped
-        $jsonText = preg_replace_callback(
-            '/\\\\u([0-9a-fA-F]{4})/',
-            function ($matches) {
-                return '\\u' . $matches[1];
-            },
-            $jsonText
-        );
-        
-        // Remove unescaped control characters (but keep escaped ones like \n)
-        // We need to be careful not to break valid JSON escape sequences
-        $jsonText = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $jsonText);
-        
-        return trim($jsonText);
-    }
-
-    /**
-     * Fix common JSON issues
-     */
-    private function fixJsonIssues($jsonText): string
-    {
-        // Remove trailing commas before closing braces/brackets
-        $jsonText = preg_replace('/,\s*([}\]])/', '$1', $jsonText);
-        
-        // Try to fix incomplete JSON if it was cut off
-        // Check if JSON ends abruptly
-        $braceCount = substr_count($jsonText, '{') - substr_count($jsonText, '}');
-        $bracketCount = substr_count($jsonText, '[') - substr_count($jsonText, ']');
-        
-        // If JSON is incomplete, try to close it
-        if ($braceCount > 0) {
-            $jsonText .= str_repeat('}', $braceCount);
-        }
-        if ($bracketCount > 0) {
-            $jsonText .= str_repeat(']', $bracketCount);
-        }
-        
-        return $jsonText;
-    }
-
-    /**
-     * Aggressive JSON fixing for problematic responses
-     */
-    private function aggressiveJsonFix($jsonText): string
-    {
-        // First, try to extract just the JSON part
-        $start = strpos($jsonText, '{');
-        if ($start !== false) {
-            $jsonText = substr($jsonText, $start);
-        }
-        
-        // Find the last complete closing brace
-        $lastBrace = strrpos($jsonText, '}');
-        if ($lastBrace !== false) {
-            $jsonText = substr($jsonText, 0, $lastBrace + 1);
-        }
-        
-        // Fix unescaped control characters in string values
-        // We'll process the JSON character by character, escaping newlines in strings
-        $result = '';
-        $inString = false;
-        $escapeNext = false;
-        $length = strlen($jsonText);
-        
-        for ($i = 0; $i < $length; $i++) {
-            $char = $jsonText[$i];
-            
-            if ($escapeNext) {
-                $result .= $char;
-                $escapeNext = false;
-                continue;
-            }
-            
-            if ($char === '\\') {
-                $result .= $char;
-                $escapeNext = true;
-                continue;
-            }
-            
-            if ($char === '"' && !$escapeNext) {
-                $inString = !$inString;
-                $result .= $char;
-                continue;
-            }
-            
-            if ($inString) {
-                // Inside a string, escape control characters
-                if ($char === "\n") {
-                    $result .= '\\n';
-                } elseif ($char === "\r") {
-                    $result .= '\\r';
-                } elseif ($char === "\t") {
-                    $result .= '\\t';
-                } elseif (ord($char) < 32 && $char !== "\n" && $char !== "\r" && $char !== "\t") {
-                    // Skip other control characters
-                    continue;
-                } else {
-                    $result .= $char;
-                }
-            } else {
-                $result .= $char;
-            }
-        }
-        
-        // Remove trailing commas
-        $result = preg_replace('/,\s*([}\]])/', '$1', $result);
-        
-        // Close incomplete JSON
-        $braceCount = substr_count($result, '{') - substr_count($result, '}');
-        if ($braceCount > 0) {
-            $result .= str_repeat('}', $braceCount);
-        }
-        
-        return $result;
+        return $data;
     }
 }

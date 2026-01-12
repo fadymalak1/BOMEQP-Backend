@@ -448,7 +448,7 @@ class CertificateTemplateController extends Controller
 
         // Replace variables with sample data
         $html = $this->replaceVariables($html, $request->sample_data);
-
+        
         return response()->json([
             'html' => $html,
             'message' => 'Preview generated successfully'
