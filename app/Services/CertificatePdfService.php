@@ -38,17 +38,21 @@ class CertificatePdfService
             box-sizing: border-box;
         }
         html, body {
-            width: 100%;
-            height: 100%;
+            width: ' . $width . ';
+            height: ' . $height . ';
             margin: 0;
             padding: 0;
             font-family: "Times New Roman", serif;
             overflow: hidden;
         }
         body {
+            width: ' . $width . ';
+            height: ' . $height . ';
             display: flex;
             justify-content: center;
             align-items: center;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
         .certificate {
             width: ' . $width . ';
@@ -64,16 +68,18 @@ class CertificatePdfService
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            page-break-inside: avoid;
-            break-inside: avoid;
-            page-break-after: avoid;
-            page-break-before: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            page-break-after: avoid !important;
+            page-break-before: avoid !important;
+            overflow: hidden;
             ' . ($backgroundImageUrl ? 'background-image: url(\'' . $backgroundImageUrl . '\'); background-size: cover; background-position: center; background-repeat: no-repeat;' : '') . '
         }';
 
         // Title styles
         if (isset($config['title']) && ($config['title']['show'] ?? true)) {
             $title = $config['title'];
+            $textAlign = $this->getTextAlign($title['text_align'] ?? 'center');
             $html .= '
         .title {
             font-size: ' . ($title['font_size'] ?? '48px') . ';
@@ -81,12 +87,16 @@ class CertificatePdfService
             color: ' . ($title['color'] ?? '#2c3e50') . ';
             margin-bottom: 20px;
             text-transform: uppercase;
+            text-align: ' . $textAlign . ';
+            page-break-inside: avoid;
+            break-inside: avoid;
         }';
         }
 
         // Trainee name styles
         if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
             $trainee = $config['trainee_name'];
+            $textAlign = $this->getTextAlign($trainee['text_align'] ?? 'center');
             $html .= '
         .trainee-name {
             font-size: ' . ($trainee['font_size'] ?? '36px') . ';
@@ -94,33 +104,61 @@ class CertificatePdfService
             color: ' . ($trainee['color'] ?? '#2c3e50') . ';
             margin: 30px 0;
             text-decoration: underline;
+            text-align: ' . $textAlign . ';
+            page-break-inside: avoid;
+            break-inside: avoid;
         }';
         }
 
         // Course name styles
         if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
             $course = $config['course_name'];
+            $textAlign = $this->getTextAlign($course['text_align'] ?? 'center');
             $html .= '
         .course-name {
             font-size: ' . ($course['font_size'] ?? '24px') . ';
             color: ' . ($course['color'] ?? '#34495e') . ';
             margin: 20px 0;
+            text-align: ' . $textAlign . ';
+            page-break-inside: avoid;
+            break-inside: avoid;
         }';
         }
 
-        // Details styles
-        $html .= '
+        // Subtitle styles
+        if (isset($config['subtitle']) && ($config['subtitle']['show'] ?? true)) {
+            $subtitle = $config['subtitle'];
+            $textAlign = $this->getTextAlign($subtitle['text_align'] ?? 'center');
+            $html .= '
+        .subtitle {
+            font-size: ' . ($subtitle['font_size'] ?? '18px') . ';
+            color: ' . ($subtitle['color'] ?? '#7f8c8d') . ';
+            margin: 10px 0;
+            text-align: ' . $textAlign . ';
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }';
+        } else {
+            $html .= '
         .subtitle {
             font-size: 18px;
             color: #7f8c8d;
             margin: 10px 0;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }';
         }
+        
+        // Details styles
+        $html .= '
         .details {
             margin-top: auto;
             padding-top: 30px;
             font-size: 14px;
             color: #7f8c8d;
             width: 100%;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
         .verification {
             position: absolute;
@@ -136,6 +174,8 @@ class CertificatePdfService
             justify-content: center;
             align-items: center;
             flex: 1;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
     </style>
 </head>
@@ -147,15 +187,33 @@ class CertificatePdfService
         if (isset($config['title']) && ($config['title']['show'] ?? true)) {
             $titleText = $config['title']['text'] ?? 'Certificate of Completion';
             $html .= '
-            <div class="title">' . htmlspecialchars($titleText) . '</div>
+            <div class="title">' . htmlspecialchars($titleText) . '</div>';
+            
+            // Subtitle before trainee name
+            if (isset($config['subtitle_before']) && ($config['subtitle_before']['show'] ?? true)) {
+                $subtitleText = $config['subtitle_before']['text'] ?? 'This is to certify that';
+                $html .= '
+            <div class="subtitle">' . htmlspecialchars($subtitleText) . '</div>';
+            } else {
+                $html .= '
             <div class="subtitle">This is to certify that</div>';
+            }
         }
 
         // Trainee name
         if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
             $html .= '
-            <div class="trainee-name">{{trainee_name}}</div>
+            <div class="trainee-name">{{trainee_name}}</div>';
+            
+            // Subtitle after trainee name
+            if (isset($config['subtitle_after']) && ($config['subtitle_after']['show'] ?? true)) {
+                $subtitleText = $config['subtitle_after']['text'] ?? 'has successfully completed the course';
+                $html .= '
+            <div class="subtitle">' . htmlspecialchars($subtitleText) . '</div>';
+            } else {
+                $html .= '
             <div class="subtitle">has successfully completed the course</div>';
+            }
         }
 
         // Course name
@@ -301,6 +359,29 @@ class CertificatePdfService
     }
     
     /**
+     * Get CSS text-align value from config
+     */
+    private function getTextAlign($align): string
+    {
+        switch ($align) {
+            case 'left':
+                return 'left';
+            case 'right':
+                return 'right';
+            case 'center':
+                return 'center';
+            case 'right-center':
+            case 'right_center':
+                return 'right';
+            case 'left-center':
+            case 'left_center':
+                return 'left';
+            default:
+                return 'center';
+        }
+    }
+    
+    /**
      * Create PDF from HTML
      */
     private function createPdf(string $html, $orientation = 'landscape'): string
@@ -321,6 +402,7 @@ class CertificatePdfService
             $options->set('isPhpEnabled', false);
             $options->set('isFontSubsettingEnabled', true);
             $options->set('defaultFont', 'DejaVu Sans');
+            $options->set('enableCssFloat', true);
             $dompdf->setOptions($options);
             
             // Load HTML
