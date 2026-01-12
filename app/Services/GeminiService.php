@@ -69,7 +69,10 @@ class GeminiService
      */
     private function buildPrompt($orientation): string
     {
-        return "You are an expert at analyzing certificate designs and generating HTML templates.
+        return "IMPORTANT:
+If the JSON will be incomplete, do NOT start writing it.
+
+        You are an expert at analyzing certificate designs and generating HTML templates.
 
 Analyze this certificate image and generate:
 1. A complete HTML template that matches the design exactly
@@ -84,7 +87,10 @@ Requirements:
 - The HTML should be complete and ready to use with CSS inline styles
 - Use placeholders like {{trainee_name}}, {{course_name}}, {{certificate_number}}, {{issue_date}}, {{verification_code}} for dynamic content
 
-Return your response in this exact JSON format (IMPORTANT: Escape all special characters in strings, use \\\\n for newlines, \\\\\" for quotes):
+Return ONLY a VALID JSON object.
+Do NOT truncate.
+If you cannot finish, STOP BEFORE STARTING.
+ (IMPORTANT: Escape all special characters in strings, use \\\\n for newlines, \\\\\" for quotes):
 {
     \"template_config\": {
         \"layout\": {
@@ -155,7 +161,6 @@ Return your response in this exact JSON format (IMPORTANT: Escape all special ch
 CRITICAL REQUIREMENTS:
 - Return ONLY valid JSON, NO markdown code blocks, NO explanations
 - Escape ALL special characters in strings: use \\\\n for newlines, \\\\\" for quotes, \\\\\\\\ for backslashes
-- Keep template_html as a single-line string with escaped characters
 - Extract exact colors, fonts, and sizes from the image
 - Generate complete HTML with inline CSS matching the design exactly";
     }
@@ -270,9 +275,19 @@ CRITICAL REQUIREMENTS:
     private function parseGeminiResponse($response): array
     {
         try {
+
             // Extract text from response
             $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
             
+            // Hard validation before parsing
+if (!str_ends_with(trim($jsonText), '}')) {
+    throw new \Exception('Gemini returned incomplete JSON');
+}
+
+if (substr_count($jsonText, '{') !== substr_count($jsonText, '}')) {
+    throw new \Exception('Unbalanced JSON braces');
+}
+
             if (empty($text)) {
                 throw new \Exception('Empty response from Gemini API');
             }
