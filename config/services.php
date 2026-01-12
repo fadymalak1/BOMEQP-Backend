@@ -37,7 +37,10 @@ return [
 
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
-        'api_url' => env('GEMINI_API_URL', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'),
+        'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/models'),
+        'model' => env('GEMINI_MODEL', 'gemini-1.5-flash'),
+        // Available models: gemini-1.5-pro, gemini-1.5-flash, gemini-pro
+        // Note: Do not use -latest suffix, it's not supported in v1beta
     ],
 
 ];

@@ -20,8 +20,9 @@ class GeminiService
         }
         
         // Use the correct model name for Gemini API
-        // Options: gemini-1.5-pro, gemini-1.5-flash-latest, gemini-pro-vision
-        $this->model = config('services.gemini.model', 'gemini-1.5-flash-latest');
+        // Available models for v1beta: gemini-1.5-pro, gemini-1.5-flash, gemini-pro
+        // Note: gemini-1.5-flash-latest is not available in v1beta, use gemini-1.5-flash instead
+        $this->model = config('services.gemini.model', 'gemini-1.5-flash');
         
         // Build API URL with correct model
         $baseUrl = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models');
