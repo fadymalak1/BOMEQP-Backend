@@ -55,144 +55,204 @@ class CertificateController extends Controller
     )]
     public function generate(Request $request)
     {
-        $request->validate([
-            'training_class_id' => 'required|exists:training_classes,id',
-            'code_id' => 'required|exists:certificate_codes,id',
-            'trainee_name' => 'required|string|max:255',
-            'trainee_id_number' => 'nullable|string',
-            'issue_date' => 'nullable|date',
-            'expiry_date' => 'nullable|date',
-        ]);
-
-        $user = $request->user();
-        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
-
-        if (!$trainingCenter) {
-            return response()->json(['message' => 'Training center not found'], 404);
-        }
-
-        $trainingClass = TrainingClass::where('training_center_id', $trainingCenter->id)
-            ->findOrFail($request->training_class_id);
-
-        // Check if class is completed
-        $completion = ClassCompletion::where('training_class_id', $trainingClass->id)->first();
-        if (!$completion) {
-            return response()->json(['message' => 'Class must be completed before generating certificates'], 400);
-        }
-
-        // Get and validate code
-        $code = CertificateCode::where('training_center_id', $trainingCenter->id)
-            ->where('id', $request->code_id)
-            ->where('status', 'available')
-            ->firstOrFail();
-
-        // Get certificate template
-        $template = \App\Models\CertificateTemplate::where('acc_id', $code->acc_id)
-            ->where('category_id', $trainingClass->course->subCategory->category_id)
-            ->where('status', 'active')
-            ->first();
-
-        if (!$template) {
-            return response()->json(['message' => 'Certificate template not found'], 404);
-        }
-
-        // Generate certificate
-        $certificate = Certificate::create([
-            'certificate_number' => 'CERT-' . strtoupper(Str::random(10)),
-            'course_id' => $trainingClass->course_id,
-            'class_id' => $trainingClass->class_id,
-            'training_center_id' => $trainingCenter->id,
-            'instructor_id' => $trainingClass->instructor_id,
-            'trainee_name' => $request->trainee_name,
-            'trainee_id_number' => $request->trainee_id_number,
-            'issue_date' => $request->issue_date ?? now(),
-            'expiry_date' => $request->expiry_date,
-            'template_id' => $template->id,
-            'certificate_pdf_url' => '', // Will be generated below
-            'verification_code' => strtoupper(Str::random(12)),
-            'status' => 'valid',
-            'code_used_id' => $code->id,
-        ]);
-        
-        // Generate PDF
         try {
-            $pdfService = new CertificatePdfService();
-            $certificate = $pdfService->generateAndUpdate($certificate);
-        } catch (\Exception $e) {
-            // Log error but don't fail certificate creation
-            \Log::error('Failed to generate PDF for certificate ' . $certificate->id . ': ' . $e->getMessage());
-            // Set a placeholder URL
-            $certificate->update([
-                'certificate_pdf_url' => '/certificates/' . Str::random(20) . '.pdf'
+            $request->validate([
+                'training_class_id' => 'required|exists:training_classes,id',
+                'code_id' => 'required|exists:certificate_codes,id',
+                'trainee_name' => 'required|string|max:255',
+                'trainee_id_number' => 'nullable|string',
+                'issue_date' => 'nullable|date',
+                'expiry_date' => 'nullable|date',
             ]);
-        }
 
-        // Update code status
-        $code->update([
-            'status' => 'used',
-            'used_at' => now(),
-            'used_for_certificate_id' => $certificate->id,
-        ]);
+            $user = $request->user();
+            $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
 
-        // Update completion count
-        $completion->increment('certificates_generated_count');
+            if (!$trainingCenter) {
+                return response()->json(['message' => 'Training center not found'], 404);
+            }
 
-        // Send notifications
-        $notificationService = new \App\Services\NotificationService();
-        $certificate->load(['course', 'instructor', 'trainingCenter']);
-        $course = $certificate->course;
-        $instructor = $certificate->instructor;
-        $acc = $course->acc ?? null;
+            $trainingClass = TrainingClass::where('training_center_id', $trainingCenter->id)
+                ->findOrFail($request->training_class_id);
 
-        // Notify ACC Admin
-        if ($acc) {
-            $accUser = \App\Models\User::where('email', $acc->email)->where('role', 'acc_admin')->first();
-            if ($accUser) {
-                $notificationService->notifyCertificateGenerated(
-                    $accUser->id,
+            // Check if class is completed
+            $completion = ClassCompletion::where('training_class_id', $trainingClass->id)->first();
+            if (!$completion) {
+                return response()->json(['message' => 'Class must be completed before generating certificates'], 400);
+            }
+
+            // Get and validate code
+            $code = CertificateCode::where('training_center_id', $trainingCenter->id)
+                ->where('id', $request->code_id)
+                ->where('status', 'available')
+                ->firstOrFail();
+
+            // Load course relationships
+            $trainingClass->load(['course.subCategory']);
+            
+            // Get category ID from course
+            $categoryId = null;
+            if ($trainingClass->course && $trainingClass->course->subCategory) {
+                $categoryId = $trainingClass->course->subCategory->category_id;
+            }
+
+            if (!$categoryId) {
+                return response()->json([
+                    'message' => 'Course category not found. Please ensure course has a valid subcategory.',
+                    'course_id' => $trainingClass->course_id
+                ], 400);
+            }
+            
+            // Get certificate template
+            $template = \App\Models\CertificateTemplate::where('acc_id', $code->acc_id)
+                ->where('category_id', $categoryId)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$template) {
+                return response()->json([
+                    'message' => 'Certificate template not found',
+                    'details' => [
+                        'acc_id' => $code->acc_id,
+                        'category_id' => $categoryId,
+                        'suggestion' => 'Please ensure there is an active certificate template for this ACC and category.'
+                    ]
+                ], 404);
+            }
+
+            // Generate certificate
+            $certificate = Certificate::create([
+                'certificate_number' => 'CERT-' . strtoupper(Str::random(10)),
+                'course_id' => $trainingClass->course_id,
+                'class_id' => $trainingClass->class_id,
+                'training_center_id' => $trainingCenter->id,
+                'instructor_id' => $trainingClass->instructor_id,
+                'trainee_name' => $request->trainee_name,
+                'trainee_id_number' => $request->trainee_id_number,
+                'issue_date' => $request->issue_date ?? now(),
+                'expiry_date' => $request->expiry_date,
+                'template_id' => $template->id,
+                'certificate_pdf_url' => '', // Will be generated below
+                'verification_code' => strtoupper(Str::random(12)),
+                'status' => 'valid',
+                'code_used_id' => $code->id,
+            ]);
+            
+            // Generate PDF
+            try {
+                $pdfService = new CertificatePdfService();
+                $certificate = $pdfService->generateAndUpdate($certificate);
+            } catch (\Exception $e) {
+                // Log error with full details
+                \Log::error('Failed to generate PDF for certificate ' . $certificate->id, [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'certificate_id' => $certificate->id,
+                    'template_id' => $certificate->template_id,
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ]);
+                
+                // Set a placeholder URL - certificate will be created but PDF will be generated later
+                $certificate->update([
+                    'certificate_pdf_url' => '/certificates/' . Str::random(20) . '.pdf'
+                ]);
+                
+                // Don't fail the request - certificate is created successfully
+                // PDF can be regenerated later
+            }
+
+            // Update code status
+            $code->update([
+                'status' => 'used',
+                'used_at' => now(),
+                'used_for_certificate_id' => $certificate->id,
+            ]);
+
+            // Update completion count
+            $completion->increment('certificates_generated_count');
+
+            // Send notifications
+            $notificationService = new \App\Services\NotificationService();
+            $certificate->load(['course.acc', 'instructor', 'trainingCenter']);
+            $course = $certificate->course;
+            $instructor = $certificate->instructor;
+            $acc = $course->acc ?? null;
+
+            // Notify ACC Admin
+            if ($acc) {
+                $accUser = \App\Models\User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+                if ($accUser) {
+                    $notificationService->notifyCertificateGenerated(
+                        $accUser->id,
+                        $certificate->id,
+                        $certificate->certificate_number,
+                        $certificate->trainee_name,
+                        $course->name,
+                        $trainingCenter->name
+                    );
+                }
+            }
+
+            // Notify Instructor
+            if ($instructor) {
+                $instructorUser = \App\Models\User::where('email', $instructor->email)->first();
+                if ($instructorUser) {
+                    $notificationService->notifyInstructorCertificateGenerated(
+                        $instructorUser->id,
+                        $certificate->id,
+                        $certificate->certificate_number,
+                        $certificate->trainee_name,
+                        $course->name,
+                        $trainingCenter->name
+                    );
+                }
+            }
+
+            // Notify Group Admin
+            if ($acc) {
+                $notificationService->notifyAdminCertificateGenerated(
                     $certificate->id,
                     $certificate->certificate_number,
                     $certificate->trainee_name,
                     $course->name,
-                    $trainingCenter->name
+                    $trainingCenter->name,
+                    $acc->name
                 );
             }
+
+            // PDF is generated above
+            // TODO: Send certificate to trainee via email
+
+            return response()->json([
+                'message' => 'Certificate generated successfully',
+                'certificate' => $certificate->fresh(),
+            ], 201);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Resource not found',
+                'error' => $e->getMessage()
+            ], 404);
+        } catch (\Exception $e) {
+            \Log::error('Certificate generation error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'request_data' => $request->all()
+            ]);
+            
+            return response()->json([
+                'message' => 'Server Error',
+                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred while generating the certificate'
+            ], 500);
         }
-
-        // Notify Instructor
-        if ($instructor) {
-            $instructorUser = \App\Models\User::where('email', $instructor->email)->first();
-            if ($instructorUser) {
-                $notificationService->notifyInstructorCertificateGenerated(
-                    $instructorUser->id,
-                    $certificate->id,
-                    $certificate->certificate_number,
-                    $certificate->trainee_name,
-                    $course->name,
-                    $trainingCenter->name
-                );
-            }
-        }
-
-        // Notify Group Admin
-        if ($acc) {
-            $notificationService->notifyAdminCertificateGenerated(
-                $certificate->id,
-                $certificate->certificate_number,
-                $certificate->trainee_name,
-                $course->name,
-                $trainingCenter->name,
-                $acc->name
-            );
-        }
-
-        // PDF is generated above
-        // TODO: Send certificate to trainee via email
-
-        return response()->json([
-            'message' => 'Certificate generated successfully',
-            'certificate' => $certificate->fresh(),
-        ], 201);
     }
 
     #[OA\Get(

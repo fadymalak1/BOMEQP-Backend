@@ -205,12 +205,23 @@ class CertificatePdfService
      */
     public function generatePdf(Certificate $certificate): string
     {
-        $certificate->load(['template', 'course', 'trainingCenter', 'instructor', 'classModel']);
+        $certificate->load([
+            'template', 
+            'course.acc', 
+            'trainingCenter', 
+            'instructor', 
+            'classModel'
+        ]);
+        
         $template = $certificate->template;
+        
+        if (!$template) {
+            throw new \Exception('Certificate template not found');
+        }
         
         // Get orientation from template config
         $orientation = 'landscape';
-        if ($template->template_config && isset($template->template_config['layout']['orientation'])) {
+        if ($template->template_config && is_array($template->template_config) && isset($template->template_config['layout']['orientation'])) {
             $orientation = $template->template_config['layout']['orientation'];
         }
         
@@ -236,24 +247,24 @@ class CertificatePdfService
     private function prepareHtml(Certificate $certificate, CertificateTemplate $template): string
     {
         // Use template_config to generate HTML if available, otherwise use template_html
-        if ($template->template_config && !empty($template->template_config)) {
+        if ($template->template_config && is_array($template->template_config) && !empty($template->template_config)) {
             $html = $this->generateHtmlFromConfig($template->template_config, $template->background_image_url);
         } else {
             $html = $template->template_html ?? '';
         }
         
         if (empty($html)) {
-            throw new \Exception('Template HTML is empty');
+            throw new \Exception('Template HTML is empty. Please ensure template has either template_html or template_config.');
         }
         
         // Replace variables with actual data
         $replacements = [
-            '{{trainee_name}}' => $certificate->trainee_name,
+            '{{trainee_name}}' => $certificate->trainee_name ?? '',
             '{{trainee_id_number}}' => $certificate->trainee_id_number ?? '',
             '{{course_name}}' => $certificate->course->name ?? '',
             '{{course_code}}' => $certificate->course->code ?? '',
-            '{{certificate_number}}' => $certificate->certificate_number,
-            '{{verification_code}}' => $certificate->verification_code,
+            '{{certificate_number}}' => $certificate->certificate_number ?? '',
+            '{{verification_code}}' => $certificate->verification_code ?? '',
             '{{issue_date}}' => $certificate->issue_date ? $certificate->issue_date->format('Y-m-d') : '',
             '{{expiry_date}}' => $certificate->expiry_date ? $certificate->expiry_date->format('Y-m-d') : '',
             '{{training_center_name}}' => $certificate->trainingCenter->name ?? '',
@@ -272,7 +283,7 @@ class CertificatePdfService
         
         // Replace all variables
         foreach ($replacements as $variable => $value) {
-            $html = str_replace($variable, htmlspecialchars($value, ENT_QUOTES, 'UTF-8'), $html);
+            $html = str_replace($variable, htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8'), $html);
         }
         
         // Handle background image URL - convert relative URLs to absolute
@@ -299,27 +310,38 @@ class CertificatePdfService
             throw new \Exception('PDF library not installed. Please run: composer require dompdf/dompdf');
         }
         
-        // Create new DomPDF instance
-        $dompdf = new \Dompdf\Dompdf();
-        
-        // Set options to prevent page breaks
-        $options = $dompdf->getOptions();
-        $options->set('isHtml5ParserEnabled', true);
-        $options->set('isRemoteEnabled', true);
-        $options->set('isPhpEnabled', false);
-        $dompdf->setOptions($options);
-        
-        // Load HTML
-        $dompdf->loadHtml($html);
-        
-        // Set paper size and orientation
-        $dompdf->setPaper('A4', $orientation);
-        
-        // Render PDF
-        $dompdf->render();
-        
-        // Return PDF output
-        return $dompdf->output();
+        try {
+            // Create new DomPDF instance
+            $dompdf = new \Dompdf\Dompdf();
+            
+            // Set options to prevent page breaks and enable remote images
+            $options = $dompdf->getOptions();
+            $options->set('isHtml5ParserEnabled', true);
+            $options->set('isRemoteEnabled', true);
+            $options->set('isPhpEnabled', false);
+            $options->set('isFontSubsettingEnabled', true);
+            $options->set('defaultFont', 'DejaVu Sans');
+            $dompdf->setOptions($options);
+            
+            // Load HTML
+            $dompdf->loadHtml($html);
+            
+            // Set paper size and orientation
+            $dompdf->setPaper('A4', $orientation);
+            
+            // Render PDF
+            $dompdf->render();
+            
+            // Return PDF output
+            return $dompdf->output();
+        } catch (\Exception $e) {
+            \Log::error('PDF Generation Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'orientation' => $orientation
+            ]);
+            throw new \Exception('Failed to generate PDF: ' . $e->getMessage());
+        }
     }
     
     /**
