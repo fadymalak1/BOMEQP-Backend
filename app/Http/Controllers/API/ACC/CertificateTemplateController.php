@@ -215,6 +215,11 @@ class CertificateTemplateController extends Controller
         $borderWidth = $layout['border_width'] ?? '15px';
         $backgroundColor = $layout['background_color'] ?? '#ffffff';
 
+        // A4 Landscape: 297mm × 210mm
+        // A4 Portrait: 210mm × 297mm
+        $width = $orientation === 'landscape' ? '297mm' : '210mm';
+        $height = $orientation === 'landscape' ? '210mm' : '297mm';
+
         // Convert background image URL to absolute if needed
         $bgImageStyle = '';
         if ($backgroundImageUrl) {
@@ -247,16 +252,16 @@ class CertificateTemplateController extends Controller
         html, body {
             margin: 0;
             padding: 0;
-            width: 100%;
-            height: 100%;
+            width: ' . $width . ';
+            height: ' . $height . ';
+            overflow: hidden;
+            box-sizing: border-box;
         }
         html {
-            overflow: hidden;
             page-break-inside: avoid !important;
         }
         body {
             font-family: "Times New Roman", serif;
-            overflow: hidden;
             position: relative;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -268,6 +273,7 @@ class CertificateTemplateController extends Controller
         .certificate {
             width: 100%;
             height: 100%;
+            margin: 0;
             box-sizing: border-box;
             border-top: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-right: ' . $borderWidth . ' solid ' . $borderColor . ';

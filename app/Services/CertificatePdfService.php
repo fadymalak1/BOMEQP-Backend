@@ -20,6 +20,11 @@ class CertificatePdfService
         $borderWidth = $layout['border_width'] ?? '10px';
         $backgroundColor = $layout['background_color'] ?? '#ffffff';
 
+        // A4 Landscape: 297mm × 210mm
+        // A4 Portrait: 210mm × 297mm
+        $width = $orientation === 'landscape' ? '297mm' : '210mm';
+        $height = $orientation === 'landscape' ? '210mm' : '297mm';
+
         // Convert background image URL to absolute if needed
         $bgImageStyle = '';
         if ($backgroundImageUrl) {
@@ -52,16 +57,16 @@ class CertificatePdfService
         html, body {
             margin: 0;
             padding: 0;
-            width: 100%;
-            height: 100%;
+            width: ' . $width . ';
+            height: ' . $height . ';
+            overflow: hidden;
+            box-sizing: border-box;
         }
         html {
-            overflow: hidden;
             page-break-inside: avoid !important;
         }
         body {
             font-family: "Times New Roman", serif;
-            overflow: hidden;
             position: relative;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -73,6 +78,7 @@ class CertificatePdfService
         .certificate {
             width: 100%;
             height: 100%;
+            margin: 0;
             box-sizing: border-box;
             border-top: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-right: ' . $borderWidth . ' solid ' . $borderColor . ';
@@ -551,17 +557,16 @@ class CertificatePdfService
             // Load HTML
             $dompdf->loadHtml($html);
             
-            // Set paper size and orientation - A4 Landscape: 297mm × 210mm (843pt × 596pt)
-            // A4 Portrait: 210mm × 297mm (596pt × 843pt)
-            // Using exact dimensions in points for precision
-            // 1mm = 2.83465pt, so 297mm = 842.04pt, 210mm = 595.28pt
-            // But user specified 843pt × 596pt for landscape
+            // Set paper size and orientation - A4 Landscape: 297mm × 210mm (841.89pt × 595.28pt)
+            // A4 Portrait: 210mm × 297mm (595.28pt × 841.89pt)
+            // Using exact dimensions in points: 1mm = 2.83465pt
+            // 297mm = 841.89pt, 210mm = 595.28pt
             if ($orientation === 'landscape') {
-                // A4 Landscape: 843pt × 596pt (297mm × 210mm)
-                $dompdf->setPaper([0, 0, 843, 596], 'landscape');
+                // A4 Landscape: 297mm × 210mm = 841.89pt × 595.28pt
+                $dompdf->setPaper([0, 0, 841.89, 595.28], 'landscape');
             } else {
-                // A4 Portrait: 596pt × 843pt (210mm × 297mm)
-                $dompdf->setPaper([0, 0, 596, 843], 'portrait');
+                // A4 Portrait: 210mm × 297mm = 595.28pt × 841.89pt
+                $dompdf->setPaper([0, 0, 595.28, 841.89], 'portrait');
             }
             
             // Render PDF
