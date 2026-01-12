@@ -10,6 +10,7 @@ class GeminiService
 {
     private $apiKey;
     private $apiUrl;
+    private $model;
 
     public function __construct()
     {
@@ -17,7 +18,19 @@ class GeminiService
         if (empty($this->apiKey)) {
             throw new \Exception('GEMINI_API_KEY is not set in .env file');
         }
-        $this->apiUrl = config('services.gemini.api_url', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent');
+        
+        // Use the correct model name for Gemini API
+        // Options: gemini-1.5-pro, gemini-1.5-flash-latest, gemini-pro-vision
+        $this->model = config('services.gemini.model', 'gemini-1.5-flash-latest');
+        
+        // Build API URL with correct model
+        $baseUrl = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models');
+        $this->apiUrl = $baseUrl . '/' . $this->model . ':generateContent';
+        
+        Log::info('GeminiService initialized', [
+            'model' => $this->model,
+            'api_url' => $this->apiUrl
+        ]);
     }
 
     /**
@@ -156,6 +169,12 @@ Important:
         // Build URL with API key
         $url = $this->apiUrl . '?key=' . urlencode($this->apiKey);
         
+        Log::info('Calling Gemini API', [
+            'url' => $url,
+            'model' => $this->model,
+            'mime_type' => $mimeType
+        ]);
+        
         // Prepare payload according to Gemini API format
         $payload = [
             'contents' => [
@@ -195,6 +214,7 @@ Important:
                 Log::error('Gemini API Request Failed', [
                     'status' => $response->status(),
                     'url' => $url,
+                    'model' => $this->model,
                     'error_body' => $errorBody,
                     'error_json' => $errorJson
                 ]);
@@ -202,6 +222,8 @@ Important:
                 $errorMessage = 'Gemini API request failed';
                 if (isset($errorJson['error']['message'])) {
                     $errorMessage .= ': ' . $errorJson['error']['message'];
+                } elseif (isset($errorJson['error'])) {
+                    $errorMessage .= ': ' . json_encode($errorJson['error']);
                 } else {
                     $errorMessage .= ': ' . $errorBody;
                 }
@@ -211,24 +233,32 @@ Important:
 
             $responseData = $response->json();
             
+            Log::info('Gemini API Response received', [
+                'has_candidates' => isset($responseData['candidates']),
+                'candidates_count' => count($responseData['candidates'] ?? [])
+            ]);
+            
             if (!isset($responseData['candidates']) || empty($responseData['candidates'])) {
                 Log::error('Gemini API Invalid Response', [
                     'response' => $responseData
                 ]);
-                throw new \Exception('Invalid response format from Gemini API');
+                throw new \Exception('Invalid response format from Gemini API: No candidates in response');
             }
 
             return $responseData;
 
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             Log::error('Gemini API Connection Error', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'url' => $url
             ]);
             throw new \Exception('Failed to connect to Gemini API: ' . $e->getMessage());
         } catch (\Exception $e) {
             Log::error('Gemini API Error', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'url' => $url,
+                'model' => $this->model
             ]);
             throw $e;
         }
@@ -247,6 +277,11 @@ Important:
                 throw new \Exception('Empty response from Gemini API');
             }
 
+            Log::info('Parsing Gemini response', [
+                'text_length' => strlen($text),
+                'text_preview' => substr($text, 0, 200)
+            ]);
+
             // Try to extract JSON from response
             // Gemini might return JSON wrapped in markdown code blocks
             $jsonText = $this->extractJsonFromText($text);
@@ -255,13 +290,24 @@ Important:
             $data = json_decode($jsonText, true);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error('JSON Parse Error', [
+                    'error' => json_last_error_msg(),
+                    'json_text' => $jsonText
+                ]);
                 throw new \Exception('Invalid JSON response from Gemini: ' . json_last_error_msg());
             }
 
             // Validate required fields
             if (!isset($data['template_config']) || !isset($data['template_html'])) {
+                Log::error('Missing required fields', [
+                    'has_template_config' => isset($data['template_config']),
+                    'has_template_html' => isset($data['template_html']),
+                    'data_keys' => array_keys($data)
+                ]);
                 throw new \Exception('Missing required fields in Gemini response');
             }
+
+            Log::info('Gemini response parsed successfully');
 
             return [
                 'template_config' => $data['template_config'],
@@ -286,6 +332,7 @@ Important:
         // Remove markdown code blocks if present
         $text = preg_replace('/```json\s*/', '', $text);
         $text = preg_replace('/```\s*/', '', $text);
+        $text = trim($text);
         
         // Try to find JSON object
         $start = strpos($text, '{');
@@ -298,4 +345,3 @@ Important:
         return $text;
     }
 }
-
