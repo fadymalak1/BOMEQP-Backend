@@ -279,14 +279,6 @@ CRITICAL REQUIREMENTS:
             // Extract text from response
             $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
             
-            // Hard validation before parsing
-if (!str_ends_with(trim($jsonText), '}')) {
-    throw new \Exception('Gemini returned incomplete JSON');
-}
-
-if (substr_count($jsonText, '{') !== substr_count($jsonText, '}')) {
-    throw new \Exception('Unbalanced JSON braces');
-}
 
             if (empty($text)) {
                 throw new \Exception('Empty response from Gemini API');
