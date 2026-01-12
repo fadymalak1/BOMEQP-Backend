@@ -84,7 +84,7 @@ Requirements:
 - The HTML should be complete and ready to use with CSS inline styles
 - Use placeholders like {{trainee_name}}, {{course_name}}, {{certificate_number}}, {{issue_date}}, {{verification_code}} for dynamic content
 
-Return your response in this exact JSON format:
+Return your response in this exact JSON format (IMPORTANT: Escape all special characters in strings, use \\\\n for newlines, \\\\\" for quotes):
 {
     \"template_config\": {
         \"layout\": {
@@ -149,16 +149,15 @@ Return your response in this exact JSON format:
             \"text_align\": \"right\"
         }
     },
-    \"template_html\": \"<complete HTML string here>\"
+    \"template_html\": \"<complete HTML string here with escaped quotes and newlines>\"
 }
 
-Important:
-- Only return valid JSON, no markdown, no code blocks
-- Extract exact colors from the image (use color picker values)
-- Extract exact font sizes (estimate from image scale)
-- Identify all text elements and their positions
-- Generate complete HTML with inline CSS that matches the design exactly
-- Use proper HTML structure with all necessary CSS for PDF generation";
+CRITICAL REQUIREMENTS:
+- Return ONLY valid JSON, NO markdown code blocks, NO explanations
+- Escape ALL special characters in strings: use \\\\n for newlines, \\\\\" for quotes, \\\\\\\\ for backslashes
+- Keep template_html as a single-line string with escaped characters
+- Extract exact colors, fonts, and sizes from the image
+- Generate complete HTML with inline CSS matching the design exactly";
     }
 
     /**
@@ -196,7 +195,7 @@ Important:
                 'temperature' => 0.4,
                 'topK' => 32,
                 'topP' => 1,
-                'maxOutputTokens' => 4096,
+                'maxOutputTokens' => 8192, // Increased to handle larger responses
             ]
         ];
 
@@ -278,24 +277,50 @@ Important:
                 throw new \Exception('Empty response from Gemini API');
             }
 
+            // Check if response was cut off
+            $finishReason = $response['candidates'][0]['finishReason'] ?? '';
+            if ($finishReason === 'MAX_TOKENS') {
+                Log::warning('Gemini response was cut off due to MAX_TOKENS', [
+                    'text_length' => strlen($text)
+                ]);
+            }
+
             Log::info('Parsing Gemini response', [
                 'text_length' => strlen($text),
-                'text_preview' => substr($text, 0, 200)
+                'text_preview' => substr($text, 0, 200),
+                'finish_reason' => $finishReason
             ]);
 
             // Try to extract JSON from response
             // Gemini might return JSON wrapped in markdown code blocks
             $jsonText = $this->extractJsonFromText($text);
             
-            // Parse JSON
-            $data = json_decode($jsonText, true);
+            // Clean JSON text - remove control characters that might cause issues
+            $jsonText = $this->cleanJsonText($jsonText);
+            
+            // Parse JSON with flags to handle invalid UTF-8
+            $data = json_decode($jsonText, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
-                Log::error('JSON Parse Error', [
-                    'error' => json_last_error_msg(),
-                    'json_text' => $jsonText
-                ]);
-                throw new \Exception('Invalid JSON response from Gemini: ' . json_last_error_msg());
+                // Try to fix common JSON issues
+                $jsonText = $this->fixJsonIssues($jsonText);
+                $data = json_decode($jsonText, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE);
+                
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    // Last attempt: try to extract and fix JSON more aggressively
+                    $jsonText = $this->aggressiveJsonFix($jsonText);
+                    $data = json_decode($jsonText, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE);
+                    
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        Log::error('JSON Parse Error', [
+                            'error' => json_last_error_msg(),
+                            'json_text_preview' => substr($jsonText, 0, 1000),
+                            'json_text_length' => strlen($jsonText),
+                            'finish_reason' => $finishReason
+                        ]);
+                        throw new \Exception('Invalid JSON response from Gemini: ' . json_last_error_msg() . ($finishReason === 'MAX_TOKENS' ? ' (Response was cut off)' : ''));
+                    }
+                }
             }
 
             // Validate required fields
@@ -303,7 +328,7 @@ Important:
                 Log::error('Missing required fields', [
                     'has_template_config' => isset($data['template_config']),
                     'has_template_html' => isset($data['template_html']),
-                    'data_keys' => array_keys($data)
+                    'data_keys' => array_keys($data ?? [])
                 ]);
                 throw new \Exception('Missing required fields in Gemini response');
             }
@@ -319,7 +344,7 @@ Important:
         } catch (\Exception $e) {
             Log::error('Failed to parse Gemini response', [
                 'error' => $e->getMessage(),
-                'response' => $response
+                'response_preview' => isset($response['candidates'][0]['content']['parts'][0]['text']) ? substr($response['candidates'][0]['content']['parts'][0]['text'], 0, 500) : 'No text'
             ]);
             throw $e;
         }
@@ -331,18 +356,187 @@ Important:
     private function extractJsonFromText($text): string
     {
         // Remove markdown code blocks if present
-        $text = preg_replace('/```json\s*/', '', $text);
+        $text = preg_replace('/```json\s*/i', '', $text);
         $text = preg_replace('/```\s*/', '', $text);
         $text = trim($text);
         
-        // Try to find JSON object
+        // Try to find JSON object - handle nested braces
+        // But we need to be careful with strings that contain braces
         $start = strpos($text, '{');
-        $end = strrpos($text, '}');
+        if ($start === false) {
+            return $text;
+        }
         
-        if ($start !== false && $end !== false && $end > $start) {
+        // Find matching closing brace by counting braces
+        // Skip braces inside strings
+        $braceCount = 0;
+        $end = $start;
+        $length = strlen($text);
+        $inString = false;
+        $escapeNext = false;
+        
+        for ($i = $start; $i < $length; $i++) {
+            $char = $text[$i];
+            
+            if ($escapeNext) {
+                $escapeNext = false;
+                continue;
+            }
+            
+            if ($char === '\\') {
+                $escapeNext = true;
+                continue;
+            }
+            
+            if ($char === '"' && !$escapeNext) {
+                $inString = !$inString;
+                continue;
+            }
+            
+            if (!$inString) {
+                if ($char === '{') {
+                    $braceCount++;
+                } elseif ($char === '}') {
+                    $braceCount--;
+                    if ($braceCount === 0) {
+                        $end = $i;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if ($end > $start) {
             return substr($text, $start, $end - $start + 1);
         }
         
         return $text;
+    }
+
+    /**
+     * Clean JSON text from control characters and fix encoding issues
+     */
+    private function cleanJsonText($jsonText): string
+    {
+        // First, ensure valid UTF-8 encoding
+        if (!mb_check_encoding($jsonText, 'UTF-8')) {
+            $jsonText = mb_convert_encoding($jsonText, 'UTF-8', 'UTF-8');
+        }
+        
+        // Remove control characters that are not escaped sequences
+        // This regex removes control chars but preserves \n, \t, \r, etc. when escaped
+        $jsonText = preg_replace_callback(
+            '/\\\\u([0-9a-fA-F]{4})/',
+            function ($matches) {
+                return '\\u' . $matches[1];
+            },
+            $jsonText
+        );
+        
+        // Remove unescaped control characters (but keep escaped ones like \n)
+        // We need to be careful not to break valid JSON escape sequences
+        $jsonText = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $jsonText);
+        
+        return trim($jsonText);
+    }
+
+    /**
+     * Fix common JSON issues
+     */
+    private function fixJsonIssues($jsonText): string
+    {
+        // Remove trailing commas before closing braces/brackets
+        $jsonText = preg_replace('/,\s*([}\]])/', '$1', $jsonText);
+        
+        // Try to fix incomplete JSON if it was cut off
+        // Check if JSON ends abruptly
+        $braceCount = substr_count($jsonText, '{') - substr_count($jsonText, '}');
+        $bracketCount = substr_count($jsonText, '[') - substr_count($jsonText, ']');
+        
+        // If JSON is incomplete, try to close it
+        if ($braceCount > 0) {
+            $jsonText .= str_repeat('}', $braceCount);
+        }
+        if ($bracketCount > 0) {
+            $jsonText .= str_repeat(']', $bracketCount);
+        }
+        
+        return $jsonText;
+    }
+
+    /**
+     * Aggressive JSON fixing for problematic responses
+     */
+    private function aggressiveJsonFix($jsonText): string
+    {
+        // First, try to extract just the JSON part
+        $start = strpos($jsonText, '{');
+        if ($start !== false) {
+            $jsonText = substr($jsonText, $start);
+        }
+        
+        // Find the last complete closing brace
+        $lastBrace = strrpos($jsonText, '}');
+        if ($lastBrace !== false) {
+            $jsonText = substr($jsonText, 0, $lastBrace + 1);
+        }
+        
+        // Fix unescaped control characters in string values
+        // We'll process the JSON character by character, escaping newlines in strings
+        $result = '';
+        $inString = false;
+        $escapeNext = false;
+        $length = strlen($jsonText);
+        
+        for ($i = 0; $i < $length; $i++) {
+            $char = $jsonText[$i];
+            
+            if ($escapeNext) {
+                $result .= $char;
+                $escapeNext = false;
+                continue;
+            }
+            
+            if ($char === '\\') {
+                $result .= $char;
+                $escapeNext = true;
+                continue;
+            }
+            
+            if ($char === '"' && !$escapeNext) {
+                $inString = !$inString;
+                $result .= $char;
+                continue;
+            }
+            
+            if ($inString) {
+                // Inside a string, escape control characters
+                if ($char === "\n") {
+                    $result .= '\\n';
+                } elseif ($char === "\r") {
+                    $result .= '\\r';
+                } elseif ($char === "\t") {
+                    $result .= '\\t';
+                } elseif (ord($char) < 32 && $char !== "\n" && $char !== "\r" && $char !== "\t") {
+                    // Skip other control characters
+                    continue;
+                } else {
+                    $result .= $char;
+                }
+            } else {
+                $result .= $char;
+            }
+        }
+        
+        // Remove trailing commas
+        $result = preg_replace('/,\s*([}\]])/', '$1', $result);
+        
+        // Close incomplete JSON
+        $braceCount = substr_count($result, '{') - substr_count($result, '}');
+        if ($braceCount > 0) {
+            $result .= str_repeat('}', $braceCount);
+        }
+        
+        return $result;
     }
 }
