@@ -242,8 +242,10 @@ class CertificateTemplateController extends Controller
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
         }
         html {
             width: ' . $width . ';
@@ -251,6 +253,7 @@ class CertificateTemplateController extends Controller
             margin: 0;
             padding: 0;
             overflow: hidden;
+            page-break-inside: avoid !important;
         }
         body {
             width: ' . $width . ';
@@ -266,6 +269,8 @@ class CertificateTemplateController extends Controller
             break-inside: avoid !important;
             page-break-after: avoid !important;
             page-break-before: avoid !important;
+            orphans: 0;
+            widows: 0;
         }
         .certificate {
             width: ' . $width . ';
@@ -273,7 +278,7 @@ class CertificateTemplateController extends Controller
             min-height: ' . $height . ';
             max-height: ' . $height . ';
             border: ' . $borderWidth . ' solid ' . $borderColor . ';
-            padding: 40px;
+            padding: 30px;
             text-align: center;
             background-color: ' . $backgroundColor . ';
             position: relative;
@@ -286,6 +291,9 @@ class CertificateTemplateController extends Controller
             page-break-after: avoid !important;
             page-break-before: avoid !important;
             overflow: hidden;
+            box-sizing: border-box;
+            orphans: 0;
+            widows: 0;
             ' . $bgImageStyle . '
         }';
 
@@ -298,11 +306,14 @@ class CertificateTemplateController extends Controller
             font-size: ' . ($title['font_size'] ?? '48px') . ';
             font-weight: ' . ($title['font_weight'] ?? 'bold') . ';
             color: ' . ($title['color'] ?? '#2c3e50') . ';
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             text-transform: uppercase;
             text-align: ' . $textAlign . ';
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
+            line-height: 1.2;
         }';
         }
 
@@ -315,11 +326,14 @@ class CertificateTemplateController extends Controller
             font-size: ' . ($trainee['font_size'] ?? '36px') . ';
             font-weight: ' . ($trainee['font_weight'] ?? 'bold') . ';
             color: ' . ($trainee['color'] ?? '#2c3e50') . ';
-            margin: 30px 0;
+            margin: 20px 0;
             text-decoration: underline;
             text-align: ' . $textAlign . ';
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
+            line-height: 1.2;
         }';
         }
 
@@ -331,10 +345,13 @@ class CertificateTemplateController extends Controller
         .course-name {
             font-size: ' . ($course['font_size'] ?? '24px') . ';
             color: ' . ($course['color'] ?? '#34495e') . ';
-            margin: 20px 0;
+            margin: 15px 0;
             text-align: ' . $textAlign . ';
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
+            line-height: 1.2;
         }';
         }
 
@@ -346,19 +363,25 @@ class CertificateTemplateController extends Controller
         .subtitle {
             font-size: ' . ($subtitle['font_size'] ?? '18px') . ';
             color: ' . ($subtitle['color'] ?? '#7f8c8d') . ';
-            margin: 10px 0;
+            margin: 8px 0;
             text-align: ' . $textAlign . ';
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
+            line-height: 1.3;
         }';
         } else {
             $html .= '
         .subtitle {
             font-size: 18px;
             color: #7f8c8d;
-            margin: 10px 0;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            margin: 8px 0;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
+            line-height: 1.3;
         }';
         }
         
@@ -366,19 +389,30 @@ class CertificateTemplateController extends Controller
         $html .= '
         .details {
             margin-top: auto;
-            padding-top: 30px;
+            padding-top: 20px;
             font-size: 14px;
             color: #7f8c8d;
             width: 100%;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
+        }
+        .details p {
+            margin: 5px 0;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
         }
         .verification {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
+            bottom: 15px;
+            right: 15px;
             font-size: 10px;
             color: #95a5a6;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
         }
         .certificate-content {
             width: 100%;
@@ -387,8 +421,11 @@ class CertificateTemplateController extends Controller
             justify-content: center;
             align-items: center;
             flex: 1;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            orphans: 0;
+            widows: 0;
+            min-height: 0;
         }
     </style>
 </head>
