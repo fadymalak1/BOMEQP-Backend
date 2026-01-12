@@ -136,7 +136,7 @@ class CertificatePdfService
             justify-content: center;
             align-items: center;
             flex: 1;
-        }';
+        }
     </style>
 </head>
 <body>
