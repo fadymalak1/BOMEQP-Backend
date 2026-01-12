@@ -20,12 +20,6 @@ class CertificatePdfService
         $borderWidth = $layout['border_width'] ?? '10px';
         $backgroundColor = $layout['background_color'] ?? '#ffffff';
 
-        // A4 Landscape: 843pt × 596pt (297mm × 210mm)
-        // A4 Portrait: 596pt × 843pt (210mm × 297mm)
-        // Use points in CSS to match PDF dimensions exactly
-        $width = $orientation === 'landscape' ? '843pt' : '596pt';
-        $height = $orientation === 'landscape' ? '596pt' : '843pt';
-
         // Convert background image URL to absolute if needed
         $bgImageStyle = '';
         if ($backgroundImageUrl) {
@@ -42,7 +36,7 @@ class CertificatePdfService
     <meta charset="UTF-8">
     <style>
         @page {
-            size: ' . $width . ' ' . $height . ';
+            size: A4 ' . $orientation . ';
             margin: 0;
             padding: 0;
         }
@@ -55,19 +49,17 @@ class CertificatePdfService
             orphans: 0;
             widows: 0;
         }
-        html {
-            width: ' . $width . ';
-            height: ' . $height . ';
+        html, body {
             margin: 0;
             padding: 0;
+            width: 100%;
+            height: 100%;
+        }
+        html {
             overflow: hidden;
             page-break-inside: avoid !important;
         }
         body {
-            width: ' . $width . ';
-            height: ' . $height . ';
-            margin: 0;
-            padding: 0;
             font-family: "Times New Roman", serif;
             overflow: hidden;
             position: relative;
@@ -79,12 +71,8 @@ class CertificatePdfService
             widows: 0;
         }
         .certificate {
-            width: ' . $width . ';
-            height: ' . $height . ';
-            min-width: ' . $width . ';
-            min-height: ' . $height . ';
-            max-width: ' . $width . ';
-            max-height: ' . $height . ';
+            width: 100%;
+            height: 100%;
             box-sizing: border-box;
             border-top: ' . $borderWidth . ' solid ' . $borderColor . ';
             border-right: ' . $borderWidth . ' solid ' . $borderColor . ';
