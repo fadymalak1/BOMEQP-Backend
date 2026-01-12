@@ -14,7 +14,10 @@ class GeminiService
     public function __construct()
     {
         $this->apiKey = config('services.gemini.api_key');
-        $this->apiUrl = config('services.gemini.api_url', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent');
+        if (empty($this->apiKey)) {
+            throw new \Exception('GEMINI_API_KEY is not set in .env file');
+        }
+        $this->apiUrl = config('services.gemini.api_url', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent');
     }
 
     /**
@@ -150,8 +153,10 @@ Important:
      */
     private function callGeminiApi($base64Image, $mimeType, $prompt): array
     {
-        $url = $this->apiUrl . '?key=' . $this->apiKey;
+        // Build URL with API key
+        $url = $this->apiUrl . '?key=' . urlencode($this->apiKey);
         
+        // Prepare payload according to Gemini API format
         $payload = [
             'contents' => [
                 [
@@ -176,13 +181,57 @@ Important:
             ]
         ];
 
-        $response = Http::timeout(60)->post($url, $payload);
+        try {
+            $response = Http::timeout(120)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, $payload);
 
-        if (!$response->successful()) {
-            throw new \Exception('Gemini API request failed: ' . $response->body());
+            if (!$response->successful()) {
+                $errorBody = $response->body();
+                $errorJson = $response->json();
+                
+                Log::error('Gemini API Request Failed', [
+                    'status' => $response->status(),
+                    'url' => $url,
+                    'error_body' => $errorBody,
+                    'error_json' => $errorJson
+                ]);
+                
+                $errorMessage = 'Gemini API request failed';
+                if (isset($errorJson['error']['message'])) {
+                    $errorMessage .= ': ' . $errorJson['error']['message'];
+                } else {
+                    $errorMessage .= ': ' . $errorBody;
+                }
+                
+                throw new \Exception($errorMessage);
+            }
+
+            $responseData = $response->json();
+            
+            if (!isset($responseData['candidates']) || empty($responseData['candidates'])) {
+                Log::error('Gemini API Invalid Response', [
+                    'response' => $responseData
+                ]);
+                throw new \Exception('Invalid response format from Gemini API');
+            }
+
+            return $responseData;
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('Gemini API Connection Error', [
+                'error' => $e->getMessage()
+            ]);
+            throw new \Exception('Failed to connect to Gemini API: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Gemini API Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
         }
-
-        return $response->json();
     }
 
     /**

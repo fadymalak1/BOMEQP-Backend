@@ -96,12 +96,45 @@ class CertificateTemplateController extends Controller
         }
 
         try {
+            // Check if Gemini API key is configured
+            if (empty(config('services.gemini.api_key'))) {
+                return response()->json([
+                    'message' => 'Gemini API key is not configured. Please set GEMINI_API_KEY in .env file.',
+                    'error' => 'Missing API configuration'
+                ], 500);
+            }
+
             // Upload certificate image
             $imageFile = $request->file('certificate_image');
+            if (!$imageFile || !$imageFile->isValid()) {
+                return response()->json([
+                    'message' => 'Invalid image file uploaded',
+                    'error' => 'File validation failed'
+                ], 422);
+            }
+
             $imagePath = $imageFile->store('certificate-templates/source-images', 'public');
+            
+            if (!$imagePath) {
+                return response()->json([
+                    'message' => 'Failed to upload image',
+                    'error' => 'Storage error'
+                ], 500);
+            }
             
             // Analyze image using Gemini AI
             $analysisResult = $geminiService->analyzeCertificateImage($imagePath, $request->orientation);
+            
+            // Validate analysis result
+            if (!isset($analysisResult['template_config']) || !isset($analysisResult['template_html'])) {
+                // Delete uploaded image if analysis failed
+                Storage::disk('public')->delete($imagePath);
+                
+                return response()->json([
+                    'message' => 'AI analysis did not return valid template data',
+                    'error' => 'Invalid analysis result'
+                ], 500);
+            }
             
             // Get template_config and template_html from AI analysis
             $templateConfig = $analysisResult['template_config'];
@@ -143,15 +176,28 @@ class CertificateTemplateController extends Controller
                 ]
             ], 201);
             
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
             \Log::error('Failed to generate template from image', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'user_id' => $user->id ?? null,
+                'acc_id' => $acc->id ?? null
             ]);
+            
+            // Delete uploaded image if it exists and creation failed
+            if (isset($imagePath) && Storage::disk('public')->exists($imagePath)) {
+                Storage::disk('public')->delete($imagePath);
+            }
             
             return response()->json([
                 'message' => 'Failed to generate template from image',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'hint' => 'Please check that GEMINI_API_KEY is set correctly in .env file and the image is clear and valid.'
             ], 500);
         }
     }
