@@ -23,8 +23,8 @@ class CertificatePdfService
         // A4 Landscape: 843pt × 596pt (297mm × 210mm)
         // A4 Portrait: 596pt × 843pt (210mm × 297mm)
         // Use points in CSS to match PDF dimensions exactly
-        $width = $orientation === 'landscape' ? '600pt' : '596pt';
-        $height = $orientation === 'landscape' ? '596pt' : '600pt';
+        $width = $orientation === 'landscape' ? '1200pt' : '596pt';
+        $height = $orientation === 'landscape' ? '596pt' : '1200pt';
 
         // Convert background image URL to absolute if needed
         $bgImageStyle = '';
@@ -543,10 +543,10 @@ class CertificatePdfService
             // But user specified 843pt × 596pt for landscape
             if ($orientation === 'landscape') {
                 // A4 Landscape: 843pt × 596pt (297mm × 210mm)
-                $dompdf->setPaper([0, 0, 600, 596], 'landscape');
+                $dompdf->setPaper([0, 0, 1200, 596], 'landscape');
             } else {
                 // A4 Portrait: 596pt × 843pt (210mm × 297mm)
-                $dompdf->setPaper([0, 0, 596, 600], 'portrait');
+                $dompdf->setPaper([0, 0, 596, 1200], 'portrait');
             }
             
             // Render PDF
