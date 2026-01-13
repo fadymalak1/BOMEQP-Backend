@@ -5,13 +5,20 @@ namespace App\Http\Controllers\API\ACC;
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\CertificateTemplate;
-use App\Services\GeminiService;
+use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 
 class CertificateTemplateController extends Controller
 {
+    protected $fileUploadService;
+
+    public function __construct(FileUploadService $fileUploadService)
+    {
+        $this->fileUploadService = $fileUploadService;
+    }
     #[OA\Get(
         path: "/acc/certificate-templates",
         summary: "List certificate templates",
@@ -49,163 +56,9 @@ class CertificateTemplateController extends Controller
     }
 
     #[OA\Post(
-        path: "/acc/certificate-templates/generate-from-image",
-        summary: "Generate certificate template from image using AI",
-        description: "Upload a certificate image and use AI (Gemini) to automatically analyze it and generate a complete template with HTML and template_config.",
-        tags: ["ACC"],
-        security: [["sanctum" => []]],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\MediaType(
-                mediaType: "multipart/form-data",
-                schema: new OA\Schema(
-                    required: ["category_id", "name", "certificate_image", "status", "orientation"],
-                    properties: [
-                        new OA\Property(property: "category_id", type: "integer", example: 1),
-                        new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
-                        new OA\Property(property: "certificate_image", type: "string", format: "binary", description: "Certificate image file (JPEG, PNG, JPG - max 10MB)"),
-                        new OA\Property(property: "orientation", type: "string", enum: ["landscape", "portrait"], example: "landscape", description: "Certificate orientation"),
-                        new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
-                    ]
-                )
-            )
-        ),
-        responses: [
-            new OA\Response(response: 201, description: "Template generated successfully from image"),
-            new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 404, description: "ACC not found"),
-            new OA\Response(response: 422, description: "Validation error"),
-            new OA\Response(response: 500, description: "AI analysis failed")
-        ]
-    )]
-    public function generateFromImage(Request $request, GeminiService $geminiService)
-    {
-        $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'name' => 'required|string|max:255',
-            'certificate_image' => 'required|image|mimes:jpeg,png,jpg|max:10240', // 10MB max
-            'orientation' => 'required|in:landscape,portrait',
-            'status' => 'required|in:active,inactive',
-        ]);
-
-        $user = $request->user();
-        $acc = ACC::where('email', $user->email)->first();
-
-        if (!$acc) {
-            return response()->json(['message' => 'ACC not found'], 404);
-        }
-
-        try {
-            // Check if Gemini API key is configured
-            if (empty(config('services.gemini.api_key'))) {
-                return response()->json([
-                    'message' => 'Gemini API key is not configured. Please set GEMINI_API_KEY in .env file.',
-                    'error' => 'Missing API configuration'
-                ], 500);
-            }
-
-            // Upload certificate image
-            $imageFile = $request->file('certificate_image');
-            if (!$imageFile || !$imageFile->isValid()) {
-                return response()->json([
-                    'message' => 'Invalid image file uploaded',
-                    'error' => 'File validation failed'
-                ], 422);
-            }
-
-            $imagePath = $imageFile->store('certificate-templates/source-images', 'public');
-            
-            if (!$imagePath) {
-                return response()->json([
-                    'message' => 'Failed to upload image',
-                    'error' => 'Storage error'
-                ], 500);
-            }
-            
-            // Analyze image using Gemini AI
-            $analysisResult = $geminiService->analyzeCertificateImage($imagePath, $request->orientation);
-            
-            // Validate analysis result
-            if (!isset($analysisResult['template_config']) || !isset($analysisResult['template_html'])) {
-                // Delete uploaded image if analysis failed
-                Storage::disk('public')->delete($imagePath);
-                
-                return response()->json([
-                    'message' => 'AI analysis did not return valid template data',
-                    'error' => 'Invalid analysis result'
-                ], 500);
-            }
-            
-            // Get template_config and template_html from AI analysis
-            $templateConfig = $analysisResult['template_config'];
-            $templateHtml = $analysisResult['template_html'];
-            
-            // Ensure orientation matches request
-            if (!isset($templateConfig['layout'])) {
-                $templateConfig['layout'] = [];
-            }
-            $templateConfig['layout']['orientation'] = $request->orientation;
-            
-            // Use the uploaded image as background
-            $backgroundImageUrl = Storage::disk('public')->url($imagePath);
-            
-            // Regenerate HTML with correct background image URL
-            $templateHtml = $this->generateHtmlFromConfig($templateConfig, $backgroundImageUrl);
-            
-            // Extract variables from template_config
-            $templateVariables = $this->extractVariablesFromConfig($templateConfig);
-            
-            // Create template
-            $template = CertificateTemplate::create([
-                'acc_id' => $acc->id,
-                'category_id' => $request->category_id,
-                'name' => $request->name,
-                'template_html' => $templateHtml,
-                'template_config' => $templateConfig,
-                'template_variables' => $templateVariables,
-                'background_image_url' => $backgroundImageUrl,
-                'status' => $request->status,
-            ]);
-            
-            return response()->json([
-                'message' => 'Template generated successfully from image',
-                'template' => $template,
-                'ai_analysis' => [
-                    'source_image' => $backgroundImageUrl,
-                    'orientation' => $request->orientation,
-                ]
-            ], 201);
-            
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            \Log::error('Failed to generate template from image', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'user_id' => $user->id ?? null,
-                'acc_id' => $acc->id ?? null
-            ]);
-            
-            // Delete uploaded image if it exists and creation failed
-            if (isset($imagePath) && Storage::disk('public')->exists($imagePath)) {
-                Storage::disk('public')->delete($imagePath);
-            }
-            
-            return response()->json([
-                'message' => 'Failed to generate template from image',
-                'error' => $e->getMessage(),
-                'hint' => 'Please check that GEMINI_API_KEY is set correctly in .env file and the image is clear and valid.'
-            ], 500);
-        }
-    }
-
-    #[OA\Post(
         path: "/acc/certificate-templates",
         summary: "Create certificate template",
-        description: "Create a new certificate template for the authenticated ACC. You can either provide template_config (recommended) or template_html. If template_config is provided, HTML will be generated automatically.",
+        description: "Create a new certificate template for the authenticated ACC.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
@@ -215,10 +68,7 @@ class CertificateTemplateController extends Controller
                 properties: [
                     new OA\Property(property: "category_id", type: "integer", example: 1),
                     new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
-                    new OA\Property(property: "template_config", type: "object", nullable: true),
                     new OA\Property(property: "template_html", type: "string", nullable: true),
-                    new OA\Property(property: "background_image", type: "string", format: "binary", nullable: true),
-                    new OA\Property(property: "background_image_url", type: "string", nullable: true),
                     new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
                 ]
             )
@@ -235,18 +85,9 @@ class CertificateTemplateController extends Controller
         $request->validate([
             'category_id' => 'required|exists:categories,id',
             'name' => 'required|string|max:255',
-            'template_config' => 'nullable|array',
             'template_html' => 'nullable|string',
-            'background_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
-            'background_image_url' => 'nullable|string',
             'status' => 'required|in:active,inactive',
         ]);
-
-        if (!$request->has('template_config') && !$request->has('template_html')) {
-            return response()->json([
-                'message' => 'Either template_config or template_html must be provided'
-            ], 422);
-        }
 
         $user = $request->user();
         $acc = ACC::where('email', $user->email)->first();
@@ -255,32 +96,11 @@ class CertificateTemplateController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Handle background image upload
-        $backgroundImageUrl = $this->handleBackgroundImageUpload($request);
-
-        // Get template_config and ensure it's an array
-        $templateConfig = $request->input('template_config');
-        if (is_string($templateConfig)) {
-            $templateConfig = json_decode($templateConfig, true);
-        }
-
-        // Generate HTML from template_config if provided
-        $templateHtml = $request->template_html;
-        if ($request->has('template_config') && !$request->has('template_html')) {
-            $templateHtml = $this->generateHtmlFromConfig($templateConfig ?? [], $backgroundImageUrl);
-        }
-
-        // Extract variables from template_config
-        $templateVariables = $this->extractVariablesFromConfig($templateConfig ?? []);
-
         $template = CertificateTemplate::create([
             'acc_id' => $acc->id,
             'category_id' => $request->category_id,
             'name' => $request->name,
-            'template_html' => $templateHtml,
-            'template_config' => $templateConfig,
-            'template_variables' => $templateVariables,
-            'background_image_url' => $backgroundImageUrl,
+            'template_html' => $request->template_html,
             'status' => $request->status,
         ]);
 
@@ -336,51 +156,157 @@ class CertificateTemplateController extends Controller
         $request->validate([
             'category_id' => 'sometimes|exists:categories,id',
             'name' => 'sometimes|string|max:255',
-            'template_config' => 'nullable|array',
             'template_html' => 'nullable|string',
-            'background_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
-            'background_image_url' => 'nullable|string',
             'status' => 'sometimes|in:active,inactive',
+            'config_json' => 'nullable|array',
         ]);
 
-        $updateData = $request->only(['category_id', 'name', 'status']);
-
-        // Handle background image upload
-        if ($request->hasFile('background_image')) {
-            $updateData['background_image_url'] = $this->handleBackgroundImageUpload($request, $template);
-        } elseif ($request->has('background_image_url')) {
-            $updateData['background_image_url'] = $request->background_image_url;
-        }
-
-        // Handle template_config
-        if ($request->has('template_config')) {
-            $templateConfig = $request->input('template_config');
-            if (is_string($templateConfig)) {
-                $templateConfig = json_decode($templateConfig, true);
-            }
-
-            $updateData['template_config'] = $templateConfig;
-
-            if (!$request->has('template_html')) {
-                $updateData['template_html'] = $this->generateHtmlFromConfig(
-                    $templateConfig,
-                    $updateData['background_image_url'] ?? $template->background_image_url
-                );
-            }
-
-            $updateData['template_variables'] = $this->extractVariablesFromConfig($templateConfig);
-        }
-
-        if ($request->has('template_html')) {
-            $updateData['template_html'] = $request->template_html;
-        }
-
+        $updateData = $request->only(['category_id', 'name', 'template_html', 'status', 'config_json']);
         $template->update($updateData);
-        $template->refresh();
 
         return response()->json([
             'message' => 'Template updated successfully',
-            'template' => $template,
+            'template' => $template->fresh(),
+        ]);
+    }
+
+    #[OA\Post(
+        path: "/acc/certificate-templates/{id}/upload-background",
+        summary: "Upload background image for certificate template",
+        description: "Upload a high-resolution background image (JPG/PNG) for the certificate template.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: "background_image", type: "string", format: "binary")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Background image uploaded successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Template not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
+    public function uploadBackgroundImage(Request $request, $id)
+    {
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+
+        $request->validate([
+            'background_image' => 'required|image|mimes:jpeg,jpg,png|max:10240', // 10MB max
+        ]);
+
+        try {
+            $file = $request->file('background_image');
+            
+            // Delete old background image if exists
+            if ($template->background_image_url) {
+                $this->deleteBackgroundImage($template->background_image_url);
+            }
+
+            // Store in public storage
+            $directory = 'certificate-templates/' . $template->id;
+            if (!Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->makeDirectory($directory);
+            }
+
+            $fileName = time() . '_' . $template->id . '_background.' . $file->getClientOriginalExtension();
+            $filePath = $file->storeAs($directory, $fileName, 'public');
+            $fileUrl = Storage::disk('public')->url($filePath);
+
+            $template->update(['background_image_url' => $fileUrl]);
+
+            return response()->json([
+                'message' => 'Background image uploaded successfully',
+                'background_image_url' => $fileUrl,
+                'template' => $template->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error uploading background image', [
+                'template_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to upload background image',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    #[OA\Put(
+        path: "/acc/certificate-templates/{id}/config",
+        summary: "Update certificate template configuration",
+        description: "Update the template designer configuration (config_json) with placeholders, coordinates, and styling.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["config_json"],
+                properties: [
+                    new OA\Property(
+                        property: "config_json",
+                        type: "array",
+                        description: "Array of placeholder configurations with coordinates (as percentages), styling, etc.",
+                        items: new OA\Items(type: "object")
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Configuration updated successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Template not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
+    public function updateConfig(Request $request, $id)
+    {
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+
+        $request->validate([
+            'config_json' => 'required|array',
+            'config_json.*.variable' => 'required|string',
+            'config_json.*.x' => 'required|numeric|min:0|max:1',
+            'config_json.*.y' => 'required|numeric|min:0|max:1',
+            'config_json.*.font_family' => 'nullable|string',
+            'config_json.*.font_size' => 'nullable|integer|min:8|max:200',
+            'config_json.*.color' => 'nullable|string',
+            'config_json.*.text_align' => 'nullable|in:left,center,right',
+        ]);
+
+        $template->update(['config_json' => $request->config_json]);
+
+        return response()->json([
+            'message' => 'Template configuration updated successfully',
+            'template' => $template->fresh(),
         ]);
     }
 
@@ -408,587 +334,43 @@ class CertificateTemplateController extends Controller
         }
 
         $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+        
+        // Delete background image if exists
+        if ($template->background_image_url) {
+            $this->deleteBackgroundImage($template->background_image_url);
+        }
+
         $template->delete();
 
         return response()->json(['message' => 'Template deleted successfully']);
     }
 
-    #[OA\Post(
-        path: "/acc/certificate-templates/{id}/preview",
-        summary: "Preview certificate template",
-        tags: ["ACC"],
-        security: [["sanctum" => []]],
-        parameters: [
-            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
-        ],
-        responses: [
-            new OA\Response(response: 200, description: "Preview generated successfully"),
-            new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 404, description: "Template not found")
-        ]
-    )]
-    public function preview(Request $request, $id)
-    {
-        $request->validate([
-            'sample_data' => 'required|array',
-        ]);
-
-        $template = CertificateTemplate::findOrFail($id);
-        $config = $template->template_config ?? [];
-
-        if (empty($config)) {
-            return response()->json([
-                'message' => 'Template config is empty. Please use template_config to create templates.',
-                'html' => $template->template_html ?? ''
-            ], 400);
-        }
-
-        // Generate HTML from config (same as PDF generation)
-        $html = $this->generateHtmlFromConfig($config, $template->background_image_url);
-
-        // Replace variables with sample data
-        $html = $this->replaceVariables($html, $request->sample_data);
-        
-        return response()->json([
-            'html' => $html,
-            'message' => 'Preview generated successfully'
-        ]);
-    }
-
     /**
-     * Handle background image upload
+     * Delete background image from storage
      */
-    private function handleBackgroundImageUpload(Request $request, $template = null)
+    private function deleteBackgroundImage(string $imageUrl): bool
     {
-        if ($request->hasFile('background_image')) {
-            try {
-                // Delete old image if exists
-                if ($template && $template->background_image_url) {
-                    $oldPath = str_replace(Storage::disk('public')->url(''), '', $template->background_image_url);
-                    Storage::disk('public')->delete($oldPath);
+        try {
+            $urlParts = parse_url($imageUrl);
+            $path = ltrim($urlParts['path'] ?? '', '/');
+            
+            // Extract file path from URL
+            $pattern = '#certificate-templates/\d+/(.+)$#';
+            if (preg_match($pattern, $path, $matches)) {
+                $filePath = 'certificate-templates/' . preg_replace('#certificate-templates/(\d+)/.*#', '$1', $path) . '/' . $matches[1];
+                if (Storage::disk('public')->exists($filePath)) {
+                    Storage::disk('public')->delete($filePath);
+                    return true;
                 }
-
-                $file = $request->file('background_image');
-                if (!$file->isValid()) {
-                    throw new \Exception('Invalid file uploaded');
-                }
-
-                $path = $file->store('certificate-templates/backgrounds', 'public');
-                return Storage::disk('public')->url($path);
-
-            } catch (\Exception $e) {
-                \Log::error('Background image upload failed', [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
-                ]);
-                throw new \Exception('Failed to upload background image: ' . $e->getMessage());
             }
+            
+            return false;
+        } catch (\Exception $e) {
+            Log::warning('Failed to delete background image', [
+                'image_url' => $imageUrl,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
         }
-
-        return $request->background_image_url ?? null;
-    }
-
-    /**
-     * Generate HTML from template configuration
-     * Smart implementation that ensures all content fits within PDF boundaries
-     */
-    private function generateHtmlFromConfig($config, $backgroundImageUrl = null)
-    {
-        $layout = $config['layout'] ?? [];
-        $orientation = $layout['orientation'] ?? 'landscape';
-        $borderColor = $layout['border_color'] ?? '#D4AF37';
-        $borderWidth = $layout['border_width'] ?? '10px';
-        $backgroundColor = $layout['background_color'] ?? '#ffffff';
-
-        // A4 dimensions: Landscape 297mm × 210mm, Portrait 210mm × 297mm
-        $width = $orientation === 'landscape' ? '297mm' : '210mm';
-        $height = $orientation === 'landscape' ? '210mm' : '297mm';
-
-        // Process background image
-        $bgImageStyle = $this->processBackgroundImage($backgroundImageUrl);
-
-        // Build HTML structure
-        $html = $this->buildHtmlStructure($config, $width, $height, $orientation, $borderColor, $borderWidth, $backgroundColor, $bgImageStyle);
-
-        return $html;
-    }
-
-    /**
-     * Process background image URL
-     */
-    private function processBackgroundImage($backgroundImageUrl)
-    {
-        if (!$backgroundImageUrl) {
-            return '';
-        }
-
-        if (!filter_var($backgroundImageUrl, FILTER_VALIDATE_URL)) {
-            $backgroundImageUrl = url($backgroundImageUrl);
-        }
-
-        $encodedUrl = htmlspecialchars($backgroundImageUrl, ENT_QUOTES, 'UTF-8');
-
-        return sprintf(
-            'background-image: url(\'%s\'); background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed;',
-            $encodedUrl
-        );
-    }
-
-    /**
-     * Build complete HTML structure with smart CSS
-     */
-    private function buildHtmlStructure($config, $width, $height, $orientation, $borderColor, $borderWidth, $backgroundColor, $bgImageStyle)
-    {
-        $html = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        @page {
-            size: A4 ' . $orientation . ';
-            margin: 0;
-            padding: 0;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            orphans: 0;
-            widows: 0;
-        }
-
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: ' . $width . ';
-            height: ' . $height . ';
-            overflow: hidden;
-            box-sizing: border-box;
-            position: relative;
-        }
-
-        html {
-            page-break-inside: avoid !important;
-        }
-
-        body {
-            font-family: "Times New Roman", "DejaVu Serif", serif;
-            position: relative;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            page-break-after: avoid !important;
-            page-break-before: avoid !important;
-            orphans: 0;
-            widows: 0;
-        }
-
-        .certificate {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            border-top: ' . $borderWidth . ' solid ' . $borderColor . ';
-            border-right: ' . $borderWidth . ' solid ' . $borderColor . ';
-            border-bottom: ' . $borderWidth . ' solid ' . $borderColor . ';
-            border-left: ' . $borderWidth . ' solid ' . $borderColor . ';
-            background-color: ' . $backgroundColor . ';
-            position: absolute;
-            top: 0;
-            left: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            align-items: center;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            page-break-after: avoid !important;
-            page-break-before: avoid !important;
-            overflow: hidden;
-            orphans: 0;
-            widows: 0;
-            ' . $bgImageStyle . '
-        }
-
-        .certificate-content {
-            width: 100%;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 30px 40px;
-            min-height: 0;
-            max-height: 100%;
-            overflow: visible;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }';
-
-        // Add element-specific styles
-        $html .= $this->buildElementStyles($config);
-
-        $html .= '
-        .details {
-            width: 100%;
-            padding: 15px 40px;
-            font-size: 11pt;
-            color: #7f8c8d;
-            text-align: center;
-            flex-shrink: 0;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            orphans: 0;
-            widows: 0;
-        }
-
-        .details p {
-            margin: 2px 0;
-            font-size: 11pt;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
-
-        .verification {
-            position: absolute;
-            bottom: 10px;
-            right: 20px;
-            font-size: 9pt;
-            color: #95a5a6;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
-
-        img {
-            max-width: 100%;
-            height: auto;
-            display: block;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
-
-        .logo-container, .signature-container {
-            max-width: 100%;
-            max-height: 150px;
-            overflow: hidden;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
-
-        .logo-container img, .signature-container img {
-            max-width: 100%;
-            max-height: 150px;
-            object-fit: contain;
-        }
-    </style>
-</head>
-<body>
-    <div class="certificate">
-        <div class="certificate-content">';
-
-        // Build content HTML
-        $html .= $this->buildContentHtml($config);
-
-        $html .= '
-        </div>';
-
-        // Add details section
-        $html .= $this->buildDetailsHtml($config);
-
-        // Add verification code
-        if (isset($config['verification_code']) && ($config['verification_code']['show'] ?? true)) {
-            $html .= '
-        <div class="verification">
-            Verification Code: {{verification_code}}
-        </div>';
-        }
-
-        $html .= '
-    </div>
-</body>
-</html>';
-
-        return $html;
-    }
-
-    /**
-     * Build CSS styles for certificate elements
-     */
-    private function buildElementStyles($config)
-    {
-        $styles = '';
-
-        // Title styles
-        if (isset($config['title']) && ($config['title']['show'] ?? true)) {
-            $title = $config['title'];
-            $textAlign = $this->getTextAlign($title['text_align'] ?? 'center');
-            $fontSize = $this->convertFontSize($title['font_size'] ?? '32pt');
-
-            $styles .= '
-        .title {
-            font-size: ' . $fontSize . ';
-            font-weight: ' . ($title['font_weight'] ?? 'bold') . ';
-            color: ' . ($title['color'] ?? '#2c3e50') . ';
-            margin: 8px 0;
-            text-transform: uppercase;
-            text-align: ' . $textAlign . ';
-            line-height: 1.1;
-            max-width: 100%;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            orphans: 0;
-            widows: 0;
-        }';
-        }
-
-        // Trainee name styles
-        if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
-            $trainee = $config['trainee_name'];
-            $textAlign = $this->getTextAlign($trainee['text_align'] ?? 'center');
-            $fontSize = $this->convertFontSize($trainee['font_size'] ?? '26pt');
-
-            $styles .= '
-        .trainee-name {
-            font-size: ' . $fontSize . ';
-            font-weight: ' . ($trainee['font_weight'] ?? 'bold') . ';
-            color: ' . ($trainee['color'] ?? '#2c3e50') . ';
-            margin: 8px 0;
-            text-decoration: underline;
-            text-align: ' . $textAlign . ';
-            line-height: 1.1;
-            max-width: 100%;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            orphans: 0;
-            widows: 0;
-        }';
-        }
-
-        // Course name styles
-        if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
-            $course = $config['course_name'];
-            $textAlign = $this->getTextAlign($course['text_align'] ?? 'center');
-            $fontSize = $this->convertFontSize($course['font_size'] ?? '18pt');
-
-            $styles .= '
-        .course-name {
-            font-size: ' . $fontSize . ';
-            color: ' . ($course['color'] ?? '#34495e') . ';
-            margin: 6px 0;
-            text-align: ' . $textAlign . ';
-            line-height: 1.2;
-            max-width: 100%;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            orphans: 0;
-            widows: 0;
-        }';
-        }
-
-        // Subtitle styles
-        $subtitleFontSize = $this->convertFontSize($config['subtitle']['font_size'] ?? '14pt');
-        $styles .= '
-        .subtitle {
-            font-size: ' . $subtitleFontSize . ';
-            color: ' . ($config['subtitle']['color'] ?? '#7f8c8d') . ';
-            margin: 4px 0;
-            text-align: center;
-            line-height: 1.2;
-            max-width: 100%;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            orphans: 0;
-            widows: 0;
-        }';
-
-        return $styles;
-    }
-
-    /**
-     * Build content HTML from config
-     */
-    private function buildContentHtml($config)
-    {
-        $html = '';
-
-        // Title
-        if (isset($config['title']) && ($config['title']['show'] ?? true)) {
-            $titleText = $config['title']['text'] ?? 'Certificate of Completion';
-            $html .= '
-            <div class="title">' . htmlspecialchars($titleText, ENT_QUOTES, 'UTF-8') . '</div>';
-
-            // Subtitle before trainee name
-            if (isset($config['subtitle_before']) && ($config['subtitle_before']['show'] ?? true)) {
-                $subtitleText = $config['subtitle_before']['text'] ?? 'This is to certify that';
-                $html .= '
-            <div class="subtitle">' . htmlspecialchars($subtitleText, ENT_QUOTES, 'UTF-8') . '</div>';
-            }
-        }
-
-        // Trainee name
-        if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
-            $html .= '
-            <div class="trainee-name">{{trainee_name}}</div>';
-
-            // Subtitle after trainee name
-            if (isset($config['subtitle_after']) && ($config['subtitle_after']['show'] ?? true)) {
-                $subtitleText = $config['subtitle_after']['text'] ?? 'has successfully completed the course';
-                $html .= '
-            <div class="subtitle">' . htmlspecialchars($subtitleText, ENT_QUOTES, 'UTF-8') . '</div>';
-            }
-        }
-
-        // Course name
-        if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
-            $html .= '
-            <div class="course-name">{{course_name}}</div>';
-        }
-
-        return $html;
-    }
-
-    /**
-     * Build details HTML section
-     */
-    private function buildDetailsHtml($config)
-    {
-        $html = '
-        <div class="details">';
-
-        if (isset($config['issue_date']) && ($config['issue_date']['show'] ?? true)) {
-            $html .= '
-            <p>Issued on: {{issue_date}}</p>';
-        }
-
-        if (isset($config['certificate_number']) && ($config['certificate_number']['show'] ?? true)) {
-            $html .= '
-            <p>Certificate Number: {{certificate_number}}</p>';
-        }
-
-        $html .= '
-        </div>';
-
-        return $html;
-    }
-
-    /**
-     * Convert font size from px to pt
-     */
-    private function convertFontSize($fontSize)
-    {
-        if (strpos($fontSize, 'px') !== false) {
-            $pxValue = (float) str_replace('px', '', $fontSize);
-            return ($pxValue * 0.75) . 'pt';
-        }
-
-        if (strpos($fontSize, 'pt') === false) {
-            return '14pt';
-        }
-
-        return $fontSize;
-    }
-
-    /**
-     * Get CSS text-align value from config
-     */
-    private function getTextAlign($align): string
-    {
-        if (empty($align)) {
-            return 'center';
-        }
-
-        $align = strtolower(trim($align));
-
-        $validAlignments = [
-            'left', 'right', 'center', 'justify',
-            'start', 'end', 'initial', 'inherit'
-        ];
-
-        if (in_array($align, $validAlignments)) {
-            return $align;
-        }
-
-        switch ($align) {
-            case 'right-center':
-            case 'right_center':
-                return 'right';
-            case 'left-center':
-            case 'left_center':
-                return 'left';
-            default:
-                return 'center';
-        }
-    }
-
-    /**
-     * Extract variable names from template configuration
-     */
-    private function extractVariablesFromConfig($config)
-    {
-        $variables = [];
-
-        if (isset($config['trainee_name']) && ($config['trainee_name']['show'] ?? true)) {
-            $variables[] = 'trainee_name';
-        }
-        if (isset($config['course_name']) && ($config['course_name']['show'] ?? true)) {
-            $variables[] = 'course_name';
-        }
-        if (isset($config['certificate_number']) && ($config['certificate_number']['show'] ?? true)) {
-            $variables[] = 'certificate_number';
-        }
-        if (isset($config['issue_date']) && ($config['issue_date']['show'] ?? true)) {
-            $variables[] = 'issue_date';
-        }
-        if (isset($config['verification_code']) && ($config['verification_code']['show'] ?? true)) {
-            $variables[] = 'verification_code';
-        }
-
-        return $variables;
-    }
-
-    /**
-     * Replace variables in HTML with sample data
-     */
-    private function replaceVariables($html, $sampleData)
-    {
-        $replacements = [
-            '{{trainee_name}}' => $sampleData['trainee_name'] ?? 'John Doe',
-            '{{trainee_id_number}}' => $sampleData['trainee_id_number'] ?? '123456',
-            '{{course_name}}' => $sampleData['course_name'] ?? 'Sample Course',
-            '{{course_code}}' => $sampleData['course_code'] ?? 'COURSE-001',
-            '{{certificate_number}}' => $sampleData['certificate_number'] ?? 'CERT-123456',
-            '{{verification_code}}' => $sampleData['verification_code'] ?? 'VERIFY123',
-            '{{issue_date}}' => $sampleData['issue_date'] ?? date('Y-m-d'),
-            '{{expiry_date}}' => $sampleData['expiry_date'] ?? '',
-            '{{training_center_name}}' => $sampleData['training_center_name'] ?? 'Sample Training Center',
-            '{{instructor_name}}' => $sampleData['instructor_name'] ?? 'Jane Instructor',
-            '{{class_name}}' => $sampleData['class_name'] ?? 'Sample Class',
-            '{{acc_name}}' => $sampleData['acc_name'] ?? 'Sample ACC',
-        ];
-
-        if (isset($sampleData['issue_date'])) {
-            $replacements['{{issue_date_formatted}}'] = date('F d, Y', strtotime($sampleData['issue_date']));
-        }
-        if (isset($sampleData['expiry_date'])) {
-            $replacements['{{expiry_date_formatted}}'] = date('F d, Y', strtotime($sampleData['expiry_date']));
-        }
-
-        foreach ($replacements as $variable => $value) {
-            $html = str_replace($variable, htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8'), $html);
-        }
-
-        return $html;
     }
 }

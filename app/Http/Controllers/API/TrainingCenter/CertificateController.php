@@ -4,294 +4,22 @@ namespace App\Http\Controllers\API\TrainingCenter;
 
 use App\Http\Controllers\Controller;
 use App\Models\Certificate;
-use App\Models\CertificateCode;
+use App\Models\CertificateTemplate;
 use App\Models\TrainingClass;
-use App\Models\ClassCompletion;
-use App\Models\User;
-use App\Services\CertificatePdfService;
+use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use OpenApi\Attributes as OA;
 
 class CertificateController extends Controller
 {
-    #[OA\Post(
-        path: "/training-center/certificates/generate",
-        summary: "Generate certificate",
-        description: "Generate a certificate for a trainee using a certificate code. Class must be completed first.",
-        tags: ["Training Center"],
-        security: [["sanctum" => []]],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ["training_class_id", "code_id", "trainee_name"],
-                properties: [
-                    new OA\Property(property: "training_class_id", type: "integer", example: 1),
-                    new OA\Property(property: "code_id", type: "integer", example: 1),
-                    new OA\Property(property: "template_id", type: "integer", nullable: true, example: 20, description: "Specific template ID to use (from /acc/certificate-templates/{id}). If not provided, will search by acc_id and category_id."),
-                    new OA\Property(property: "trainee_name", type: "string", example: "John Doe"),
-                    new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
-                    new OA\Property(property: "issue_date", type: "string", format: "date", nullable: true, example: "2024-01-15"),
-                    new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2025-01-15")
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(
-                response: 201,
-                description: "Certificate generated successfully",
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: "message", type: "string", example: "Certificate generated successfully"),
-                        new OA\Property(property: "certificate", type: "object")
-                    ]
-                )
-            ),
-            new OA\Response(response: 400, description: "Class must be completed first or invalid request"),
-            new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 404, description: "Training center, class, code, or template not found"),
-            new OA\Response(response: 422, description: "Validation error")
-        ]
-    )]
-    public function generate(Request $request)
+    protected $certificateGenerationService;
+
+    public function __construct(CertificateGenerationService $certificateGenerationService)
     {
-        try {
-            $request->validate([
-                'training_class_id' => 'required|exists:training_classes,id',
-                'code_id' => 'required|exists:certificate_codes,id',
-                'template_id' => 'nullable|exists:certificate_templates,id',
-                'trainee_name' => 'required|string|max:255',
-                'trainee_id_number' => 'nullable|string',
-                'issue_date' => 'nullable|date',
-                'expiry_date' => 'nullable|date',
-            ]);
-
-            $user = $request->user();
-            $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
-
-            if (!$trainingCenter) {
-                return response()->json(['message' => 'Training center not found'], 404);
-            }
-
-            $trainingClass = TrainingClass::where('training_center_id', $trainingCenter->id)
-                ->findOrFail($request->training_class_id);
-
-            // Check if class is completed
-            $completion = ClassCompletion::where('training_class_id', $trainingClass->id)->first();
-            if (!$completion) {
-                return response()->json(['message' => 'Class must be completed before generating certificates'], 400);
-            }
-
-            // Get and validate code
-            $code = CertificateCode::where('training_center_id', $trainingCenter->id)
-                ->where('id', $request->code_id)
-                ->where('status', 'available')
-                ->firstOrFail();
-
-            // Get certificate template
-            // If template_id is provided, use it directly (same template from /acc/certificate-templates/{id})
-            // Otherwise, search by acc_id and category_id
-            if ($request->has('template_id') && $request->template_id) {
-                // Use specific template ID (from /acc/certificate-templates/{id} API)
-                $template = \App\Models\CertificateTemplate::where('id', $request->template_id)
-                    ->where('acc_id', $code->acc_id) // Ensure template belongs to the same ACC
-                    ->where('status', 'active')
-                    ->first();
-
-                if (!$template) {
-                    return response()->json([
-                        'message' => 'Certificate template not found or not accessible',
-                        'details' => [
-                            'template_id' => $request->template_id,
-                            'acc_id' => $code->acc_id,
-                            'suggestion' => 'Please ensure the template exists, is active, and belongs to the same ACC as the certificate code.'
-                        ]
-                    ], 404);
-                }
-            } else {
-                // Load course relationships
-                $trainingClass->load(['course.subCategory']);
-                
-                // Get category ID from course
-                $categoryId = null;
-                if ($trainingClass->course && $trainingClass->course->subCategory) {
-                    $categoryId = $trainingClass->course->subCategory->category_id;
-                }
-
-                if (!$categoryId) {
-                    return response()->json([
-                        'message' => 'Course category not found. Please ensure course has a valid subcategory.',
-                        'course_id' => $trainingClass->course_id
-                    ], 400);
-                }
-                
-                // Search for template by acc_id and category_id
-                $template = \App\Models\CertificateTemplate::where('acc_id', $code->acc_id)
-                    ->where('category_id', $categoryId)
-                    ->where('status', 'active')
-                    ->first();
-
-                if (!$template) {
-                    return response()->json([
-                        'message' => 'Certificate template not found',
-                        'details' => [
-                            'acc_id' => $code->acc_id,
-                            'category_id' => $categoryId,
-                            'suggestion' => 'Please ensure there is an active certificate template for this ACC and category, or provide template_id in the request.'
-                        ]
-                    ], 404);
-                }
-            }
-
-            // Generate certificate
-            $certificate = Certificate::create([
-                'certificate_number' => 'CERT-' . strtoupper(Str::random(10)),
-                'course_id' => $trainingClass->course_id,
-                'class_id' => $trainingClass->class_id,
-                'training_center_id' => $trainingCenter->id,
-                'instructor_id' => $trainingClass->instructor_id,
-                'trainee_name' => $request->trainee_name,
-                'trainee_id_number' => $request->trainee_id_number,
-                'issue_date' => $request->issue_date ?? now(),
-                'expiry_date' => $request->expiry_date,
-                'template_id' => $template->id,
-                'certificate_pdf_url' => '', // Will be generated below
-                'verification_code' => strtoupper(Str::random(12)),
-                'status' => 'valid',
-                'code_used_id' => $code->id,
-            ]);
-            
-            // Generate PDF using the template from certificate_templates table
-            // The template is already loaded and saved in template_id field
-            try {
-                // Ensure template is loaded with all fields
-                $certificate->load('template');
-                
-                // Verify template exists and has content
-                if (!$certificate->template) {
-                    return response()->json([
-                        'message' => 'Template not found for certificate',
-                        'template_id' => $certificate->template_id
-                    ], 404);
-                }
-                
-                $pdfService = new CertificatePdfService();
-                // This will use the template from certificate_templates table (same as API endpoint)
-                $certificate = $pdfService->generateAndUpdate($certificate);
-            } catch (\Exception $e) {
-                // Log error with full details
-                \Log::error('Failed to generate PDF for certificate ' . $certificate->id, [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                    'certificate_id' => $certificate->id,
-                    'template_id' => $certificate->template_id,
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                ]);
-                
-                // Set a placeholder URL - certificate will be created but PDF will be generated later
-                $certificate->update([
-                    'certificate_pdf_url' => '/certificates/' . Str::random(20) . '.pdf'
-                ]);
-                
-                // Don't fail the request - certificate is created successfully
-                // PDF can be regenerated later
-            }
-
-            // Update code status
-            $code->update([
-                'status' => 'used',
-                'used_at' => now(),
-                'used_for_certificate_id' => $certificate->id,
-            ]);
-
-            // Update completion count
-            $completion->increment('certificates_generated_count');
-
-            // Send notifications
-            $notificationService = new \App\Services\NotificationService();
-            $certificate->load(['course.acc', 'instructor', 'trainingCenter']);
-            $course = $certificate->course;
-            $instructor = $certificate->instructor;
-            $acc = $course->acc ?? null;
-
-            // Notify ACC Admin
-            if ($acc) {
-                $accUser = \App\Models\User::where('email', $acc->email)->where('role', 'acc_admin')->first();
-                if ($accUser) {
-                    $notificationService->notifyCertificateGenerated(
-                        $accUser->id,
-                        $certificate->id,
-                        $certificate->certificate_number,
-                        $certificate->trainee_name,
-                        $course->name,
-                        $trainingCenter->name
-                    );
-                }
-            }
-
-            // Notify Instructor
-            if ($instructor) {
-                $instructorUser = \App\Models\User::where('email', $instructor->email)->first();
-                if ($instructorUser) {
-                    $notificationService->notifyInstructorCertificateGenerated(
-                        $instructorUser->id,
-                        $certificate->id,
-                        $certificate->certificate_number,
-                        $certificate->trainee_name,
-                        $course->name,
-                        $trainingCenter->name
-                    );
-                }
-            }
-
-            // Notify Group Admin
-            if ($acc) {
-                $notificationService->notifyAdminCertificateGenerated(
-                    $certificate->id,
-                    $certificate->certificate_number,
-                    $certificate->trainee_name,
-                    $course->name,
-                    $trainingCenter->name,
-                    $acc->name
-                );
-            }
-
-            // PDF is generated above
-            // TODO: Send certificate to trainee via email
-
-            return response()->json([
-                'message' => 'Certificate generated successfully',
-                'certificate' => $certificate->fresh(),
-            ], 201);
-            
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'message' => 'Validation error',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'message' => 'Resource not found',
-                'error' => $e->getMessage()
-            ], 404);
-        } catch (\Exception $e) {
-            \Log::error('Certificate generation error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'request_data' => $request->all()
-            ]);
-            
-            return response()->json([
-                'message' => 'Server Error',
-                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred while generating the certificate'
-            ], 500);
-        }
+        $this->certificateGenerationService = $certificateGenerationService;
     }
-
     #[OA\Get(
         path: "/training-center/certificates",
         summary: "List certificates",
@@ -376,63 +104,200 @@ class CertificateController extends Controller
     }
 
     #[OA\Get(
-        path: "/training-center/certificates/{id}/download",
-        summary: "Download certificate PDF",
-        description: "Download the PDF file for a certificate.",
+        path: "/training-center/certificates/templates",
+        summary: "Get available certificate templates",
+        description: "Get all available certificate templates from authorized ACCs for the training center.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
-        parameters: [
-            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
-        ],
         responses: [
             new OA\Response(
                 response: 200,
-                description: "PDF file",
-                content: new OA\MediaType(mediaType: "application/pdf")
+                description: "Templates retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "templates", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 404, description: "Certificate not found")
+            new OA\Response(response: 404, description: "Training center not found")
         ]
     )]
-    public function download($id)
+    public function getTemplates(Request $request)
     {
-        $user = request()->user();
+        $user = $request->user();
         $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
 
         if (!$trainingCenter) {
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $certificate = Certificate::where('training_center_id', $trainingCenter->id)
-            ->findOrFail($id);
+        // Get authorized ACC IDs
+        $authorizedAccIds = DB::table('training_center_acc_authorizations')
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('status', 'approved')
+            ->pluck('acc_id');
 
-        // Check if PDF exists
-        if (!$certificate->certificate_pdf_url) {
-            return response()->json(['message' => 'PDF not generated yet'], 404);
+        // Get active templates from authorized ACCs
+        $templates = CertificateTemplate::whereIn('acc_id', $authorizedAccIds)
+            ->where('status', 'active')
+            ->whereNotNull('background_image_url')
+            ->whereNotNull('config_json')
+            ->with(['acc', 'category'])
+            ->get();
+
+        return response()->json(['templates' => $templates]);
+    }
+
+    #[OA\Post(
+        path: "/training-center/certificates",
+        summary: "Issue a new certificate",
+        description: "Generate and issue a new certificate using a template. The system will generate the certificate PDF/image based on the template configuration.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["template_id", "course_id", "trainee_name", "issue_date", "student_data"],
+                properties: [
+                    new OA\Property(property: "template_id", type: "integer", example: 1),
+                    new OA\Property(property: "course_id", type: "integer", example: 1),
+                    new OA\Property(property: "class_id", type: "integer", nullable: true, example: 1),
+                    new OA\Property(property: "instructor_id", type: "integer", nullable: true, example: 1),
+                    new OA\Property(property: "trainee_name", type: "string", example: "John Doe"),
+                    new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
+                    new OA\Property(property: "issue_date", type: "string", format: "date", example: "2024-01-15"),
+                    new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2026-01-15"),
+                    new OA\Property(
+                        property: "student_data",
+                        type: "object",
+                        description: "Key-value pairs matching template variables (e.g., {'student_name': 'John Doe', 'course_name': 'Fire Safety'})"
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: "Certificate issued successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Template or training center not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
+    public function store(Request $request)
+    {
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        // Extract file path from URL
-        $url = $certificate->certificate_pdf_url;
-        $path = str_replace(Storage::disk('public')->url(''), '', $url);
-        
-        // Check if file exists
-        if (!Storage::disk('public')->exists($path)) {
-            // Try to regenerate PDF
-            try {
-                $pdfService = new CertificatePdfService();
-                $certificate = $pdfService->generateAndUpdate($certificate);
-                $url = $certificate->certificate_pdf_url;
-                $path = str_replace(Storage::disk('public')->url(''), '', $url);
-            } catch (\Exception $e) {
-                return response()->json(['message' => 'Failed to generate PDF: ' . $e->getMessage()], 500);
-            }
-        }
-
-        // Return file
-        return Storage::disk('public')->response($path, basename($path), [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="certificate-' . $certificate->certificate_number . '.pdf"',
+        $request->validate([
+            'template_id' => 'required|exists:certificate_templates,id',
+            'course_id' => 'required|exists:courses,id',
+            'class_id' => 'nullable|exists:classes,id',
+            'instructor_id' => 'nullable|exists:instructors,id',
+            'trainee_name' => 'required|string|max:255',
+            'trainee_id_number' => 'nullable|string|max:255',
+            'issue_date' => 'required|date',
+            'expiry_date' => 'nullable|date|after:issue_date',
+            'student_data' => 'required|array',
         ]);
+
+        // Verify template belongs to an authorized ACC
+        $template = CertificateTemplate::with('acc')->findOrFail($request->template_id);
+        
+        $isAuthorized = DB::table('training_center_acc_authorizations')
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('acc_id', $template->acc_id)
+            ->where('status', 'approved')
+            ->exists();
+
+        if (!$isAuthorized) {
+            return response()->json(['message' => 'Template not available for this training center'], 403);
+        }
+
+        // Verify template has required configuration
+        if (!$template->background_image_url || !$template->config_json) {
+            return response()->json(['message' => 'Template is not properly configured'], 422);
+        }
+
+        try {
+            // Prepare data for certificate generation
+            $certificateData = array_merge($request->student_data, [
+                'student_name' => $request->trainee_name,
+                'trainee_name' => $request->trainee_name,
+                'certificate_number' => $this->generateCertificateNumber(),
+                'issue_date' => $request->issue_date,
+                'expiry_date' => $request->expiry_date,
+            ]);
+
+            // Generate certificate
+            $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'png');
+
+            if (!$generationResult['success']) {
+                return response()->json([
+                    'message' => 'Failed to generate certificate',
+                    'error' => $generationResult['message'] ?? 'Unknown error',
+                ], 500);
+            }
+
+            // Create certificate record
+            $certificate = Certificate::create([
+                'certificate_number' => $certificateData['certificate_number'],
+                'course_id' => $request->course_id,
+                'class_id' => $request->class_id,
+                'training_center_id' => $trainingCenter->id,
+                'instructor_id' => $request->instructor_id,
+                'trainee_name' => $request->trainee_name,
+                'trainee_id_number' => $request->trainee_id_number,
+                'issue_date' => $request->issue_date,
+                'expiry_date' => $request->expiry_date,
+                'template_id' => $request->template_id,
+                'certificate_pdf_url' => $generationResult['file_url'],
+                'verification_code' => $this->generateVerificationCode(),
+                'status' => 'valid',
+            ]);
+
+            return response()->json([
+                'message' => 'Certificate issued successfully',
+                'certificate' => $certificate->load(['course', 'instructor', 'template']),
+            ], 201);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Certificate issuance error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to issue certificate',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate unique certificate number
+     */
+    private function generateCertificateNumber(): string
+    {
+        do {
+            $number = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
+        } while (Certificate::where('certificate_number', $number)->exists());
+
+        return $number;
+    }
+
+    /**
+     * Generate unique verification code
+     */
+    private function generateVerificationCode(): string
+    {
+        do {
+            $code = 'VERIFY-' . strtoupper(Str::random(10));
+        } while (Certificate::where('verification_code', $code)->exists());
+
+        return $code;
     }
 }
-

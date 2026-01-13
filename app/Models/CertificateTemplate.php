@@ -16,21 +16,19 @@ class CertificateTemplate extends Model
         'category_id',
         'name',
         'template_html',
-        'template_config',
-        'template_variables',
         'background_image_url',
         'logo_positions',
         'signature_positions',
+        'config_json',
         'status',
     ];
 
     protected function casts(): array
     {
         return [
-            'template_config' => 'array',
-            'template_variables' => 'array',
             'logo_positions' => 'array',
             'signature_positions' => 'array',
+            'config_json' => 'array',
         ];
     }
 

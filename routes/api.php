@@ -19,11 +19,10 @@ Route::post('/auth/register', [App\Http\Controllers\API\AuthController::class, '
 Route::post('/auth/login', [App\Http\Controllers\API\AuthController::class, 'login']);
 Route::post('/auth/forgot-password', [App\Http\Controllers\API\AuthController::class, 'forgotPassword']);
 Route::post('/auth/reset-password', [App\Http\Controllers\API\AuthController::class, 'resetPassword']);
-Route::get('/auth/verify-email/{token}', [App\Http\Controllers\API\AuthController::class, 'verifyEmail']);
-Route::get('/certificates/verify/{code}', [App\Http\Controllers\API\CertificateController::class, 'verify']);
-Route::get('/certificates/{filename}', [App\Http\Controllers\API\CertificateDownloadController::class, 'download'])->where('filename', '.*\.pdf$');
-
-// Countries and Cities (Public endpoints for dropdowns)
+    Route::get('/auth/verify-email/{token}', [App\Http\Controllers\API\AuthController::class, 'verifyEmail']);
+    Route::get('/certificates/verify/{code}', [App\Http\Controllers\API\CertificateController::class, 'verify']);
+    
+    // Countries and Cities (Public endpoints for dropdowns)
 Route::get('/countries', [App\Http\Controllers\API\CountryController::class, 'index']);
 Route::get('/cities', [App\Http\Controllers\API\CityController::class, 'index']);
 
@@ -189,12 +188,9 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/courses/{id}/pricing', [App\Http\Controllers\API\ACC\CourseController::class, 'updatePricing']);
 
         // Certificate Templates
-        // Custom routes must be defined before apiResource to avoid conflicts
-        Route::post('/certificate-templates/generate-from-image', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'generateFromImage'])->name('certificate-templates.generate-from-image');
-        Route::post('/certificate-templates/{id}/preview', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'preview'])->name('certificate-templates.preview')->where('id', '[0-9]+');
-        Route::apiResource('certificate-templates', App\Http\Controllers\API\ACC\CertificateTemplateController::class)->parameters([
-            'certificate-templates' => 'id'
-        ])->where(['id' => '[0-9]+']);
+        Route::post('/certificate-templates/{id}/upload-background', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'uploadBackgroundImage']);
+        Route::put('/certificate-templates/{id}/config', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'updateConfig']);
+        Route::apiResource('certificate-templates', App\Http\Controllers\API\ACC\CertificateTemplateController::class);
 
         // Discount Codes
         // Specific routes must come before apiResource to avoid route conflicts
@@ -293,10 +289,10 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/classes/{id}/complete', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'complete']);
 
         // Certificates
-        Route::post('/certificates/generate', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'generate']);
+        Route::get('/certificates/templates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'getTemplates']);
         Route::get('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'index']);
+        Route::post('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'store']);
         Route::get('/certificates/{id}', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'show']);
-        Route::get('/certificates/{id}/download', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'download']);
 
         // Marketplace
         Route::get('/marketplace/materials', [App\Http\Controllers\API\TrainingCenter\MarketplaceController::class, 'materials']);
