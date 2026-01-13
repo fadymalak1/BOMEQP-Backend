@@ -233,36 +233,69 @@ class CertificateController extends Controller
             // Extract the file path from the URL
             $url = $certificate->certificate_pdf_url;
             
+            if (empty($url)) {
+                return response()->json(['message' => 'Certificate file URL is empty'], 404);
+            }
+            
             // Parse the URL to get the path
             $urlPath = parse_url($url, PHP_URL_PATH);
+            if (!$urlPath) {
+                $urlPath = $url; // Fallback if parse_url fails
+            }
             
             // Remove various URL prefixes to get the storage path
             $filePath = $urlPath;
             
-            // Remove /api/storage/ prefix if present
-            if (strpos($filePath, '/api/storage/') === 0) {
-                $filePath = substr($filePath, strlen('/api/storage/'));
+            // Remove /v1/api/storage/ or /api/storage/ prefix if present (handle versioned APIs)
+            if (preg_match('#(/v\d+/api/storage/|/api/storage/)(.+)$#', $filePath, $matches)) {
+                $filePath = $matches[2];
             }
             // Remove /storage/app/public/ prefix if present
-            elseif (strpos($filePath, '/storage/app/public/') === 0) {
-                $filePath = substr($filePath, strlen('/storage/app/public/'));
+            elseif (strpos($filePath, '/storage/app/public/') !== false) {
+                $filePath = str_replace('/storage/app/public/', '', $filePath);
             }
-            // Remove /storage/ prefix if present
-            elseif (strpos($filePath, '/storage/') === 0) {
+            // Remove /storage/ prefix if present (but not /api/storage/)
+            elseif (strpos($filePath, '/storage/') === 0 && strpos($filePath, '/api/storage/') === false) {
                 $filePath = substr($filePath, strlen('/storage/'));
             }
             
+            // Remove leading slash if present
+            $filePath = ltrim($filePath, '/');
+            
+            // Log for debugging
+            \Illuminate\Support\Facades\Log::info('Certificate download attempt', [
+                'certificate_id' => $id,
+                'original_url' => $url,
+                'url_path' => $urlPath,
+                'parsed_path' => $filePath,
+            ]);
+            
             // Check if file exists in storage
             if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($filePath)) {
+                // List available files in certificates directory for debugging
+                $certDir = dirname($filePath);
+                $availableFiles = [];
+                if (\Illuminate\Support\Facades\Storage::disk('public')->exists($certDir)) {
+                    $availableFiles = \Illuminate\Support\Facades\Storage::disk('public')->files($certDir);
+                }
+                
                 \Illuminate\Support\Facades\Log::warning('Certificate file not found', [
                     'certificate_id' => $id,
                     'url' => $url,
+                    'url_path' => $urlPath,
                     'parsed_path' => $filePath,
+                    'cert_dir' => $certDir,
+                    'available_files' => $availableFiles,
                 ]);
                 
                 return response()->json([
                     'message' => 'Certificate file not found on server',
-                    'debug' => config('app.debug') ? ['url' => $url, 'path' => $filePath] : null
+                    'debug' => config('app.debug') ? [
+                        'url' => $url,
+                        'url_path' => $urlPath,
+                        'parsed_path' => $filePath,
+                        'cert_dir' => $certDir,
+                    ] : null
                 ], 404);
             }
 
@@ -279,6 +312,7 @@ class CertificateController extends Controller
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Certificate download error', [
                 'certificate_id' => $id,
+                'url' => $certificate->certificate_pdf_url ?? 'N/A',
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
