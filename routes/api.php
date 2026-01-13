@@ -292,6 +292,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/certificates/accs', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'getAuthorizedAccs']);
         Route::get('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'index']);
         Route::post('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'store']);
+        Route::get('/certificates/{id}/download', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'download']);
         Route::get('/certificates/{id}', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'show']);
 
         // Marketplace

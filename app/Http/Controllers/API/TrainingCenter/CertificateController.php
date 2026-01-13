@@ -104,6 +104,81 @@ class CertificateController extends Controller
     }
 
     #[OA\Get(
+        path: "/training-center/certificates/{id}/download",
+        summary: "Download certificate file",
+        description: "Download the certificate PDF/image file.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 99)
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Certificate file downloaded successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Certificate does not belong to this training center"),
+            new OA\Response(response: 404, description: "Certificate or file not found")
+        ]
+    )]
+    public function download($id)
+    {
+        $user = request()->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $certificate = Certificate::where('training_center_id', $trainingCenter->id)
+            ->findOrFail($id);
+
+        if (!$certificate->certificate_pdf_url) {
+            return response()->json(['message' => 'Certificate file not found'], 404);
+        }
+
+        try {
+            // Extract the file path from the URL
+            // URL format: /api/storage/certificates/{template_id}/{filename}
+            $url = $certificate->certificate_pdf_url;
+            
+            // Parse the URL to get the path
+            $urlPath = parse_url($url, PHP_URL_PATH);
+            
+            // Remove /api/storage/ prefix if present
+            $filePath = str_replace('/api/storage/', '', $urlPath);
+            
+            // Also handle full URLs (remove domain part)
+            if (strpos($filePath, '/storage/') === 0) {
+                $filePath = str_replace('/storage/', '', $filePath);
+            }
+            
+            // Check if file exists in storage
+            if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($filePath)) {
+                return response()->json(['message' => 'Certificate file not found on server'], 404);
+            }
+
+            $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($filePath);
+            $mimeType = \Illuminate\Support\Facades\Storage::disk('public')->mimeType($filePath) ?? 'image/png';
+            $fileName = basename($filePath);
+
+            return response()->download($fullPath, $fileName, [
+                'Content-Type' => $mimeType,
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Certificate download error', [
+                'certificate_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to download certificate',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    #[OA\Get(
         path: "/training-center/certificates/accs",
         summary: "Get authorized ACCs for certificate generation",
         description: "Get all authorized ACCs that the training center can generate certificates for.",
