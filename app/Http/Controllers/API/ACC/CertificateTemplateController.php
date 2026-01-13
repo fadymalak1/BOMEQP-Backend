@@ -297,9 +297,12 @@ class CertificateTemplateController extends Controller
             'config_json.*.x' => 'required|numeric|min:0|max:1',
             'config_json.*.y' => 'required|numeric|min:0|max:1',
             'config_json.*.font_family' => 'nullable|string',
+            'config_json.*.fontFamily' => 'nullable|string', // Accept camelCase from frontend
             'config_json.*.font_size' => 'nullable|integer|min:8|max:200',
+            'config_json.*.fontSize' => 'nullable|integer|min:8|max:200', // Accept camelCase from frontend
             'config_json.*.color' => 'nullable|string',
             'config_json.*.text_align' => 'nullable|in:left,center,right',
+            'config_json.*.textAlign' => 'nullable|in:left,center,right', // Accept camelCase from frontend
         ]);
 
         $template->update(['config_json' => $request->config_json]);

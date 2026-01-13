@@ -164,21 +164,27 @@ class CertificateGenerationService
             }
 
             $variable = $placeholder['variable'];
-            $variableKey = str_replace(['{{', '}}'], '', $variable); // Remove {{ }} if present
-            $variableKey = trim($variableKey);
-
-            // Get value from data array
-            $text = $data[$variableKey] ?? $variable; // Use placeholder if value not found
+            
+            // Handle both dynamic variables ({{variable_name}}) and static text
+            // Frontend sends the actual text content in the 'variable' field
+            if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
+                // Dynamic variable: extract variable name and replace with data
+                $variableKey = trim($matches[1]);
+                $text = $data[$variableKey] ?? $variable; // Fallback to original if data not found
+            } else {
+                // Static text: use as-is
+                $text = $variable;
+            }
 
             // Calculate absolute coordinates from percentages
             $x = (float)($placeholder['x'] ?? 0.5) * $imageWidth;
             $y = (float)($placeholder['y'] ?? 0.5) * $imageHeight;
 
-            // Get styling
-            $fontSize = (int)($placeholder['font_size'] ?? 24);
+            // Get styling (support both snake_case and camelCase for flexibility)
+            $fontSize = (int)($placeholder['font_size'] ?? $placeholder['fontSize'] ?? 24);
             $colorHex = $placeholder['color'] ?? '#000000';
-            $fontFamily = $placeholder['font_family'] ?? 'Arial';
-            $textAlign = $placeholder['text_align'] ?? 'left';
+            $fontFamily = $placeholder['font_family'] ?? $placeholder['fontFamily'] ?? 'Arial';
+            $textAlign = $placeholder['text_align'] ?? $placeholder['textAlign'] ?? 'left';
 
             // Convert hex color to RGB
             $color = $this->hexToRgb($colorHex);
@@ -227,42 +233,84 @@ class CertificateGenerationService
     }
 
     /**
-     * Get font file path (you may need to adjust this based on your system)
+     * Get font file path - matches frontend font families
+     * Supports: Arial, Helvetica, Times New Roman, Courier New, Verdana, Georgia, Tahoma, Trebuchet MS, Impact
      */
     private function getFontPath(string $fontFamily): ?string
     {
-        // Common font paths (you may need to adjust these)
-        $fontPaths = [
-            'Arial' => resource_path('fonts/arial.ttf'),
-            'Times New Roman' => resource_path('fonts/times.ttf'),
-            'Courier' => resource_path('fonts/courier.ttf'),
-            // Add more fonts as needed
+        // Map frontend font families to system font file names
+        // Windows font file names
+        $windowsFonts = [
+            'Arial' => 'C:\\Windows\\Fonts\\arial.ttf',
+            'Helvetica' => 'C:\\Windows\\Fonts\\arial.ttf', // Helvetica uses Arial on Windows
+            'Times New Roman' => 'C:\\Windows\\Fonts\\times.ttf',
+            'Courier New' => 'C:\\Windows\\Fonts\\cour.ttf',
+            'Courier' => 'C:\\Windows\\Fonts\\cour.ttf',
+            'Verdana' => 'C:\\Windows\\Fonts\\verdana.ttf',
+            'Georgia' => 'C:\\Windows\\Fonts\\georgia.ttf',
+            'Tahoma' => 'C:\\Windows\\Fonts\\tahoma.ttf',
+            'Trebuchet MS' => 'C:\\Windows\\Fonts\\trebuc.ttf',
+            'Impact' => 'C:\\Windows\\Fonts\\impact.ttf',
         ];
 
-        $fontPath = $fontPaths[$fontFamily] ?? null;
-
-        // Check if font file exists
-        if ($fontPath && file_exists($fontPath)) {
-            return $fontPath;
+        // Check Windows fonts first (most common in production)
+        if (isset($windowsFonts[$fontFamily])) {
+            $fontPath = $windowsFonts[$fontFamily];
+            if (file_exists($fontPath)) {
+                return $fontPath;
+            }
         }
 
-        // Try system fonts (Linux/macOS/Windows)
-        $systemFonts = [
-            // Linux
-            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-            // macOS
-            '/System/Library/Fonts/Helvetica.ttc',
-            '/System/Library/Fonts/Times.ttc',
-            // Windows
-            'C:\\Windows\\Fonts\\arial.ttf',
-            'C:\\Windows\\Fonts\\times.ttf',
-            'C:\\Windows\\Fonts\\cour.ttf',
+        // Try Linux fonts
+        $linuxFonts = [
+            'Arial' => '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+            'Helvetica' => '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+            'Times New Roman' => '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
+            'Courier New' => '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
+            'Courier' => '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
+            'Verdana' => '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            'Georgia' => '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
+            'Tahoma' => '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            'Trebuchet MS' => '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
         ];
 
-        foreach ($systemFonts as $systemFont) {
-            if (file_exists($systemFont)) {
-                return $systemFont;
+        if (isset($linuxFonts[$fontFamily])) {
+            $fontPaths = [
+                $linuxFonts[$fontFamily],
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', // Fallback
+            ];
+            
+            foreach ($fontPaths as $fontPath) {
+                if (file_exists($fontPath)) {
+                    return $fontPath;
+                }
+            }
+        }
+
+        // Try macOS fonts
+        $macFonts = [
+            'Arial' => '/System/Library/Fonts/Supplemental/Arial.ttf',
+            'Helvetica' => '/System/Library/Fonts/Helvetica.ttc',
+            'Times New Roman' => '/System/Library/Fonts/Supplemental/Times New Roman.ttf',
+            'Courier New' => '/System/Library/Fonts/Courier New.ttf',
+            'Verdana' => '/System/Library/Fonts/Supplemental/Verdana.ttf',
+            'Georgia' => '/System/Library/Fonts/Supplemental/Georgia.ttf',
+        ];
+
+        if (isset($macFonts[$fontFamily]) && file_exists($macFonts[$fontFamily])) {
+            return $macFonts[$fontFamily];
+        }
+
+        // Final fallback - try common system fonts
+        $fallbackFonts = [
+            'C:\\Windows\\Fonts\\arial.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/System/Library/Fonts/Helvetica.ttc',
+        ];
+
+        foreach ($fallbackFonts as $fontPath) {
+            if (file_exists($fontPath)) {
+                return $fontPath;
             }
         }
 
