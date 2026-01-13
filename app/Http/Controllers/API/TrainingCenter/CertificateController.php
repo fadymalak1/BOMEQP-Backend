@@ -98,9 +98,103 @@ class CertificateController extends Controller
     )]
     public function show($id)
     {
-        $certificate = Certificate::with(['course', 'instructor', 'trainingCenter', 'template'])
+        $user = request()->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $certificate = Certificate::where('training_center_id', $trainingCenter->id)
+            ->with(['course', 'instructor', 'trainingCenter', 'template'])
             ->findOrFail($id);
+            
         return response()->json(['certificate' => $certificate]);
+    }
+
+    #[OA\Get(
+        path: "/training-center/certificates/{id}/validity",
+        summary: "Check certificate validity",
+        description: "Check if a certificate is valid. Returns certificate status and validity information.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 99)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Certificate validity checked successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "valid", type: "boolean", example: true),
+                        new OA\Property(property: "status", type: "string", example: "valid"),
+                        new OA\Property(property: "certificate", type: "object"),
+                        new OA\Property(property: "message", type: "string", example: "Certificate is valid")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Certificate does not belong to this training center"),
+            new OA\Response(response: 404, description: "Certificate not found")
+        ]
+    )]
+    public function checkValidity($id)
+    {
+        $user = request()->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $certificate = Certificate::where('training_center_id', $trainingCenter->id)
+            ->with(['course', 'instructor', 'trainingCenter', 'template'])
+            ->findOrFail($id);
+
+        // Check if certificate is expired based on expiry_date
+        $isExpired = false;
+        if ($certificate->expiry_date && $certificate->expiry_date < now()->toDateString()) {
+            $isExpired = true;
+            // Update status if not already set
+            if ($certificate->status !== 'expired') {
+                $certificate->update(['status' => 'expired']);
+                $certificate->refresh();
+            }
+        }
+
+        $isValid = $certificate->status === 'valid' && !$isExpired;
+        $status = $certificate->status;
+
+        $message = match($status) {
+            'valid' => $isExpired ? 'Certificate has expired' : 'Certificate is valid',
+            'expired' => 'Certificate has expired',
+            'revoked' => 'Certificate has been revoked',
+            default => 'Certificate status: ' . $status,
+        };
+
+        return response()->json([
+            'valid' => $isValid,
+            'status' => $status,
+            'message' => $message,
+            'certificate' => [
+                'id' => $certificate->id,
+                'certificate_number' => $certificate->certificate_number,
+                'verification_code' => $certificate->verification_code,
+                'trainee_name' => $certificate->trainee_name,
+                'issue_date' => $certificate->issue_date,
+                'expiry_date' => $certificate->expiry_date,
+                'status' => $certificate->status,
+                'course' => $certificate->course ? [
+                    'id' => $certificate->course->id,
+                    'name' => $certificate->course->name,
+                ] : null,
+                'training_center' => $certificate->trainingCenter ? [
+                    'id' => $certificate->trainingCenter->id,
+                    'name' => $certificate->trainingCenter->name,
+                ] : null,
+            ],
+        ]);
     }
 
     #[OA\Get(
@@ -137,23 +231,39 @@ class CertificateController extends Controller
 
         try {
             // Extract the file path from the URL
-            // URL format: /api/storage/certificates/{template_id}/{filename}
             $url = $certificate->certificate_pdf_url;
             
             // Parse the URL to get the path
             $urlPath = parse_url($url, PHP_URL_PATH);
             
-            // Remove /api/storage/ prefix if present
-            $filePath = str_replace('/api/storage/', '', $urlPath);
+            // Remove various URL prefixes to get the storage path
+            $filePath = $urlPath;
             
-            // Also handle full URLs (remove domain part)
-            if (strpos($filePath, '/storage/') === 0) {
-                $filePath = str_replace('/storage/', '', $filePath);
+            // Remove /api/storage/ prefix if present
+            if (strpos($filePath, '/api/storage/') === 0) {
+                $filePath = substr($filePath, strlen('/api/storage/'));
+            }
+            // Remove /storage/app/public/ prefix if present
+            elseif (strpos($filePath, '/storage/app/public/') === 0) {
+                $filePath = substr($filePath, strlen('/storage/app/public/'));
+            }
+            // Remove /storage/ prefix if present
+            elseif (strpos($filePath, '/storage/') === 0) {
+                $filePath = substr($filePath, strlen('/storage/'));
             }
             
             // Check if file exists in storage
             if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($filePath)) {
-                return response()->json(['message' => 'Certificate file not found on server'], 404);
+                \Illuminate\Support\Facades\Log::warning('Certificate file not found', [
+                    'certificate_id' => $id,
+                    'url' => $url,
+                    'parsed_path' => $filePath,
+                ]);
+                
+                return response()->json([
+                    'message' => 'Certificate file not found on server',
+                    'debug' => config('app.debug') ? ['url' => $url, 'path' => $filePath] : null
+                ], 404);
             }
 
             $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($filePath);
@@ -164,6 +274,8 @@ class CertificateController extends Controller
                 'Content-Type' => $mimeType,
             ]);
 
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Certificate not found'], 404);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Certificate download error', [
                 'certificate_id' => $id,
@@ -173,7 +285,7 @@ class CertificateController extends Controller
 
             return response()->json([
                 'message' => 'Failed to download certificate',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred',
             ], 500);
         }
     }
