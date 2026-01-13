@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\TrainingCenter;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateCertificateJob;
 use App\Models\Certificate;
 use App\Models\CertificateTemplate;
 use App\Models\TrainingClass;
@@ -472,17 +473,7 @@ class CertificateController extends Controller
                 'expiry_date' => $request->expiry_date ?? null,
             ];
 
-            // Generate certificate as PDF
-            $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'pdf');
-
-            if (!$generationResult['success']) {
-                return response()->json([
-                    'message' => 'Failed to generate certificate',
-                    'error' => $generationResult['message'] ?? 'Unknown error',
-                ], 500);
-            }
-
-            // Create certificate record
+            // Create certificate record first (with temporary URL or placeholder)
             $certificate = Certificate::create([
                 'certificate_number' => $certificateNumber,
                 'course_id' => $request->course_id,
@@ -494,13 +485,16 @@ class CertificateController extends Controller
                 'issue_date' => $request->issue_date,
                 'expiry_date' => $request->expiry_date,
                 'template_id' => $template->id,
-                'certificate_pdf_url' => $generationResult['file_url'],
+                'certificate_pdf_url' => '', // Will be updated by the job
                 'verification_code' => $this->generateVerificationCode(),
                 'status' => 'valid',
             ]);
 
+            // Dispatch job to generate PDF in background
+            GenerateCertificateJob::dispatch($certificate, $template, $certificateData);
+
             return response()->json([
-                'message' => 'Certificate issued successfully',
+                'message' => 'Certificate is being generated',
                 'certificate' => $certificate->load(['course', 'instructor', 'template']),
             ], 201);
 
