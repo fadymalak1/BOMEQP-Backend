@@ -442,18 +442,42 @@ class CertificateGenerationService
     }
 
     /**
-     * Replace variables in template HTML
+     * Replace variables in template HTML and remove elements with null values
      */
     private function replaceTemplateVariables(string $html, array $data): string
     {
-        // Replace variables like {{variable_name}} with actual values
+        // First, remove elements (divs) that contain variables with null values
         foreach ($data as $key => $value) {
+            if ($value === null || $value === '') {
+                // Find and remove the entire div element containing this variable
+                // Pattern matches: <div ...>{{variable}}</div>
+                // Try to match the div that contains the variable
+                $variablePattern = preg_quote('{{' . $key . '}}', '/');
+                $variablePatternSpaced = preg_quote('{{ ' . $key . ' }}', '/');
+                
+                // More precise pattern: match div from opening tag to closing tag containing the variable
+                $pattern = '/<div[^>]*>[\s\S]*?(?:' . $variablePattern . '|' . $variablePatternSpaced . ')[\s\S]*?<\/div>/i';
+                
+                $html = preg_replace($pattern, '', $html);
+            }
+        }
+
+        // Then, replace remaining variables with actual values
+        foreach ($data as $key => $value) {
+            // Skip null or empty values (they should be removed above)
+            if ($value === null || $value === '') {
+                continue;
+            }
+            
             // Escape HTML special characters
-            $safeValue = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+            $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
             // Replace both {{key}} and {{ key }}
             $html = str_replace('{{' . $key . '}}', $safeValue, $html);
             $html = str_replace('{{ ' . $key . ' }}', $safeValue, $html);
         }
+
+        // Clean up any empty lines or extra whitespace
+        $html = preg_replace('/\n\s*\n/', "\n", $html);
 
         return $html;
     }
