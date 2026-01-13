@@ -170,9 +170,12 @@ ls -la resources/fonts/
 You can download free fonts from:
 - **Google Fonts**: https://fonts.google.com (select "Download family")
 - **Font Squirrel**: https://www.fontsquirrel.com
-- **Liberation Fonts**: https://github.com/liberationfonts
+- **Liberation Fonts**: https://github.com/liberationfonts/liberation-fonts/releases
+- **DejaVu Fonts**: https://github.com/dejavu-fonts/dejavu-fonts/releases
 
 **Important**: Ensure you have proper licenses for commercial fonts if using them commercially.
+
+**📖 For detailed step-by-step instructions on how to get and upload fonts, see**: `docs_files/HOW_TO_GET_FONTS.md`
 
 ## Notes
 

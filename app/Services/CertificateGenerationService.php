@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CertificateTemplate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -29,6 +30,12 @@ class CertificateGenerationService
                 ];
             }
 
+            // For PDF generation, use Blade template
+            if ($outputFormat === 'pdf') {
+                return $this->generatePdfFromBlade($template, $data);
+            }
+
+            // For PNG/JPG, use GD library (legacy method)
             // Download/load background image
             $backgroundImagePath = $this->getImagePath($template->background_image_url);
             if (!$backgroundImagePath) {
@@ -357,7 +364,151 @@ class CertificateGenerationService
     }
 
     /**
-     * Save certificate as PNG or PDF
+     * Generate PDF using Blade template
+     */
+    private function generatePdfFromBlade(CertificateTemplate $template, array $data): array
+    {
+        try {
+            // Get background image path
+            $backgroundImagePath = $this->getImagePath($template->background_image_url);
+            if (!$backgroundImagePath) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to load background image',
+                ];
+            }
+
+            // Get image dimensions
+            $imageInfo = getimagesize($backgroundImagePath);
+            if (!$imageInfo) {
+                return [
+                    'success' => false,
+                    'message' => 'Invalid background image format',
+                ];
+            }
+
+            $width = $imageInfo[0];
+            $height = $imageInfo[1];
+
+            // Convert image to base64 for embedding in PDF
+            $imageData = file_get_contents($backgroundImagePath);
+            $mimeType = $imageInfo['mime'];
+            $base64Image = 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
+
+            // Process config_json to prepare text elements
+            $textElements = $this->processConfigJson($template->config_json, $data);
+
+            // Convert dimensions from pixels to points (PDF uses points: 1 inch = 72 points, assuming 96 DPI)
+            $widthPt = ($width / 96) * 72;
+            $heightPt = ($height / 96) * 72;
+
+            // Render Blade template
+            $html = View::make('certificates.certificate', [
+                'width' => $widthPt,
+                'height' => $heightPt,
+                'backgroundImage' => $base64Image,
+                'textElements' => $textElements,
+            ])->render();
+
+            // Generate PDF using DomPDF
+            $pdf = Pdf::loadHTML($html)
+                ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
+                ->setOption('isHtml5ParserEnabled', true)
+                ->setOption('isRemoteEnabled', true)
+                ->setOption('fontDir', storage_path('fonts'))
+                ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('defaultFont', 'serif');
+
+            // Save PDF
+            $directory = 'certificates/' . $template->id;
+            if (!Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->makeDirectory($directory);
+            }
+
+            $fileName = Str::random(40) . '.pdf';
+            $filePath = $directory . '/' . $fileName;
+            $fullPath = Storage::disk('public')->path($filePath);
+
+            $pdf->save($fullPath);
+
+            // Clean up temporary file if it was downloaded
+            if ($backgroundImagePath && file_exists($backgroundImagePath) && strpos($backgroundImagePath, sys_get_temp_dir()) === 0) {
+                @unlink($backgroundImagePath);
+            }
+
+            // Use API route URL instead of direct storage URL
+            $fileUrl = $this->getCertificateApiUrl($filePath);
+
+            return [
+                'success' => true,
+                'file_path' => $filePath,
+                'file_url' => $fileUrl,
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('PDF generation from Blade error', [
+                'template_id' => $template->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'PDF generation failed: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Process config_json and replace variables with actual data
+     */
+    private function processConfigJson(array $config, array $data): array
+    {
+        $textElements = [];
+
+        foreach ($config as $placeholder) {
+            if (!isset($placeholder['variable'])) {
+                continue;
+            }
+
+            $variable = $placeholder['variable'];
+
+            // Handle both dynamic variables ({{variable_name}}) and static text
+            if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
+                // Dynamic variable: extract variable name and replace with data
+                $variableKey = trim($matches[1]);
+                $text = $data[$variableKey] ?? $variable; // Fallback to original if data not found
+            } else {
+                // Static text: use as-is
+                $text = $variable;
+            }
+
+            // Get styling (support both snake_case and camelCase)
+            $fontSizePx = (int)($placeholder['font_size'] ?? $placeholder['fontSize'] ?? 24);
+            // Convert pixels to points (1 pixel = 0.75 points at 96 DPI: 72 points / 96 pixels)
+            $fontSize = $fontSizePx * 0.75;
+            $colorHex = $placeholder['color'] ?? '#000000';
+            $fontFamily = $placeholder['font_family'] ?? $placeholder['fontFamily'] ?? 'Arial';
+            $textAlign = $placeholder['text_align'] ?? $placeholder['textAlign'] ?? 'left';
+            $x = (float)($placeholder['x'] ?? 0.5);
+            $y = (float)($placeholder['y'] ?? 0.5);
+
+            $textElements[] = [
+                'text' => $text,
+                'x_percent' => $x,
+                'y_percent' => $y,
+                'font_family' => $fontFamily,
+                'font_size' => $fontSize,
+                'color' => $colorHex,
+                'text_align' => $textAlign,
+            ];
+        }
+
+        return $textElements;
+    }
+
+    /**
+     * Save certificate as PNG or PDF (legacy method for PNG/JPG)
      */
     private function saveCertificate($image, CertificateTemplate $template, array $data, string $format, int $width, int $height): ?string
     {
