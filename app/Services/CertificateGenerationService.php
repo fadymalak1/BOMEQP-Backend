@@ -72,7 +72,8 @@ class CertificateGenerationService
             }
 
             if ($outputPath) {
-                $fileUrl = Storage::disk('public')->url($outputPath);
+                // Use API route URL instead of direct storage URL
+                $fileUrl = $this->getCertificateApiUrl($outputPath);
                 return [
                     'success' => true,
                     'file_path' => $outputPath,
@@ -291,6 +292,16 @@ class CertificateGenerationService
         }
 
         return $filePath;
+    }
+
+    /**
+     * Generate API URL for certificate file
+     */
+    private function getCertificateApiUrl(string $filePath): string
+    {
+        // Convert storage path to API route URL
+        // e.g., certificates/1/abc123.png -> /api/storage/certificates/1/abc123.png
+        return url('/api/storage/' . $filePath);
     }
 
     /**
