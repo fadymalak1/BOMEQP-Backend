@@ -236,14 +236,84 @@ class CertificateGenerationService
     /**
      * Get font file path - matches frontend font families
      * Supports: Arial, Helvetica, Times New Roman, Courier New, Verdana, Georgia, Tahoma, Trebuchet MS, Impact
+     * Optimized for Linux/cPanel production servers
      */
     private function getFontPath(string $fontFamily): ?string
     {
-        // Map frontend font families to system font file names
-        // Windows font file names
+        // First, check if fonts are available in project resources/fonts directory
+        $projectFontDir = resource_path('fonts');
+        $projectFonts = [
+            'Arial' => ['arial.ttf', 'Arial.ttf', 'arial.TTF', 'ARIAL.TTF'],
+            'Helvetica' => ['arial.ttf', 'helvetica.ttf', 'Arial.ttf', 'Helvetica.ttf'],
+            'Times New Roman' => ['times.ttf', 'Times.ttf', 'times-new-roman.ttf', 'TimesNewRoman.ttf'],
+            'Courier New' => ['courier.ttf', 'cour.ttf', 'Courier.ttf', 'courier-new.ttf'],
+            'Courier' => ['courier.ttf', 'cour.ttf', 'Courier.ttf'],
+            'Verdana' => ['verdana.ttf', 'Verdana.ttf'],
+            'Georgia' => ['georgia.ttf', 'Georgia.ttf'],
+            'Tahoma' => ['tahoma.ttf', 'Tahoma.ttf'],
+            'Trebuchet MS' => ['trebuchet.ttf', 'trebuc.ttf', 'Trebuchet.ttf', 'trebuchet-ms.ttf'],
+            'Impact' => ['impact.ttf', 'Impact.ttf'],
+        ];
+
+        if (isset($projectFonts[$fontFamily]) && is_dir($projectFontDir)) {
+            foreach ($projectFonts[$fontFamily] as $fontFile) {
+                $fontPath = $projectFontDir . '/' . $fontFile;
+                if (file_exists($fontPath)) {
+                    Log::info("Using project font", ['font' => $fontFamily, 'path' => $fontPath]);
+                    return $fontPath;
+                }
+            }
+        }
+
+        // Try Linux/cPanel font paths (check multiple common locations)
+        $linuxFontPaths = [
+            // Standard Linux font directories
+            '/usr/share/fonts/truetype/liberation/',
+            '/usr/share/fonts/truetype/dejavu/',
+            '/usr/share/fonts/TTF/',
+            '/usr/share/fonts/truetype/',
+            // cPanel specific paths
+            '/usr/local/lib/X11/fonts/TTF/',
+            '/usr/X11R6/lib/X11/fonts/TTF/',
+            // Alternative locations
+            '/usr/share/fonts/',
+            '/var/www/html/fonts/',
+            storage_path('fonts/'), // Laravel storage fonts
+        ];
+
+        $linuxFontFiles = [
+            'Arial' => ['arial.ttf', 'Arial.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
+            'Helvetica' => ['arial.ttf', 'Arial.ttf', 'helvetica.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
+            'Times New Roman' => ['times.ttf', 'Times.ttf', 'LiberationSerif-Regular.ttf', 'DejaVuSerif.ttf'],
+            'Courier New' => ['courier.ttf', 'cour.ttf', 'Courier.ttf', 'LiberationMono-Regular.ttf', 'DejaVuSansMono.ttf'],
+            'Courier' => ['courier.ttf', 'cour.ttf', 'Courier.ttf', 'LiberationMono-Regular.ttf'],
+            'Verdana' => ['verdana.ttf', 'Verdana.ttf', 'DejaVuSans.ttf', 'LiberationSans-Regular.ttf'],
+            'Georgia' => ['georgia.ttf', 'Georgia.ttf', 'LiberationSerif-Regular.ttf', 'DejaVuSerif.ttf'],
+            'Tahoma' => ['tahoma.ttf', 'Tahoma.ttf', 'DejaVuSans.ttf', 'LiberationSans-Regular.ttf'],
+            'Trebuchet MS' => ['trebuchet.ttf', 'trebuc.ttf', 'Trebuchet.ttf', 'DejaVuSans.ttf', 'LiberationSans-Regular.ttf'],
+            'Impact' => ['impact.ttf', 'Impact.ttf', 'DejaVuSans-Bold.ttf'],
+        ];
+
+        if (isset($linuxFontFiles[$fontFamily])) {
+            foreach ($linuxFontPaths as $basePath) {
+                if (!is_dir($basePath)) {
+                    continue;
+                }
+                
+                foreach ($linuxFontFiles[$fontFamily] as $fontFile) {
+                    $fontPath = rtrim($basePath, '/') . '/' . $fontFile;
+                    if (file_exists($fontPath) && is_readable($fontPath)) {
+                        Log::info("Using system font", ['font' => $fontFamily, 'path' => $fontPath]);
+                        return $fontPath;
+                    }
+                }
+            }
+        }
+
+        // Try Windows fonts (for local development)
         $windowsFonts = [
             'Arial' => 'C:\\Windows\\Fonts\\arial.ttf',
-            'Helvetica' => 'C:\\Windows\\Fonts\\arial.ttf', // Helvetica uses Arial on Windows
+            'Helvetica' => 'C:\\Windows\\Fonts\\arial.ttf',
             'Times New Roman' => 'C:\\Windows\\Fonts\\times.ttf',
             'Courier New' => 'C:\\Windows\\Fonts\\cour.ttf',
             'Courier' => 'C:\\Windows\\Fonts\\cour.ttf',
@@ -254,38 +324,8 @@ class CertificateGenerationService
             'Impact' => 'C:\\Windows\\Fonts\\impact.ttf',
         ];
 
-        // Check Windows fonts first (most common in production)
-        if (isset($windowsFonts[$fontFamily])) {
-            $fontPath = $windowsFonts[$fontFamily];
-            if (file_exists($fontPath)) {
-                return $fontPath;
-            }
-        }
-
-        // Try Linux fonts
-        $linuxFonts = [
-            'Arial' => '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-            'Helvetica' => '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-            'Times New Roman' => '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
-            'Courier New' => '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
-            'Courier' => '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
-            'Verdana' => '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-            'Georgia' => '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
-            'Tahoma' => '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-            'Trebuchet MS' => '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        ];
-
-        if (isset($linuxFonts[$fontFamily])) {
-            $fontPaths = [
-                $linuxFonts[$fontFamily],
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', // Fallback
-            ];
-            
-            foreach ($fontPaths as $fontPath) {
-                if (file_exists($fontPath)) {
-                    return $fontPath;
-                }
-            }
+        if (isset($windowsFonts[$fontFamily]) && file_exists($windowsFonts[$fontFamily])) {
+            return $windowsFonts[$fontFamily];
         }
 
         // Try macOS fonts
@@ -302,18 +342,16 @@ class CertificateGenerationService
             return $macFonts[$fontFamily];
         }
 
-        // Final fallback - try common system fonts
-        $fallbackFonts = [
-            'C:\\Windows\\Fonts\\arial.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-            '/System/Library/Fonts/Helvetica.ttc',
-        ];
-
-        foreach ($fallbackFonts as $fontPath) {
-            if (file_exists($fontPath)) {
-                return $fontPath;
-            }
-        }
+        // Final fallback - log warning and return null (will use built-in font)
+        Log::warning("Font not found", [
+            'font_family' => $fontFamily,
+            'checked_paths' => array_merge(
+                $linuxFontPaths,
+                [resource_path('fonts')],
+                array_values($windowsFonts ?? []),
+                array_values($macFonts ?? [])
+            )
+        ]);
 
         return null;
     }
