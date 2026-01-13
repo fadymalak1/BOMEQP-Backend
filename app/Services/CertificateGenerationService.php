@@ -395,12 +395,12 @@ class CertificateGenerationService
             $mimeType = $imageInfo['mime'];
             $base64Image = 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
 
-            // Process config_json to prepare text elements
-            $textElements = $this->processConfigJson($template->config_json, $data);
-
             // Convert dimensions from pixels to points (PDF uses points: 1 inch = 72 points, assuming 96 DPI)
             $widthPt = ($width / 96) * 72;
             $heightPt = ($height / 96) * 72;
+
+            // Process config_json to prepare text elements (pass dimensions for conversion)
+            $textElements = $this->processConfigJson($template->config_json, $data, $widthPt, $heightPt);
 
             // Render Blade template
             $html = View::make('certificates.certificate', [
@@ -462,7 +462,7 @@ class CertificateGenerationService
     /**
      * Process config_json and replace variables with actual data
      */
-    private function processConfigJson(array $config, array $data): array
+    private function processConfigJson(array $config, array $data, float $widthPt, float $heightPt): array
     {
         $textElements = [];
 
@@ -490,13 +490,17 @@ class CertificateGenerationService
             $colorHex = $placeholder['color'] ?? '#000000';
             $fontFamily = $placeholder['font_family'] ?? $placeholder['fontFamily'] ?? 'Arial';
             $textAlign = $placeholder['text_align'] ?? $placeholder['textAlign'] ?? 'left';
-            $x = (float)($placeholder['x'] ?? 0.5);
-            $y = (float)($placeholder['y'] ?? 0.5);
+            
+            // Convert percentage coordinates (0.0-1.0) to points
+            $xPercent = (float)($placeholder['x'] ?? 0.5);
+            $yPercent = (float)($placeholder['y'] ?? 0.5);
+            $xPt = $xPercent * $widthPt;
+            $yPt = $yPercent * $heightPt;
 
             $textElements[] = [
                 'text' => $text,
-                'x_percent' => $x,
-                'y_percent' => $y,
+                'x_pt' => $xPt,
+                'y_pt' => $yPt,
                 'font_family' => $fontFamily,
                 'font_size' => $fontSize,
                 'color' => $colorHex,

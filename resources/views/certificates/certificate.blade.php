@@ -23,12 +23,13 @@
             height: {{ $height }}pt;
             position: relative;
             font-family: Arial, sans-serif;
+            overflow: hidden;
         }
         
         .certificate-container {
             position: relative;
-            width: 100%;
-            height: 100%;
+            width: {{ $width }}pt;
+            height: {{ $height }}pt;
             margin: 0;
             padding: 0;
         }
@@ -37,35 +38,26 @@
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
+            width: {{ $width }}pt;
+            height: {{ $height }}pt;
             z-index: 1;
-            object-fit: contain;
         }
         
         .text-element {
             position: absolute;
             z-index: 2;
             white-space: nowrap;
-            line-height: 1.2;
+            line-height: 1;
         }
         
         @foreach($textElements as $index => $element)
         .text-element-{{ $index }} {
-            left: {{ $element['x_percent'] * 100 }}%;
-            top: {{ $element['y_percent'] * 100 }}%;
-            font-family: {{ $element['font_family'] }}, Arial, sans-serif;
+            left: {{ $element['x_pt'] }}pt;
+            top: {{ $element['y_pt'] }}pt;
+            font-family: '{{ $element['font_family'] }}', Arial, sans-serif;
             font-size: {{ $element['font_size'] }}pt;
             color: {{ $element['color'] }};
-            @if($element['text_align'] === 'center')
-                transform: translateX(-50%);
-                text-align: center;
-            @elseif($element['text_align'] === 'right')
-                transform: translateX(-100%);
-                text-align: right;
-            @else
-                text-align: left;
-            @endif
+            text-align: {{ $element['text_align'] }};
         }
         @endforeach
     </style>
@@ -82,4 +74,3 @@
     </div>
 </body>
 </html>
-
