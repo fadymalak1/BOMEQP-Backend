@@ -60,6 +60,8 @@ class CertificateController extends Controller
             $query->where('course_id', $request->course_id);
         }
 
+        $query->orderBy('created_at', 'desc');
+
         $perPage = $request->get('per_page', 15);
         $certificates = $query->paginate($perPage);
 

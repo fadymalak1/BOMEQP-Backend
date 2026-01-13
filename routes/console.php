@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Schedule subscription expiration check daily
 Schedule::command('subscriptions:check-expired')->daily();
+
+// Schedule discount codes status check daily
+Schedule::command('discount-codes:check-status')->daily();
