@@ -289,7 +289,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/classes/{id}/complete', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'complete']);
 
         // Certificates
-        Route::get('/certificates/templates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'getTemplates']);
+        Route::get('/certificates/accs', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'getAuthorizedAccs']);
         Route::get('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'index']);
         Route::post('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'store']);
         Route::get('/certificates/{id}', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'show']);

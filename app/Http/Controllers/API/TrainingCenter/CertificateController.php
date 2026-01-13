@@ -104,18 +104,18 @@ class CertificateController extends Controller
     }
 
     #[OA\Get(
-        path: "/training-center/certificates/templates",
-        summary: "Get available certificate templates",
-        description: "Get all available certificate templates from authorized ACCs for the training center.",
+        path: "/training-center/certificates/accs",
+        summary: "Get authorized ACCs for certificate generation",
+        description: "Get all authorized ACCs that the training center can generate certificates for.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         responses: [
             new OA\Response(
                 response: 200,
-                description: "Templates retrieved successfully",
+                description: "ACCs retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "templates", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "accs", type: "array", items: new OA\Items(type: "object"))
                     ]
                 )
             ),
@@ -123,7 +123,7 @@ class CertificateController extends Controller
             new OA\Response(response: 404, description: "Training center not found")
         ]
     )]
-    public function getTemplates(Request $request)
+    public function getAuthorizedAccs(Request $request)
     {
         $user = $request->user();
         $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
@@ -133,53 +133,46 @@ class CertificateController extends Controller
         }
 
         // Get authorized ACC IDs
-        $authorizedAccIds = DB::table('training_center_acc_authorizations')
+        $authorizedAccIds = DB::table('training_center_acc_authorization')
             ->where('training_center_id', $trainingCenter->id)
             ->where('status', 'approved')
             ->pluck('acc_id');
 
-        // Get active templates from authorized ACCs
-        $templates = CertificateTemplate::whereIn('acc_id', $authorizedAccIds)
-            ->where('status', 'active')
-            ->whereNotNull('background_image_url')
-            ->whereNotNull('config_json')
-            ->with(['acc', 'category'])
+        // Get ACCs with their info
+        $accs = \App\Models\ACC::whereIn('id', $authorizedAccIds)
+            ->select('id', 'name', 'logo_url')
             ->get();
 
-        return response()->json(['templates' => $templates]);
+        return response()->json(['accs' => $accs]);
     }
 
     #[OA\Post(
         path: "/training-center/certificates",
         summary: "Issue a new certificate",
-        description: "Generate and issue a new certificate using a template. The system will generate the certificate PDF/image based on the template configuration.",
+        description: "Generate and issue a new certificate. Select ACC and Course, then enter student name. The system will automatically select the appropriate template and generate the certificate.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
-                required: ["template_id", "course_id", "trainee_name", "issue_date", "student_data"],
+                required: ["acc_id", "course_id", "trainee_name", "issue_date"],
                 properties: [
-                    new OA\Property(property: "template_id", type: "integer", example: 1),
-                    new OA\Property(property: "course_id", type: "integer", example: 1),
+                    new OA\Property(property: "acc_id", type: "integer", example: 1, description: "ID of the authorized ACC"),
+                    new OA\Property(property: "course_id", type: "integer", example: 1, description: "ID of the course from the selected ACC"),
                     new OA\Property(property: "class_id", type: "integer", nullable: true, example: 1),
                     new OA\Property(property: "instructor_id", type: "integer", nullable: true, example: 1),
-                    new OA\Property(property: "trainee_name", type: "string", example: "John Doe"),
+                    new OA\Property(property: "trainee_name", type: "string", example: "John Doe", description: "Student name"),
                     new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
                     new OA\Property(property: "issue_date", type: "string", format: "date", example: "2024-01-15"),
-                    new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2026-01-15"),
-                    new OA\Property(
-                        property: "student_data",
-                        type: "object",
-                        description: "Key-value pairs matching template variables (e.g., {'student_name': 'John Doe', 'course_name': 'Fire Safety'})"
-                    )
+                    new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2026-01-15")
                 ]
             )
         ),
         responses: [
             new OA\Response(response: 201, description: "Certificate issued successfully"),
             new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 404, description: "Template or training center not found"),
+            new OA\Response(response: 403, description: "ACC not authorized or course not available"),
+            new OA\Response(response: 404, description: "ACC, Course, or Template not found"),
             new OA\Response(response: 422, description: "Validation error")
         ]
     )]
@@ -193,7 +186,7 @@ class CertificateController extends Controller
         }
 
         $request->validate([
-            'template_id' => 'required|exists:certificate_templates,id',
+            'acc_id' => 'required|exists:accs,id',
             'course_id' => 'required|exists:courses,id',
             'class_id' => 'nullable|exists:classes,id',
             'instructor_id' => 'nullable|exists:instructors,id',
@@ -201,36 +194,62 @@ class CertificateController extends Controller
             'trainee_id_number' => 'nullable|string|max:255',
             'issue_date' => 'required|date',
             'expiry_date' => 'nullable|date|after:issue_date',
-            'student_data' => 'required|array',
         ]);
 
-        // Verify template belongs to an authorized ACC
-        $template = CertificateTemplate::with('acc')->findOrFail($request->template_id);
-        
-        $isAuthorized = DB::table('training_center_acc_authorizations')
+        // Verify ACC is authorized
+        $isAuthorized = DB::table('training_center_acc_authorization')
             ->where('training_center_id', $trainingCenter->id)
-            ->where('acc_id', $template->acc_id)
+            ->where('acc_id', $request->acc_id)
             ->where('status', 'approved')
             ->exists();
 
         if (!$isAuthorized) {
-            return response()->json(['message' => 'Template not available for this training center'], 403);
+            return response()->json(['message' => 'ACC is not authorized for this training center'], 403);
         }
 
-        // Verify template has required configuration
-        if (!$template->background_image_url || !$template->config_json) {
-            return response()->json(['message' => 'Template is not properly configured'], 422);
+        // Get course and verify it belongs to the selected ACC
+        $course = \App\Models\Course::with(['acc', 'subCategory.category'])->findOrFail($request->course_id);
+        
+        if ($course->acc_id != $request->acc_id) {
+            return response()->json(['message' => 'Course does not belong to the selected ACC'], 403);
+        }
+
+        // Find template: must belong to ACC and match course's category
+        $categoryId = $course->subCategory->category_id ?? null;
+        
+        if (!$categoryId) {
+            return response()->json(['message' => 'Course category not found'], 422);
+        }
+
+        $template = CertificateTemplate::where('acc_id', $request->acc_id)
+            ->where('category_id', $categoryId)
+            ->where('status', 'active')
+            ->whereNotNull('background_image_url')
+            ->whereNotNull('config_json')
+            ->first();
+
+        if (!$template) {
+            return response()->json([
+                'message' => 'No certificate template found for this ACC and course category',
+                'hint' => 'Please ensure the ACC has created a certificate template for this course category'
+            ], 404);
         }
 
         try {
-            // Prepare data for certificate generation
-            $certificateData = array_merge($request->student_data, [
+            // Generate certificate number
+            $certificateNumber = $this->generateCertificateNumber();
+            
+            // Auto-generate student_data from course information
+            $certificateData = [
                 'student_name' => $request->trainee_name,
                 'trainee_name' => $request->trainee_name,
-                'certificate_number' => $this->generateCertificateNumber(),
+                'course_name' => $course->name,
+                'date' => $request->issue_date,
+                'cert_id' => $certificateNumber,
+                'certificate_number' => $certificateNumber,
                 'issue_date' => $request->issue_date,
-                'expiry_date' => $request->expiry_date,
-            ]);
+                'expiry_date' => $request->expiry_date ?? null,
+            ];
 
             // Generate certificate
             $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'png');
@@ -244,7 +263,7 @@ class CertificateController extends Controller
 
             // Create certificate record
             $certificate = Certificate::create([
-                'certificate_number' => $certificateData['certificate_number'],
+                'certificate_number' => $certificateNumber,
                 'course_id' => $request->course_id,
                 'class_id' => $request->class_id,
                 'training_center_id' => $trainingCenter->id,
@@ -253,7 +272,7 @@ class CertificateController extends Controller
                 'trainee_id_number' => $request->trainee_id_number,
                 'issue_date' => $request->issue_date,
                 'expiry_date' => $request->expiry_date,
-                'template_id' => $request->template_id,
+                'template_id' => $template->id,
                 'certificate_pdf_url' => $generationResult['file_url'],
                 'verification_code' => $this->generateVerificationCode(),
                 'status' => 'valid',
