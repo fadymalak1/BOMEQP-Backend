@@ -6,8 +6,7 @@ use App\Models\CertificateTemplate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Dompdf\Dompdf;
-use Dompdf\Options;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class CertificateGenerationService
 {
@@ -329,12 +328,8 @@ class CertificateGenerationService
             Storage::disk('public')->makeDirectory($directory);
         }
 
-        $fileName = Str::random(40) . '.' . $format;
-        $filePath = $directory . '/' . $fileName;
-        $fullPath = Storage::disk('public')->path($filePath);
-
         if ($format === 'pdf') {
-            // Generate temporary PNG file
+            // Generate temporary PNG file first
             $tempPngPath = sys_get_temp_dir() . '/' . Str::random(40) . '.png';
             imagepng($image, $tempPngPath, 9); // 9 = highest quality
             
@@ -347,13 +342,18 @@ class CertificateGenerationService
             $widthPt = ($width / 96) * 72;
             $heightPt = ($height / 96) * 72;
             
-            // Create HTML for PDF
+            // Create HTML for PDF with the image
             $html = '
             <!DOCTYPE html>
             <html>
             <head>
                 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
                 <style>
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
                     body {
                         margin: 0;
                         padding: 0;
@@ -362,6 +362,7 @@ class CertificateGenerationService
                         width: ' . $widthPt . 'pt;
                         height: ' . $heightPt . 'pt;
                         display: block;
+                        page-break-after: always;
                     }
                 </style>
             </head>
@@ -370,35 +371,39 @@ class CertificateGenerationService
             </body>
             </html>';
             
-            // Configure DomPDF options
-            $options = new Options();
-            $options->set('isRemoteEnabled', true);
-            $options->set('isHtml5ParserEnabled', true);
-            $options->set('defaultFont', 'Arial');
+            // Generate PDF using DomPDF
+            $pdf = Pdf::loadHTML($html);
+            $pdf->setPaper([0, 0, $widthPt, $heightPt], 'portrait');
             
-            // Create DomPDF instance
-            $dompdf = new Dompdf($options);
-            $dompdf->loadHtml($html);
-            $dompdf->setPaper([0, 0, $widthPt, $heightPt], 'portrait');
-            $dompdf->render();
+            $fileName = Str::random(40) . '.pdf';
+            $filePath = $directory . '/' . $fileName;
+            $fullPath = Storage::disk('public')->path($filePath);
             
             // Save PDF
-            file_put_contents($fullPath, $dompdf->output());
+            $pdf->save($fullPath);
             
             // Clean up temporary PNG
             if (file_exists($tempPngPath)) {
                 @unlink($tempPngPath);
             }
             
+            return $filePath;
+            
         } elseif ($format === 'png') {
+            $fileName = Str::random(40) . '.png';
+            $filePath = $directory . '/' . $fileName;
+            $fullPath = Storage::disk('public')->path($filePath);
             imagepng($image, $fullPath, 9); // 9 = highest quality
+            return $filePath;
         } elseif ($format === 'jpg' || $format === 'jpeg') {
+            $fileName = Str::random(40) . '.jpg';
+            $filePath = $directory . '/' . $fileName;
+            $fullPath = Storage::disk('public')->path($filePath);
             imagejpeg($image, $fullPath, 95); // 95 = high quality
+            return $filePath;
         } else {
             return null;
         }
-
-        return $filePath;
     }
 
     /**

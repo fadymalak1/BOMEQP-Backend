@@ -300,24 +300,11 @@ class CertificateController extends Controller
             }
 
             $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($filePath);
-            
-            // Determine MIME type based on file extension
-            $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-            $mimeType = match($extension) {
-                'pdf' => 'application/pdf',
-                'png' => 'image/png',
-                'jpg', 'jpeg' => 'image/jpeg',
-                default => 'application/octet-stream',
-            };
-            
+            $mimeType = \Illuminate\Support\Facades\Storage::disk('public')->mimeType($filePath) ?? 'application/pdf';
             $fileName = basename($filePath);
-            
-            // For PDFs, use inline display; for images, use download
-            $disposition = $extension === 'pdf' ? 'inline' : 'attachment';
 
             return response()->download($fullPath, $fileName, [
                 'Content-Type' => $mimeType,
-                'Content-Disposition' => $disposition . '; filename="' . $fileName . '"',
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
