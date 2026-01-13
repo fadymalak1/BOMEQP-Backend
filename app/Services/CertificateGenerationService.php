@@ -364,96 +364,41 @@ class CertificateGenerationService
     }
 
     /**
-     * Generate PDF: Generate image first using GD library, then embed in PDF
+     * Generate PDF from template_html: Replace variables and convert HTML to PDF directly
      */
     private function generatePdfFromBlade(CertificateTemplate $template, array $data): array
     {
         try {
-            // Validate template has required data
-            if (!$template->background_image_url || !$template->config_json) {
+            // Validate template_html exists
+            if (!$template->template_html) {
                 return [
                     'success' => false,
-                    'message' => 'Template missing background image or configuration',
+                    'message' => 'Template HTML is missing',
                 ];
             }
 
-            // Get background image path
-            $backgroundImagePath = $this->getImagePath($template->background_image_url);
-            if (!$backgroundImagePath) {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to load background image',
-                ];
+            // Replace variables in template_html
+            $html = $this->replaceTemplateVariables($template->template_html, $data);
+
+            // Extract dimensions from HTML (default: A4 size in pixels)
+            // The HTML template specifies width and height in CSS (e.g., width: 1200px; height: 848px;)
+            $width = 1200; // Default width in pixels
+            $height = 848; // Default height in pixels
+
+            // Try to extract dimensions from HTML
+            if (preg_match('/width:\s*(\d+)px/i', $html, $widthMatch)) {
+                $width = (int)$widthMatch[1];
             }
-
-            // Get image dimensions
-            $imageInfo = getimagesize($backgroundImagePath);
-            if (!$imageInfo) {
-                return [
-                    'success' => false,
-                    'message' => 'Invalid background image format',
-                ];
+            if (preg_match('/height:\s*(\d+)px/i', $html, $heightMatch)) {
+                $height = (int)$heightMatch[1];
             }
-
-            $width = $imageInfo[0];
-            $height = $imageInfo[1];
-            $mimeType = $imageInfo['mime'];
-
-            // Create image resource from background
-            $image = $this->createImageResource($backgroundImagePath, $mimeType);
-            if (!$image) {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to create image resource',
-                ];
-            }
-
-            // Apply text placeholders using config_json
-            $this->applyTextPlaceholders($image, $template->config_json, $data, $width, $height);
-
-            // Generate temporary PNG file first
-            $tempPngPath = sys_get_temp_dir() . '/' . Str::random(40) . '.png';
-            imagepng($image, $tempPngPath, 9); // 9 = highest quality
-            imagedestroy($image);
-
-            // Convert PNG image to base64 for embedding in PDF
-            $imageData = file_get_contents($tempPngPath);
-            $base64Image = 'data:image/png;base64,' . base64_encode($imageData);
 
             // Convert dimensions from pixels to points (PDF uses points: 1 inch = 72 points, assuming 96 DPI)
             $widthPt = ($width / 96) * 72;
             $heightPt = ($height / 96) * 72;
 
-            // Create HTML for PDF with the image
-            $pdfHtml = '
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-                <style>
-                    * {
-                        margin: 0;
-                        padding: 0;
-                        box-sizing: border-box;
-                    }
-                    body {
-                        margin: 0;
-                        padding: 0;
-                    }
-                    img {
-                        width: ' . $widthPt . 'pt;
-                        height: ' . $heightPt . 'pt;
-                        display: block;
-                    }
-                </style>
-            </head>
-            <body>
-                <img src="data:image/png;base64,' . $base64Image . '" />
-            </body>
-            </html>';
-
-            // Generate PDF using DomPDF
-            $pdf = Pdf::loadHTML($pdfHtml)
+            // Generate PDF using DomPDF directly from HTML
+            $pdf = Pdf::loadHTML($html)
                 ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
                 ->setOption('isHtml5ParserEnabled', true)
                 ->setOption('isRemoteEnabled', true)
@@ -472,14 +417,6 @@ class CertificateGenerationService
             $fullPath = Storage::disk('public')->path($filePath);
 
             $pdf->save($fullPath);
-
-            // Clean up temporary files
-            if (file_exists($tempPngPath)) {
-                @unlink($tempPngPath);
-            }
-            if ($backgroundImagePath && file_exists($backgroundImagePath) && strpos($backgroundImagePath, sys_get_temp_dir()) === 0) {
-                @unlink($backgroundImagePath);
-            }
 
             // Use API route URL instead of direct storage URL
             $fileUrl = $this->getCertificateApiUrl($filePath);
@@ -502,6 +439,23 @@ class CertificateGenerationService
                 'message' => 'PDF generation failed: ' . $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Replace variables in template HTML
+     */
+    private function replaceTemplateVariables(string $html, array $data): string
+    {
+        // Replace variables like {{variable_name}} with actual values
+        foreach ($data as $key => $value) {
+            // Escape HTML special characters
+            $safeValue = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+            // Replace both {{key}} and {{ key }}
+            $html = str_replace('{{' . $key . '}}', $safeValue, $html);
+            $html = str_replace('{{ ' . $key . ' }}', $safeValue, $html);
+        }
+
+        return $html;
     }
 
     /**
