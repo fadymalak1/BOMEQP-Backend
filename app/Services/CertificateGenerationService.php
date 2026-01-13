@@ -410,8 +410,13 @@ class CertificateGenerationService
             </html>';
             
             // Generate PDF using DomPDF
-            $pdf = Pdf::loadHTML($html);
-            $pdf->setPaper([0, 0, $widthPt, $heightPt], 'portrait');
+            $pdf = Pdf::loadHTML($html)
+                ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
+                ->setOption('isHtml5ParserEnabled', true)
+                ->setOption('isRemoteEnabled', true)
+                ->setOption('fontDir', storage_path('fonts'))
+                ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('defaultFont', 'serif'); // Use DomPDF's built-in serif font
             
             $fileName = Str::random(40) . '.pdf';
             $filePath = $directory . '/' . $fileName;
