@@ -22,17 +22,17 @@ class CertificateGenerationService
     public function generate(CertificateTemplate $template, array $data, string $outputFormat = 'png'): array
     {
         try {
-            // Validate template has required data
+            // For PDF generation, use template_html method (generate image first, then embed in PDF)
+            if ($outputFormat === 'pdf') {
+                return $this->generatePdfFromBlade($template, $data);
+            }
+
+            // Validate template has required data for PNG/JPG generation
             if (!$template->background_image_url || !$template->config_json) {
                 return [
                     'success' => false,
                     'message' => 'Template missing background image or configuration',
                 ];
-            }
-
-            // For PDF generation, use Blade template
-            if ($outputFormat === 'pdf') {
-                return $this->generatePdfFromBlade($template, $data);
             }
 
             // For PNG/JPG, use GD library (legacy method)
@@ -364,11 +364,19 @@ class CertificateGenerationService
     }
 
     /**
-     * Generate PDF using Blade template
+     * Generate PDF: Generate image first using GD library, then embed in PDF
      */
     private function generatePdfFromBlade(CertificateTemplate $template, array $data): array
     {
         try {
+            // Validate template has required data
+            if (!$template->background_image_url || !$template->config_json) {
+                return [
+                    'success' => false,
+                    'message' => 'Template missing background image or configuration',
+                ];
+            }
+
             // Get background image path
             $backgroundImagePath = $this->getImagePath($template->background_image_url);
             if (!$backgroundImagePath) {
@@ -389,29 +397,63 @@ class CertificateGenerationService
 
             $width = $imageInfo[0];
             $height = $imageInfo[1];
-
-            // Convert image to base64 for embedding in PDF
-            $imageData = file_get_contents($backgroundImagePath);
             $mimeType = $imageInfo['mime'];
-            $base64Image = 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
+
+            // Create image resource from background
+            $image = $this->createImageResource($backgroundImagePath, $mimeType);
+            if (!$image) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to create image resource',
+                ];
+            }
+
+            // Apply text placeholders using config_json
+            $this->applyTextPlaceholders($image, $template->config_json, $data, $width, $height);
+
+            // Generate temporary PNG file first
+            $tempPngPath = sys_get_temp_dir() . '/' . Str::random(40) . '.png';
+            imagepng($image, $tempPngPath, 9); // 9 = highest quality
+            imagedestroy($image);
+
+            // Convert PNG image to base64 for embedding in PDF
+            $imageData = file_get_contents($tempPngPath);
+            $base64Image = 'data:image/png;base64,' . base64_encode($imageData);
 
             // Convert dimensions from pixels to points (PDF uses points: 1 inch = 72 points, assuming 96 DPI)
             $widthPt = ($width / 96) * 72;
             $heightPt = ($height / 96) * 72;
 
-            // Process config_json to prepare text elements (pass dimensions for conversion)
-            $textElements = $this->processConfigJson($template->config_json, $data, $widthPt, $heightPt);
-
-            // Render Blade template
-            $html = View::make('certificates.certificate', [
-                'width' => $widthPt,
-                'height' => $heightPt,
-                'backgroundImage' => $base64Image,
-                'textElements' => $textElements,
-            ])->render();
+            // Create HTML for PDF with the image
+            $pdfHtml = '
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+                <style>
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    body {
+                        margin: 0;
+                        padding: 0;
+                    }
+                    img {
+                        width: ' . $widthPt . 'pt;
+                        height: ' . $heightPt . 'pt;
+                        display: block;
+                    }
+                </style>
+            </head>
+            <body>
+                <img src="data:image/png;base64,' . $base64Image . '" />
+            </body>
+            </html>';
 
             // Generate PDF using DomPDF
-            $pdf = Pdf::loadHTML($html)
+            $pdf = Pdf::loadHTML($pdfHtml)
                 ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
                 ->setOption('isHtml5ParserEnabled', true)
                 ->setOption('isRemoteEnabled', true)
@@ -431,7 +473,10 @@ class CertificateGenerationService
 
             $pdf->save($fullPath);
 
-            // Clean up temporary file if it was downloaded
+            // Clean up temporary files
+            if (file_exists($tempPngPath)) {
+                @unlink($tempPngPath);
+            }
             if ($backgroundImagePath && file_exists($backgroundImagePath) && strpos($backgroundImagePath, sys_get_temp_dir()) === 0) {
                 @unlink($backgroundImagePath);
             }
@@ -446,7 +491,7 @@ class CertificateGenerationService
             ];
 
         } catch (\Exception $e) {
-            Log::error('PDF generation from Blade error', [
+            Log::error('PDF generation error', [
                 'template_id' => $template->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
