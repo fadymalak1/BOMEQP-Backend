@@ -446,16 +446,21 @@ class CertificateGenerationService
      */
     private function replaceTemplateVariables(string $html, array $data): string
     {
-        // First, remove elements (divs) that contain variables with null values
-        foreach ($data as $key => $value) {
+        // First, find all variables in the HTML template
+        preg_match_all('/\{\{\s*([^}]+)\s*\}\}/', $html, $matches);
+        $allVariables = array_unique($matches[1]);
+
+        // Remove elements (divs) that contain variables with null/empty values or variables not in $data
+        foreach ($allVariables as $variableName) {
+            $variableName = trim($variableName);
+            $value = $data[$variableName] ?? null;
+            
             if ($value === null || $value === '') {
                 // Find and remove the entire div element containing this variable
-                // Pattern matches: <div ...>{{variable}}</div>
-                // Try to match the div that contains the variable
-                $variablePattern = preg_quote('{{' . $key . '}}', '/');
-                $variablePatternSpaced = preg_quote('{{ ' . $key . ' }}', '/');
+                $variablePattern = preg_quote('{{' . $variableName . '}}', '/');
+                $variablePatternSpaced = preg_quote('{{ ' . $variableName . ' }}', '/');
                 
-                // More precise pattern: match div from opening tag to closing tag containing the variable
+                // Pattern: match div from opening tag to closing tag containing the variable
                 $pattern = '/<div[^>]*>[\s\S]*?(?:' . $variablePattern . '|' . $variablePatternSpaced . ')[\s\S]*?<\/div>/i';
                 
                 $html = preg_replace($pattern, '', $html);
@@ -475,6 +480,9 @@ class CertificateGenerationService
             $html = str_replace('{{' . $key . '}}', $safeValue, $html);
             $html = str_replace('{{ ' . $key . ' }}', $safeValue, $html);
         }
+
+        // Remove any remaining unreplaced variables (those not in $data)
+        $html = preg_replace('/\{\{\s*[^}]+\s*\}\}/', '', $html);
 
         // Clean up any empty lines or extra whitespace
         $html = preg_replace('/\n\s*\n/', "\n", $html);
