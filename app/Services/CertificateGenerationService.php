@@ -6,6 +6,8 @@ use App\Models\CertificateTemplate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Dompdf\Dompdf;
+use Dompdf\Options;
 
 class CertificateGenerationService
 {
@@ -331,7 +333,64 @@ class CertificateGenerationService
         $filePath = $directory . '/' . $fileName;
         $fullPath = Storage::disk('public')->path($filePath);
 
-        if ($format === 'png') {
+        if ($format === 'pdf') {
+            // Generate temporary PNG file
+            $tempPngPath = sys_get_temp_dir() . '/' . Str::random(40) . '.png';
+            imagepng($image, $tempPngPath, 9); // 9 = highest quality
+            
+            // Convert PNG to base64 for embedding in PDF
+            $imageData = file_get_contents($tempPngPath);
+            $base64Image = base64_encode($imageData);
+            
+            // Calculate dimensions in points (PDF uses points: 1 inch = 72 points)
+            // Assuming 96 DPI for screen images: width_px / 96 * 72 = width_pt
+            $widthPt = ($width / 96) * 72;
+            $heightPt = ($height / 96) * 72;
+            
+            // Create HTML for PDF
+            $html = '
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+                <style>
+                    body {
+                        margin: 0;
+                        padding: 0;
+                    }
+                    img {
+                        width: ' . $widthPt . 'pt;
+                        height: ' . $heightPt . 'pt;
+                        display: block;
+                    }
+                </style>
+            </head>
+            <body>
+                <img src="data:image/png;base64,' . $base64Image . '" />
+            </body>
+            </html>';
+            
+            // Configure DomPDF options
+            $options = new Options();
+            $options->set('isRemoteEnabled', true);
+            $options->set('isHtml5ParserEnabled', true);
+            $options->set('defaultFont', 'Arial');
+            
+            // Create DomPDF instance
+            $dompdf = new Dompdf($options);
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper([0, 0, $widthPt, $heightPt], 'portrait');
+            $dompdf->render();
+            
+            // Save PDF
+            file_put_contents($fullPath, $dompdf->output());
+            
+            // Clean up temporary PNG
+            if (file_exists($tempPngPath)) {
+                @unlink($tempPngPath);
+            }
+            
+        } elseif ($format === 'png') {
             imagepng($image, $fullPath, 9); // 9 = highest quality
         } elseif ($format === 'jpg' || $format === 'jpeg') {
             imagejpeg($image, $fullPath, 95); // 95 = high quality

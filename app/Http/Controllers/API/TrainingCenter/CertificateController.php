@@ -300,11 +300,24 @@ class CertificateController extends Controller
             }
 
             $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($filePath);
-            $mimeType = \Illuminate\Support\Facades\Storage::disk('public')->mimeType($filePath) ?? 'image/png';
+            
+            // Determine MIME type based on file extension
+            $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            $mimeType = match($extension) {
+                'pdf' => 'application/pdf',
+                'png' => 'image/png',
+                'jpg', 'jpeg' => 'image/jpeg',
+                default => 'application/octet-stream',
+            };
+            
             $fileName = basename($filePath);
+            
+            // For PDFs, use inline display; for images, use download
+            $disposition = $extension === 'pdf' ? 'inline' : 'attachment';
 
             return response()->download($fullPath, $fileName, [
                 'Content-Type' => $mimeType,
+                'Content-Disposition' => $disposition . '; filename="' . $fileName . '"',
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -472,8 +485,8 @@ class CertificateController extends Controller
                 'expiry_date' => $request->expiry_date ?? null,
             ];
 
-            // Generate certificate
-            $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'png');
+            // Generate certificate as PDF
+            $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'pdf');
 
             if (!$generationResult['success']) {
                 return response()->json([
