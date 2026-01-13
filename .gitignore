@@ -20,6 +20,8 @@
 /storage/pail
 /storage/api-docs/*.json
 /storage/api-docs/*.yaml
+/storage/fonts
+/resources/fonts
 /vendor
 Homestead.json
 Homestead.yaml
