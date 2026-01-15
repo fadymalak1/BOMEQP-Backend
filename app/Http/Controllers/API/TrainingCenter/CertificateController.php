@@ -29,6 +29,7 @@ class CertificateController extends Controller
         parameters: [
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["valid", "expired", "revoked"]), example: "valid"),
             new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John Doe", description: "Search by trainee name, certificate number, or course name"),
             new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
             new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
         ],
@@ -66,6 +67,22 @@ class CertificateController extends Controller
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('trainee_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('certificate_number', 'like', "%{$searchTerm}%")
+                    ->orWhere('verification_code', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                        $courseQuery->where('name', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        // Sort by newest first (created_at descending)
+        $query->orderBy('created_at', 'desc');
 
         $perPage = $request->get('per_page', 15);
         $certificates = $query->paginate($perPage);
