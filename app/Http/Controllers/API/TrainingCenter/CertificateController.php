@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\API\TrainingCenter;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\GenerateCertificateJob;
 use App\Models\Certificate;
 use App\Models\CertificateTemplate;
 use App\Models\TrainingClass;
@@ -485,16 +484,34 @@ class CertificateController extends Controller
                 'issue_date' => $request->issue_date,
                 'expiry_date' => $request->expiry_date,
                 'template_id' => $template->id,
-                'certificate_pdf_url' => '', // Will be updated by the job
+                'certificate_pdf_url' => '', // Will be updated immediately
                 'verification_code' => $this->generateVerificationCode(),
                 'status' => 'valid',
             ]);
 
-            // Dispatch job to generate PDF in background
-            GenerateCertificateJob::dispatch($certificate, $template, $certificateData);
+            // Generate certificate PDF immediately
+            $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'pdf');
+
+            if (!$generationResult['success']) {
+                // Update certificate status on failure
+                $certificate->update([
+                    'status' => 'revoked',
+                ]);
+
+                return response()->json([
+                    'message' => 'Failed to generate certificate PDF',
+                    'error' => $generationResult['message'] ?? 'Unknown error',
+                ], 500);
+            }
+
+            // Update certificate with PDF URL
+            $certificate->update([
+                'certificate_pdf_url' => $generationResult['file_url'],
+                'status' => 'valid',
+            ]);
 
             return response()->json([
-                'message' => 'Certificate is being generated',
+                'message' => 'Certificate generated successfully',
                 'certificate' => $certificate->load(['course', 'instructor', 'template']),
             ], 201);
 

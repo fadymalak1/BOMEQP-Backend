@@ -10,63 +10,41 @@
 
 ### 2. إضافة Cron Job في cPanel
 
-#### الطريقة (الموصى بها - Laravel Scheduler):
+#### الطريقة (تشغيل Command مباشرة - الأكثر موثوقية):
 
 1. **افتح cPanel**
 2. **اذهب إلى "Cron Jobs"**
 3. **اختر "Standard (cPanel v1.0)"**
 4. **أضف Cron Job جديد:**
 
-   **الإعدادات:**
-   - **Minute:** `*`
+   **الإعدادات (للتشغيل يومياً مرة واحدة في الساعة 12 صباحاً):**
+   - **Minute:** `0`
+   - **Hour:** `0`
+   - **Day:** `*`
+   - **Month:** `*`
+   - **Weekday:** `*`
+
+   **أو للتشغيل كل ساعة:**
+   - **Minute:** `0`
    - **Hour:** `*`
    - **Day:** `*`
    - **Month:** `*`
    - **Weekday:** `*`
 
-   **Command:**
+   **Command (استخدم مسارك الفعلي):**
    ```bash
-   cd /home/username/public_html && /usr/local/bin/php artisan schedule:run >> /dev/null 2>&1
+   cd /home/y2klh31gr5ug/public_html/v1 && /usr/local/bin/php artisan discount-codes:check-status >> /dev/null 2>&1
    ```
    
-   **ملاحظة:** استبدل `/home/username/public_html` بمسار مشروعك الفعلي على السيرفر
+   **ملاحظة:** 
+   - استبدل `/home/y2klh31gr5ug/public_html/v1` بمسار مشروعك الفعلي
+   - إذا `/usr/local/bin/php` لا يعمل، جرب `/usr/bin/php` أو `php` فقط
 
 5. **احفظ**
 
-هذا الـ cron job سيعمل **كل دقيقة** وLaravel Scheduler سيتولى تشغيل الأوامر المبرمجة (بما في ذلك `discount-codes:check-status` الذي يعمل يومياً).
+هذا الـ cron job سيعمل **يومياً** ويحدث حالة أكواد الخصم تلقائياً.
 
 ---
-
-#### الطريقة البديلة (تشغيل Command مباشرة):
-
-إذا أردت تشغيل Command مباشرة بدون Laravel Scheduler:
-
-1. **افتح cPanel**
-2. **اذهب إلى "Cron Jobs"**
-3. **اختر "Standard (cPanel v1.0)"**
-4. **أضف Cron Job جديد:**
-
-   **الإعدادات:**
-   - **Minute:** `0` (في بداية كل ساعة)
-   - **Hour:** `*` (كل ساعة)
-   - **Day:** `*`
-   - **Month:** `*`
-   - **Weekday:** `*`
-
-   **أو للتشغيل يومياً مرة واحدة:**
-
-   - **Minute:** `0`
-   - **Hour:** `0` (الساعة 12 صباحاً)
-   - **Day:** `*`
-   - **Month:** `*`
-   - **Weekday:** `*`
-
-   **Command:**
-   ```bash
-   cd /home/username/public_html && /usr/local/bin/php artisan discount-codes:check-status >> /dev/null 2>&1
-   ```
-
-5. **احفظ**
 
 ---
 
@@ -128,23 +106,34 @@ ORDER BY updated_at DESC;
 
 ## ملاحظات مهمة:
 
-1. **Laravel Scheduler أفضل**: استخدم `schedule:run` لأنه يدير جميع الأوامر المبرمجة (بما في ذلك `subscriptions:check-expired` و `discount-codes:check-status`)
+1. **مسار PHP**: تأكد من استخدام المسار الصحيح لـ PHP. جرّب:
+   - `/usr/local/bin/php` (الأكثر شيوعاً في cPanel)
+   - `/usr/bin/php`
+   - `php` فقط (إذا كان في PATH)
 
-2. **مسار PHP**: تأكد من استخدام المسار الصحيح لـ PHP (`/usr/local/bin/php` عادة)
+2. **مسار المشروع**: استبدل `/home/y2klh31gr5ug/public_html/v1` بمسار مشروعك الفعلي
 
-3. **مسار المشروع**: استبدل `/home/username/public_html` بمسار مشروعك الفعلي
+3. **التوقيت**: Command يعمل حسب التوقيت الذي تحدده (يومياً، كل ساعة، إلخ)
 
-4. **التوقيت**: Command مضبوط ليعمل **يومياً** تلقائياً عند استخدام Laravel Scheduler
+4. **الـ Logs**: جميع التغييرات تُسجل في `storage/logs/laravel.log`
 
-5. **الـ Logs**: جميع التغييرات تُسجل في `storage/logs/laravel.log`
+5. **للتأكد من مسار PHP**: أنشئ cron job مؤقت للتجربة:
+   ```bash
+   cd /home/y2klh31gr5ug/public_html/v1 && /usr/local/bin/php -v
+   ```
+   إذا ظهرت إصدار PHP، المسار صحيح.
 
 ---
 
-## مثال كامل للـ Cron Job في cPanel:
+## مثال كامل للـ Cron Job في cPanel (للتشغيل يومياً):
 
 ```
-* * * * * cd /home/username/public_html && /usr/local/bin/php artisan schedule:run >> /dev/null 2>&1
+0 0 * * * cd /home/y2klh31gr5ug/public_html/v1 && /usr/local/bin/php artisan discount-codes:check-status >> /dev/null 2>&1
 ```
 
-هذا سيعمل كل دقيقة ويشغل Laravel Scheduler، والذي بدوره سيشغل الأوامر المبرمجة.
+## مثال للتشغيل كل ساعة:
+
+```
+0 * * * * cd /home/y2klh31gr5ug/public_html/v1 && /usr/local/bin/php artisan discount-codes:check-status >> /dev/null 2>&1
+```
 
