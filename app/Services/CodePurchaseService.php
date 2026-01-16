@@ -642,6 +642,20 @@ private function processPayment(
 
             $transactionData['stripe_payment_intent_id'] = $request->payment_intent_id;
             $transactionData['status'] = 'completed';
+            
+            // Get commission and provider amounts from payment intent metadata if available
+            if ($paymentIntent && isset($paymentIntent->metadata)) {
+                $metadata = $paymentIntent->metadata;
+                if (isset($metadata['payment_type'])) {
+                    $transactionData['payment_type'] = $metadata['payment_type'];
+                }
+                // If destination charge, commission and provider amounts are already set in transactionData
+                // but we can verify from payment intent metadata
+                if (isset($metadata['commission_amount'])) {
+                    $transactionData['commission_amount'] = (float)$metadata['commission_amount'];
+                    $transactionData['provider_amount'] = $finalAmount - (float)$metadata['commission_amount'];
+                }
+            }
         } catch (\Exception $e) {
             $errorMessage = $e->getMessage();
             
@@ -796,14 +810,25 @@ private function processPayment(
         $transactionData['status'] = 'pending';
     }
 
-    // Calculate commissions
+    // Calculate commissions using ACC's global commission_percentage
+    // This commission is applied globally for all certificate purchases from this ACC
     $groupCommissionPercentage = $acc->commission_percentage ?? 0;
     $groupCommissionAmount = ($finalAmount * $groupCommissionPercentage) / 100;
     $accCommissionAmount = $finalAmount - $groupCommissionAmount;
 
+    // Save commission amounts in Transaction (for Group Admin and ACC)
+    $transactionData['commission_amount'] = $groupCommissionAmount; // Goes to Group Admin
+    $transactionData['provider_amount'] = $accCommissionAmount; // Goes to ACC
     $transactionData['group_commission_percentage'] = $groupCommissionPercentage;
     $transactionData['group_commission_amount'] = $groupCommissionAmount;
     $transactionData['acc_commission_amount'] = $accCommissionAmount;
+    
+    // Set payment_type if not already set (for destination charge)
+    if (!isset($transactionData['payment_type'])) {
+        $transactionData['payment_type'] = (!empty($acc->stripe_account_id) && $groupCommissionAmount > 0) 
+            ? 'destination_charge' 
+            : 'standard';
+    }
 
     return [
         'success' => true,

@@ -527,9 +527,12 @@ class CertificateController extends Controller
                 'status' => 'valid',
             ]);
 
+            // Reload certificate from database to ensure all fields including verification_code are included
+            $certificate = $certificate->fresh(['course', 'instructor', 'template']);
+
             return response()->json([
                 'message' => 'Certificate generated successfully',
-                'certificate' => $certificate->load(['course', 'instructor', 'template']),
+                'certificate' => $certificate,
             ], 201);
 
         } catch (\Exception $e) {
