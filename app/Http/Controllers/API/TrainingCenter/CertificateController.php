@@ -474,8 +474,9 @@ class CertificateController extends Controller
         }
 
         try {
-            // Generate certificate number
+            // Generate certificate number and verification code
             $certificateNumber = $this->generateCertificateNumber();
+            $verificationCode = $this->generateVerificationCode();
             
             // Auto-generate student_data from course information
             $certificateData = [
@@ -487,6 +488,7 @@ class CertificateController extends Controller
                 'certificate_number' => $certificateNumber,
                 'issue_date' => $request->issue_date,
                 'expiry_date' => $request->expiry_date ?? null,
+                'verification_code' => $verificationCode, // Add verification code to template data
             ];
 
             // Create certificate record first (with temporary URL or placeholder)
@@ -502,7 +504,7 @@ class CertificateController extends Controller
                 'expiry_date' => $request->expiry_date,
                 'template_id' => $template->id,
                 'certificate_pdf_url' => '', // Will be updated immediately
-                'verification_code' => $this->generateVerificationCode(),
+                'verification_code' => $verificationCode,
                 'status' => 'valid',
             ]);
 

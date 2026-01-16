@@ -61,15 +61,34 @@ class CertificateController extends Controller
             return response()->json(['message' => 'Certificate has expired'], 400);
         }
 
+        // Load relationships
+        $certificate->load(['course', 'trainingCenter', 'instructor', 'template']);
+
         return response()->json([
+            'valid' => true,
+            'message' => 'Certificate is valid',
             'certificate' => [
+                'id' => $certificate->id,
                 'certificate_number' => $certificate->certificate_number,
+                'verification_code' => $certificate->verification_code,
                 'trainee_name' => $certificate->trainee_name,
-                'course' => $certificate->course->name,
+                'trainee_id_number' => $certificate->trainee_id_number,
+                'course' => [
+                    'id' => $certificate->course->id,
+                    'name' => $certificate->course->name,
+                ],
                 'issue_date' => $certificate->issue_date,
                 'expiry_date' => $certificate->expiry_date,
                 'status' => $certificate->status,
-                'training_center' => $certificate->trainingCenter->name,
+                'training_center' => [
+                    'id' => $certificate->trainingCenter->id,
+                    'name' => $certificate->trainingCenter->name,
+                ],
+                'instructor' => $certificate->instructor ? [
+                    'id' => $certificate->instructor->id,
+                    'name' => $certificate->instructor->name,
+                ] : null,
+                'certificate_pdf_url' => $certificate->certificate_pdf_url,
             ],
         ]);
     }
