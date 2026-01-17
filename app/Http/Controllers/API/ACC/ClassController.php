@@ -18,6 +18,7 @@ class ClassController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by class name, course name, training center name, instructor name, or status"),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"]), example: "in_progress"),
             new OA\Parameter(name: "training_center_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
             new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
@@ -145,6 +146,27 @@ class ClassController extends Controller
 
         if ($request->has('date_to')) {
             $query->where('start_date', '<=', $request->date_to);
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('status', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                        $courseQuery->where('name', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                        $tcQuery->where('name', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
+                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                            ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"]);
+                    });
+            });
         }
 
         // Order by start date (upcoming first)

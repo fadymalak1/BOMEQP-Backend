@@ -17,6 +17,7 @@ class CertificateController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by trainee name, certificate number, verification code, course name, or training center name"),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["valid", "expired", "revoked"]), example: "valid"),
             new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
             new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
@@ -58,6 +59,22 @@ class CertificateController extends Controller
 
         if ($request->has('course_id')) {
             $query->where('course_id', $request->course_id);
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('trainee_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('certificate_number', 'like', "%{$searchTerm}%")
+                    ->orWhere('verification_code', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                        $courseQuery->where('name', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                        $tcQuery->where('name', 'like', "%{$searchTerm}%");
+                    });
+            });
         }
 
         $query->orderBy('created_at', 'desc');

@@ -61,14 +61,57 @@ class DiscountCodeController extends Controller
         // Search functionality
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
+            
+            // First, find course IDs that match the search term
+            $matchingCourseIds = \App\Models\Course::where('acc_id', $acc->id)
+                ->where(function ($courseQuery) use ($searchTerm) {
+                    $courseQuery->where('name', 'like', "%{$searchTerm}%")
+                        ->orWhere('name_ar', 'like', "%{$searchTerm}%")
+                        ->orWhere('code', 'like', "%{$searchTerm}%");
+                })
+                ->pluck('id')
+                ->toArray();
+            
+            $query->where(function ($q) use ($searchTerm, $matchingCourseIds) {
                 $q->where('code', 'like', "%{$searchTerm}%")
                     ->orWhere('status', 'like', "%{$searchTerm}%");
+                
+                // Search in course names if any courses match
+                if (!empty($matchingCourseIds)) {
+                    foreach ($matchingCourseIds as $courseId) {
+                        $q->orWhereJsonContains('applicable_course_ids', $courseId);
+                    }
+                }
             });
         }
 
         $perPage = $request->get('per_page', 15);
         $discountCodes = $query->orderBy('created_at', 'desc')->paginate($perPage);
+        
+        // Add course names to each discount code
+        $discountCodes->getCollection()->transform(function ($discountCode) {
+            $discountCodeData = $discountCode->toArray();
+            
+            // Get course names if applicable_course_ids exists
+            if (!empty($discountCode->applicable_course_ids) && is_array($discountCode->applicable_course_ids)) {
+                $courses = \App\Models\Course::whereIn('id', $discountCode->applicable_course_ids)
+                    ->select('id', 'name', 'name_ar', 'code')
+                    ->get();
+                
+                $discountCodeData['courses'] = $courses->map(function ($course) {
+                    return [
+                        'id' => $course->id,
+                        'name' => $course->name,
+                        'name_ar' => $course->name_ar,
+                        'code' => $course->code,
+                    ];
+                })->values();
+            } else {
+                $discountCodeData['courses'] = []; // Empty array if no specific courses (applies to all)
+            }
+            
+            return $discountCodeData;
+        });
         
         return response()->json($discountCodes);
     }

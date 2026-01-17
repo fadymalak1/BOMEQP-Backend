@@ -21,7 +21,7 @@ class InstructorController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, email, training center name, or request ID"),
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor full name (first name, last name, or both), email, training center name, or request ID"),
             new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "returned"]), description: "Filter by request status"),
             new OA\Parameter(name: "payment_status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "paid", "failed"]), description: "Filter by payment status"),
             new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
@@ -81,6 +81,8 @@ class InstructorController extends Controller
                     ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
                         $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
                             ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                            ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
                             ->orWhere('email', 'like', "%{$searchTerm}%");
                     })
                     ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {

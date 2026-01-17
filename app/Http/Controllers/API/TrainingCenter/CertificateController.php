@@ -58,7 +58,7 @@ class CertificateController extends Controller
         }
 
         $query = Certificate::where('training_center_id', $trainingCenter->id)
-            ->with(['course', 'instructor', 'template']);
+            ->with(['course.acc', 'instructor', 'template']);
 
         if ($request->has('course_id')) {
             $query->where('course_id', $request->course_id);
