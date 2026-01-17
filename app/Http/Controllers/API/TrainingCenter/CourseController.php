@@ -70,10 +70,7 @@ class CourseController extends Controller
         $query = Course::whereIn('acc_id', $approvedAccIds)
             ->where('status', 'active') // Only show active courses
             ->with(['acc', 'subCategory.category', 'certificatePricing' => function($query) {
-                $query->where('effective_to', null)
-                      ->orWhere('effective_to', '>=', now())
-                      ->orderBy('effective_from', 'desc')
-                      ->limit(1);
+                $query->latest('created_at')->limit(1);
             }]);
 
         // Optional filters
@@ -169,7 +166,7 @@ class CourseController extends Controller
                 'acc',
                 'subCategory.category',
                 'certificatePricing' => function($query) {
-                    $query->orderBy('effective_from', 'desc');
+                    $query->latest('created_at')->limit(1);
                 },
                 'classes'
             ])

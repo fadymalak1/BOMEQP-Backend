@@ -78,26 +78,16 @@ class CourseController extends Controller
 
         // Add current pricing to each course
         $coursesWithPricing = $courses->getCollection()->map(function ($course) {
-            // Get the current active pricing for this course
+            // Get the current pricing for this course (no effective dates - always active)
             $currentPricing = \App\Models\CertificatePricing::where('course_id', $course->id)
                 ->where('acc_id', $course->acc_id)
-                ->where('effective_from', '<=', now())
-                ->where(function ($q) {
-                    $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
-                })
-                ->latest('effective_from')
+                ->latest('created_at')
                 ->first();
 
-            // Get ACC to retrieve commission percentage (set by Group Admin)
-            $acc = $course->acc;
-
-            // Add pricing information to course (commission comes from ACC, set by Group Admin)
+            // Add pricing information to course (only base_price and currency)
             $course->current_price = $currentPricing ? [
                 'base_price' => $currentPricing->base_price,
                 'currency' => $currentPricing->currency ?? 'USD',
-                'group_commission_percentage' => $acc->commission_percentage ?? 0, // From ACC, set by Group Admin
-                'effective_from' => $currentPricing->effective_from,
-                'effective_to' => $currentPricing->effective_to,
             ] : null;
 
             return $course;

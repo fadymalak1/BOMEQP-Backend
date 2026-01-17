@@ -359,11 +359,6 @@ class CourseController extends Controller
         $request->validate([
             'base_price' => 'required|numeric|min:0',
             'currency' => 'required|string|size:3',
-            'group_commission_percentage' => 'required|numeric|min:0|max:100',
-            'training_center_commission_percentage' => 'required|numeric|min:0|max:100',
-            'instructor_commission_percentage' => 'required|numeric|min:0|max:100',
-            'effective_from' => 'required|date',
-            'effective_to' => 'nullable|date|after:effective_from',
         ]);
 
         $user = $request->user();
@@ -440,11 +435,6 @@ class CourseController extends Controller
         $request->validate([
             'base_price' => 'sometimes|numeric|min:0',
             'currency' => 'sometimes|string|size:3',
-            'group_commission_percentage' => 'sometimes|numeric|min:0|max:100',
-            'training_center_commission_percentage' => 'sometimes|numeric|min:0|max:100',
-            'instructor_commission_percentage' => 'sometimes|numeric|min:0|max:100',
-            'effective_from' => 'sometimes|date',
-            'effective_to' => 'nullable|date|after:effective_from',
         ]);
 
         $user = $request->user();
