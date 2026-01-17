@@ -31,6 +31,11 @@ class CourseController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "courses", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 150),
+                            new OA\Property(property: "active", type: "integer", example: 120),
+                            new OA\Property(property: "inactive", type: "integer", example: 30)
+                        ]),
                         new OA\Property(property: "pagination", type: "object")
                     ]
                 )
@@ -98,8 +103,16 @@ class CourseController extends Controller
             return $course;
         });
 
+        // Get statistics (total counts regardless of filters)
+        $statistics = [
+            'total' => Course::count(),
+            'active' => Course::where('status', 'active')->count(),
+            'inactive' => Course::where('status', 'inactive')->count(),
+        ];
+
         return response()->json([
             'courses' => $coursesWithPricing->values(),
+            'statistics' => $statistics,
             'pagination' => [
                 'current_page' => $courses->currentPage(),
                 'last_page' => $courses->lastPage(),

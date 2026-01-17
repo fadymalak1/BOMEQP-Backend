@@ -36,6 +36,10 @@ class ACCController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "applications", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 10),
+                            new OA\Property(property: "pending", type: "integer", example: 10)
+                        ]),
                         new OA\Property(property: "current_page", type: "integer", example: 1),
                         new OA\Property(property: "per_page", type: "integer", example: 15),
                         new OA\Property(property: "total", type: "integer", example: 50),
@@ -65,8 +69,15 @@ class ACCController extends Controller
         $perPage = $request->get('per_page', 15);
         $applications = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
+        // Get statistics (total count of pending applications regardless of filters)
+        $statistics = [
+            'total' => ACC::where('status', 'pending')->count(),
+            'pending' => ACC::where('status', 'pending')->count(),
+        ];
+
         return response()->json([
             'applications' => $applications->items(),
+            'statistics' => $statistics,
             'current_page' => $applications->currentPage(),
             'per_page' => $applications->perPage(),
             'total' => $applications->total(),
@@ -290,6 +301,14 @@ class ACCController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "accs", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 50),
+                            new OA\Property(property: "pending", type: "integer", example: 5),
+                            new OA\Property(property: "active", type: "integer", example: 30),
+                            new OA\Property(property: "suspended", type: "integer", example: 5),
+                            new OA\Property(property: "expired", type: "integer", example: 5),
+                            new OA\Property(property: "rejected", type: "integer", example: 5)
+                        ]),
                         new OA\Property(property: "current_page", type: "integer", example: 1),
                         new OA\Property(property: "per_page", type: "integer", example: 15),
                         new OA\Property(property: "total", type: "integer", example: 50),
@@ -325,8 +344,19 @@ class ACCController extends Controller
         $perPage = $request->get('per_page', 15);
         $accs = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
+        // Get statistics (total counts regardless of filters)
+        $statistics = [
+            'total' => ACC::count(),
+            'pending' => ACC::where('status', 'pending')->count(),
+            'active' => ACC::where('status', 'active')->count(),
+            'suspended' => ACC::where('status', 'suspended')->count(),
+            'expired' => ACC::where('status', 'expired')->count(),
+            'rejected' => ACC::where('status', 'rejected')->count(),
+        ];
+
         return response()->json([
             'accs' => $accs->items(),
+            'statistics' => $statistics,
             'current_page' => $accs->currentPage(),
             'per_page' => $accs->perPage(),
             'total' => $accs->total(),

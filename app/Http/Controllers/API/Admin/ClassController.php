@@ -29,6 +29,13 @@ class ClassController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "classes", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 500),
+                            new OA\Property(property: "scheduled", type: "integer", example: 100),
+                            new OA\Property(property: "in_progress", type: "integer", example: 50),
+                            new OA\Property(property: "completed", type: "integer", example: 300),
+                            new OA\Property(property: "cancelled", type: "integer", example: 50)
+                        ]),
                         new OA\Property(property: "current_page", type: "integer", example: 1),
                         new OA\Property(property: "per_page", type: "integer", example: 15),
                         new OA\Property(property: "total", type: "integer", example: 50),
@@ -84,8 +91,18 @@ class ClassController extends Controller
         $perPage = $request->get('per_page', 15);
         $classes = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
+        // Get statistics (total counts regardless of filters)
+        $statistics = [
+            'total' => \App\Models\TrainingClass::count(),
+            'scheduled' => \App\Models\TrainingClass::where('status', 'scheduled')->count(),
+            'in_progress' => \App\Models\TrainingClass::where('status', 'in_progress')->count(),
+            'completed' => \App\Models\TrainingClass::where('status', 'completed')->count(),
+            'cancelled' => \App\Models\TrainingClass::where('status', 'cancelled')->count(),
+        ];
+
         return response()->json([
             'classes' => $classes->items(),
+            'statistics' => $statistics,
             'current_page' => $classes->currentPage(),
             'per_page' => $classes->perPage(),
             'total' => $classes->total(),

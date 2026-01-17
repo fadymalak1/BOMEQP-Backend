@@ -30,6 +30,13 @@ class TrainingCenterController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "training_centers", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 100),
+                            new OA\Property(property: "pending", type: "integer", example: 10),
+                            new OA\Property(property: "active", type: "integer", example: 70),
+                            new OA\Property(property: "suspended", type: "integer", example: 10),
+                            new OA\Property(property: "inactive", type: "integer", example: 10)
+                        ]),
                         new OA\Property(property: "pagination", type: "object")
                     ]
                 )
@@ -62,8 +69,18 @@ class TrainingCenterController extends Controller
 
         $trainingCenters = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 15);
 
+        // Get statistics (total counts regardless of filters)
+        $statistics = [
+            'total' => TrainingCenter::count(),
+            'pending' => TrainingCenter::where('status', 'pending')->count(),
+            'active' => TrainingCenter::where('status', 'active')->count(),
+            'suspended' => TrainingCenter::where('status', 'suspended')->count(),
+            'inactive' => TrainingCenter::where('status', 'inactive')->count(),
+        ];
+
         return response()->json([
             'training_centers' => $trainingCenters->items(),
+            'statistics' => $statistics,
             'pagination' => [
                 'current_page' => $trainingCenters->currentPage(),
                 'last_page' => $trainingCenters->lastPage(),

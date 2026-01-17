@@ -31,6 +31,13 @@ class InstructorController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "instructors", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 200),
+                            new OA\Property(property: "pending", type: "integer", example: 20),
+                            new OA\Property(property: "active", type: "integer", example: 150),
+                            new OA\Property(property: "suspended", type: "integer", example: 15),
+                            new OA\Property(property: "inactive", type: "integer", example: 15)
+                        ]),
                         new OA\Property(property: "pagination", type: "object")
                     ]
                 )
@@ -66,8 +73,18 @@ class InstructorController extends Controller
 
         $instructors = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 15);
 
+        // Get statistics (total counts regardless of filters)
+        $statistics = [
+            'total' => Instructor::count(),
+            'pending' => Instructor::where('status', 'pending')->count(),
+            'active' => Instructor::where('status', 'active')->count(),
+            'suspended' => Instructor::where('status', 'suspended')->count(),
+            'inactive' => Instructor::where('status', 'inactive')->count(),
+        ];
+
         return response()->json([
             'instructors' => $instructors->items(),
+            'statistics' => $statistics,
             'pagination' => [
                 'current_page' => $instructors->currentPage(),
                 'last_page' => $instructors->lastPage(),
