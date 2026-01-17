@@ -5,36 +5,44 @@ namespace App\Http\Controllers\API\TrainingCenter;
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class WalletController extends Controller
 {
 
-    /**
-     * Get all transactions for Training Center
-     * 
-     * Returns comprehensive transaction details including payer, payee, commission ledger, and reference information.
-     * 
-     * @group Training Center Financial
-     * @authenticated
-     * 
-     * @queryParam type string Filter by transaction type (subscription, code_purchase, material_purchase, course_purchase, commission, settlement, instructor_authorization). Example: instructor_authorization
-     * @queryParam status string Filter by status (pending, completed, failed, refunded). Example: completed
-     * @queryParam date_from date Filter transactions from date (YYYY-MM-DD). Example: 2024-01-01
-     * @queryParam date_to date Filter transactions to date (YYYY-MM-DD). Example: 2024-12-31
-     * @queryParam per_page integer Items per page. Example: 15
-     * @queryParam page integer Page number. Example: 1
-     * 
-     * @response 200 {
-     *   "data": [...],
-     *   "summary": {
-     *     "total_transactions": 30,
-     *     "total_spent": 15000.00,
-     *     "total_received": 2000.00,
-     *     "completed_amount": 12000.00,
-     *     "pending_amount": 3000.00
-     *   }
-     * }
-     */
+    #[OA\Get(
+        path: "/training-center/financial/transactions",
+        summary: "Get Training Center transactions",
+        description: "Get all transactions for Training Center with comprehensive details including payer, payee, commission ledger, and reference information.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by transaction ID, type, status, description, payer name (ACC/Training Center/Instructor), payee name (ACC/Training Center/Instructor), or payment gateway transaction ID"),
+            new OA\Parameter(name: "type", in: "query", schema: new OA\Schema(type: "string", enum: ["subscription", "code_purchase", "material_purchase", "course_purchase", "commission", "settlement", "instructor_authorization"]), example: "instructor_authorization"),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "completed", "failed", "refunded"]), example: "completed"),
+            new OA\Parameter(name: "date_from", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-01-01"),
+            new OA\Parameter(name: "date_to", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-12-31"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Transactions retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "summary", type: "object"),
+                        new OA\Property(property: "current_page", type: "integer", example: 1),
+                        new OA\Property(property: "per_page", type: "integer", example: 15),
+                        new OA\Property(property: "total", type: "integer", example: 50)
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function transactions(Request $request)
     {
         $user = $request->user();
@@ -68,8 +76,98 @@ class WalletController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            
+            // Get matching IDs for each entity type
+            $matchingAccIds = \App\Models\ACC::where('name', 'like', "%{$searchTerm}%")
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $matchingTrainingCenterIds = \App\Models\TrainingCenter::where('name', 'like', "%{$searchTerm}%")
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $matchingInstructorIds = \App\Models\Instructor::where('first_name', 'like', "%{$searchTerm}%")
+                ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $query->where(function ($q) use ($searchTerm, $matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhere('transaction_type', 'like', "%{$searchTerm}%")
+                    ->orWhere('status', 'like', "%{$searchTerm}%")
+                    ->orWhere('description', 'like', "%{$searchTerm}%")
+                    ->orWhere('payment_gateway_transaction_id', 'like', "%{$searchTerm}%")
+                    ->orWhere('amount', 'like', "%{$searchTerm}%")
+                    ->orWhere('currency', 'like', "%{$searchTerm}%")
+                    // Search in payer
+                    ->orWhere(function ($payerQuery) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                        $payerQuery->where(function ($q) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                            if (!empty($matchingAccIds)) {
+                                $q->where('payer_type', 'acc')->whereIn('payer_id', $matchingAccIds);
+                            }
+                            if (!empty($matchingTrainingCenterIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingTrainingCenterIds) {
+                                    $subQ->where('payer_type', 'training_center')->whereIn('payer_id', $matchingTrainingCenterIds);
+                                });
+                            }
+                            if (!empty($matchingInstructorIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingInstructorIds) {
+                                    $subQ->where('payer_type', 'instructor')->whereIn('payer_id', $matchingInstructorIds);
+                                });
+                            }
+                        });
+                    })
+                    // Search in payee
+                    ->orWhere(function ($payeeQuery) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                        $payeeQuery->where(function ($q) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                            if (!empty($matchingAccIds)) {
+                                $q->where('payee_type', 'acc')->whereIn('payee_id', $matchingAccIds);
+                            }
+                            if (!empty($matchingTrainingCenterIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingTrainingCenterIds) {
+                                    $subQ->where('payee_type', 'training_center')->whereIn('payee_id', $matchingTrainingCenterIds);
+                                });
+                            }
+                            if (!empty($matchingInstructorIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingInstructorIds) {
+                                    $subQ->where('payee_type', 'instructor')->whereIn('payee_id', $matchingInstructorIds);
+                                });
+                            }
+                        });
+                    });
+            });
+        }
+
+        // Get summary statistics (before search filter for accurate totals)
+        $summaryBaseQuery = Transaction::where(function ($q) use ($trainingCenter) {
+            $q->where('payer_type', 'training_center')->where('payer_id', $trainingCenter->id)
+              ->orWhere('payee_type', 'training_center')->where('payee_id', $trainingCenter->id);
+        });
+        
+        // Apply same filters to summary (except search)
+        if ($request->has('type')) {
+            $summaryBaseQuery->where('transaction_type', $request->type);
+        }
+        if ($request->has('status')) {
+            $summaryBaseQuery->where('status', $request->status);
+        }
+        if ($request->has('date_from')) {
+            $summaryBaseQuery->whereDate('created_at', '>=', $request->date_from);
+        }
+        if ($request->has('date_to')) {
+            $summaryBaseQuery->whereDate('created_at', '<=', $request->date_to);
+        }
+        
         // Get summary statistics
-        $summaryQuery = clone $query;
+        $summaryQuery = clone $summaryBaseQuery;
         $summary = [
             'total_transactions' => $summaryQuery->count(),
             'total_spent' => round($summaryQuery->where('payer_type', 'training_center')->where('payer_id', $trainingCenter->id)->sum('amount'), 2),
