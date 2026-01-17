@@ -18,6 +18,7 @@ class FinancialController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by transaction ID, type, status, description, payer name, payee name, or payment gateway transaction ID"),
             new OA\Parameter(name: "type", in: "query", schema: new OA\Schema(type: "string", enum: ["subscription", "code_purchase", "material_purchase", "course_purchase", "commission", "settlement"]), example: "subscription"),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "completed", "failed", "refunded"]), example: "completed"),
             new OA\Parameter(name: "date_from", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-01-01"),
@@ -76,12 +77,46 @@ class FinancialController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhere('transaction_type', 'like', "%{$searchTerm}%")
+                    ->orWhere('status', 'like', "%{$searchTerm}%")
+                    ->orWhere('description', 'like', "%{$searchTerm}%")
+                    ->orWhere('payment_gateway_transaction_id', 'like', "%{$searchTerm}%")
+                    ->orWhere('amount', 'like', "%{$searchTerm}%")
+                    ->orWhere('currency', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        // Get summary statistics (before search filter for accurate totals)
+        $summaryBaseQuery = Transaction::where(function ($q) use ($acc) {
+            $q->where('payee_type', 'acc')->where('payee_id', $acc->id)
+              ->orWhere('payer_type', 'acc')->where('payer_id', $acc->id);
+        });
+        
+        // Apply same filters to summary (except search)
+        if ($request->has('type')) {
+            $summaryBaseQuery->where('transaction_type', $request->type);
+        }
+        if ($request->has('status')) {
+            $summaryBaseQuery->where('status', $request->status);
+        }
+        if ($request->has('date_from')) {
+            $summaryBaseQuery->whereDate('created_at', '>=', $request->date_from);
+        }
+        if ($request->has('date_to')) {
+            $summaryBaseQuery->whereDate('created_at', '<=', $request->date_to);
+        }
+        
         // Get summary statistics
-        $summaryQuery = clone $query;
-        $receivedTransactions = $summaryQuery->where('payee_type', 'acc')->where('payee_id', $acc->id)->get();
-        $paidTransactions = $summaryQuery->where('payer_type', 'acc')->where('payer_id', $acc->id)->get();
-        $completedTransactions = $summaryQuery->where('status', 'completed')->get();
-        $pendingTransactions = $summaryQuery->where('status', 'pending')->get();
+        $summaryQuery = clone $summaryBaseQuery;
+        $receivedTransactions = (clone $summaryBaseQuery)->where('payee_type', 'acc')->where('payee_id', $acc->id)->get();
+        $paidTransactions = (clone $summaryBaseQuery)->where('payer_type', 'acc')->where('payer_id', $acc->id)->get();
+        $completedTransactions = (clone $summaryBaseQuery)->where('status', 'completed')->get();
+        $pendingTransactions = (clone $summaryBaseQuery)->where('status', 'pending')->get();
         
         $summary = [
             'total_transactions' => $summaryQuery->count(),
