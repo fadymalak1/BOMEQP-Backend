@@ -23,35 +23,25 @@ class InstructorController extends Controller
     #[OA\Get(
         path: "/training-center/instructors",
         summary: "List instructors",
-        description: "Get all instructors for the authenticated training center.",
+        description: "Get all instructors for the authenticated training center with pagination and search.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, email, phone, or ID number"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "Instructors retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(
-                            property: "instructors", 
-                            type: "array", 
-                            items: new OA\Items(
-                                type: "object",
-                                properties: [
-                                    new OA\Property(property: "id", type: "integer"),
-                                    new OA\Property(property: "first_name", type: "string"),
-                                    new OA\Property(property: "last_name", type: "string"),
-                                    new OA\Property(property: "email", type: "string"),
-                                    new OA\Property(property: "phone", type: "string"),
-                                    new OA\Property(
-                                        property: "courses",
-                                        type: "array",
-                                        description: "Courses the instructor is authorized to teach",
-                                        items: new OA\Items(type: "object")
-                                    )
-                                ]
-                            )
-                        )
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
                     ]
                 )
             ),
@@ -68,13 +58,27 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $instructors = Instructor::where('training_center_id', $trainingCenter->id)
+        $query = Instructor::where('training_center_id', $trainingCenter->id)
             ->with(['courses' => function($query) {
                 $query->with(['subCategory', 'acc']);
-            }])
-            ->get();
+            }]);
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('first_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhere('phone', 'like', "%{$searchTerm}%")
+                    ->orWhere('id_number', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $instructors = $query->orderBy('created_at', 'desc')->paginate($perPage);
             
-        return response()->json(['instructors' => $instructors]);
+        return response()->json($instructors);
     }
 
     #[OA\Post(
@@ -626,6 +630,37 @@ class InstructorController extends Controller
      * Get authorization requests with payment status
      * GET /api/training-center/instructors/authorizations
      */
+    #[OA\Get(
+        path: "/training-center/instructors/authorizations",
+        summary: "List instructor authorization requests",
+        description: "Get all instructor authorization requests for the authenticated training center with pagination and search.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, ACC name, or authorization ID"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "returned"]), description: "Filter by authorization status"),
+            new OA\Parameter(name: "payment_status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "paid", "failed"]), description: "Filter by payment status"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Authorizations retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Training center not found")
+        ]
+    )]
     public function authorizations(Request $request)
     {
         $user = $request->user();
@@ -657,9 +692,25 @@ class InstructorController extends Controller
             }
         }
 
-        $authorizations = $query->orderBy('request_date', 'desc')->get();
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
+                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('last_name', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('acc', function ($accQuery) use ($searchTerm) {
+                        $accQuery->where('name', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
 
-        return response()->json(['authorizations' => $authorizations]);
+        $perPage = $request->get('per_page', 15);
+        $authorizations = $query->orderBy('request_date', 'desc')->paginate($perPage);
+
+        return response()->json($authorizations);
     }
 }
 

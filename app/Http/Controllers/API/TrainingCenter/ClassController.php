@@ -14,40 +14,26 @@ class ClassController extends Controller
     #[OA\Get(
         path: "/training-center/classes",
         summary: "List training classes",
-        description: "Get all training classes for the authenticated training center with their trainees list.",
+        description: "Get all training classes for the authenticated training center with pagination and search.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by class name, course name, instructor name, or status"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["scheduled", "in_progress", "completed", "cancelled"]), description: "Filter by class status"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "Classes retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(
-                            property: "classes",
-                            type: "array",
-                            items: new OA\Items(
-                                type: "object",
-                                properties: [
-                                    new OA\Property(property: "id", type: "integer"),
-                                    new OA\Property(property: "trainees", type: "array", items: new OA\Items(
-                                        type: "object",
-                                        properties: [
-                                            new OA\Property(property: "id", type: "integer"),
-                                            new OA\Property(property: "first_name", type: "string"),
-                                            new OA\Property(property: "last_name", type: "string"),
-                                            new OA\Property(property: "email", type: "string"),
-                                            new OA\Property(property: "phone", type: "string", nullable: true),
-                                            new OA\Property(property: "id_number", type: "string", nullable: true),
-                                            new OA\Property(property: "status", type: "string", nullable: true),
-                                            new OA\Property(property: "enrolled_at", type: "string", format: "date-time", nullable: true),
-                                            new OA\Property(property: "completed_at", type: "string", format: "date-time", nullable: true),
-                                        ]
-                                    )),
-                                    new OA\Property(property: "trainees_count", type: "integer", description: "Total number of trainees in the class")
-                                ]
-                            )
-                        )
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
                     ]
                 )
             ),
@@ -64,10 +50,37 @@ class ClassController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $classes = TrainingClass::where('training_center_id', $trainingCenter->id)
-            ->with(['course', 'instructor', 'trainees', 'createdBy'])
-            ->get()
-            ->map(function ($class) {
+        $query = TrainingClass::where('training_center_id', $trainingCenter->id)
+            ->with(['course', 'instructor', 'trainees', 'createdBy']);
+
+        // Filter by status if provided
+        if ($request->has('status')) {
+            $validStatuses = ['scheduled', 'in_progress', 'completed', 'cancelled'];
+            if (in_array($request->status, $validStatuses)) {
+                $query->where('status', $request->status);
+            }
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('status', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                        $courseQuery->where('name', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
+                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('last_name', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $classes = $query->orderBy('created_at', 'desc')
+            ->paginate($perPage)
+            ->through(function ($class) {
                 $classData = $class->toArray();
                 // Format trainees data
                 $classData['trainees'] = $class->trainees->map(function ($trainee) {
@@ -92,7 +105,7 @@ class ClassController extends Controller
                 return $classData;
             });
 
-        return response()->json(['classes' => $classes]);
+        return response()->json($classes);
     }
 
     #[OA\Post(

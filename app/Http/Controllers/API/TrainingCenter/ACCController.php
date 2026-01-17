@@ -17,26 +17,50 @@ class ACCController extends Controller
     #[OA\Get(
         path: "/training-center/accs",
         summary: "List active ACCs",
-        description: "Get all active ACCs available for authorization requests.",
+        description: "Get all active ACCs available for authorization requests with pagination and search.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by ACC name, legal name, email, or country"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "ACCs retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "accs", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
                     ]
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated")
         ]
     )]
-    public function index()
+    public function index(Request $request)
     {
-        $accs = ACC::where('status', 'active')->get();
-        return response()->json(['accs' => $accs]);
+        $query = ACC::where('status', 'active');
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('legal_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhere('country', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $accs = $query->orderBy('name', 'asc')->paginate($perPage);
+
+        return response()->json($accs);
     }
 
     #[OA\Post(
