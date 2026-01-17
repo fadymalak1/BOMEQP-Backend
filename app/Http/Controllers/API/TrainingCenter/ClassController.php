@@ -83,6 +83,10 @@ class ClassController extends Controller
                         'completed_at' => $trainee->pivot->completed_at ?? null,
                     ];
                 });
+                // Convert exam_score to int if it exists
+                if (isset($classData['exam_score']) && $classData['exam_score'] !== null) {
+                    $classData['exam_score'] = (int) round($classData['exam_score']);
+                }
                 // Keep enrolled_count for backward compatibility
                 $classData['trainees_count'] = $class->trainees->count();
                 return $classData;
