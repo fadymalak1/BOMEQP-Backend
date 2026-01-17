@@ -473,26 +473,27 @@ class CertificateController extends Controller
             ], 404);
         }
 
-        // Check if there's already a certificate for this trainee in this training class
-        if ($request->training_class_id) {
-            $existingCertificate = Certificate::where('training_class_id', $request->training_class_id)
-                ->where('training_center_id', $trainingCenter->id)
-                ->where('trainee_name', $request->trainee_name)
-                ->whereIn('status', ['valid', 'expired']) // Check for valid or expired certificates
-                ->first();
+        // Check if there's already a certificate for this trainee for this course
+        // A trainee can only have one certificate per course
+        $existingCertificate = Certificate::where('course_id', $request->course_id)
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('trainee_name', $request->trainee_name)
+            ->whereIn('status', ['valid', 'expired']) // Check for valid or expired certificates
+            ->first();
 
-            if ($existingCertificate) {
-                return response()->json([
-                    'message' => 'A certificate already exists for this trainee in this training class',
-                    'existing_certificate' => [
-                        'id' => $existingCertificate->id,
-                        'certificate_number' => $existingCertificate->certificate_number,
-                        'verification_code' => $existingCertificate->verification_code,
-                        'status' => $existingCertificate->status,
-                        'issue_date' => $existingCertificate->issue_date,
-                    ]
-                ], 409); // Conflict status code
-            }
+        if ($existingCertificate) {
+            return response()->json([
+                'message' => 'A certificate already exists for this trainee for this course. Each trainee can only have one certificate per course.',
+                'existing_certificate' => [
+                    'id' => $existingCertificate->id,
+                    'certificate_number' => $existingCertificate->certificate_number,
+                    'verification_code' => $existingCertificate->verification_code,
+                    'status' => $existingCertificate->status,
+                    'issue_date' => $existingCertificate->issue_date,
+                    'course_id' => $existingCertificate->course_id,
+                    'course_name' => $course->name,
+                ]
+            ], 409); // Conflict status code
         }
 
         try {

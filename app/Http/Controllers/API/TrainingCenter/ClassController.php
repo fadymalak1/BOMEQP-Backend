@@ -50,6 +50,17 @@ class ClassController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
+        // Base query for all classes (for total count)
+        $baseQuery = TrainingClass::where('training_center_id', $trainingCenter->id);
+
+        // Calculate total counts for each status (before any filters)
+        $totalCount = $baseQuery->count();
+        $completedCount = (clone $baseQuery)->where('status', 'completed')->count();
+        $scheduledCount = (clone $baseQuery)->where('status', 'scheduled')->count();
+        $inProgressCount = (clone $baseQuery)->where('status', 'in_progress')->count();
+        $cancelledCount = (clone $baseQuery)->where('status', 'cancelled')->count();
+
+        // Query for filtered results
         $query = TrainingClass::where('training_center_id', $trainingCenter->id)
             ->with(['course', 'instructor', 'trainees', 'createdBy']);
 
@@ -105,7 +116,22 @@ class ClassController extends Controller
                 return $classData;
             });
 
-        return response()->json($classes);
+        // Add statistics to response and override total
+        $response = $classes->toArray();
+        
+        // Override total with the actual total count (before filters)
+        $response['total'] = $totalCount;
+        
+        // Add statistics
+        $response['statistics'] = [
+            'total' => $totalCount,
+            'completed' => $completedCount,
+            'scheduled' => $scheduledCount,
+            'in_progress' => $inProgressCount,
+            'cancelled' => $cancelledCount,
+        ];
+
+        return response()->json($response);
     }
 
     #[OA\Post(

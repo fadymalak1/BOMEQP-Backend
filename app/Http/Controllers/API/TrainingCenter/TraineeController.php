@@ -5,9 +5,11 @@ namespace App\Http\Controllers\API\TrainingCenter;
 use App\Http\Controllers\Controller;
 use App\Models\Trainee;
 use App\Models\TrainingCenter;
+use App\Models\TrainingClass;
 use App\Services\TraineeManagementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use OpenApi\Attributes as OA;
 
 class TraineeController extends Controller
@@ -27,7 +29,7 @@ class TraineeController extends Controller
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string"), example: "active"),
-            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John", description: "Search by trainee full name (first name, last name, or both), email, phone, or ID number"),
             new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
             new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
         ],
@@ -63,11 +65,13 @@ class TraineeController extends Controller
             $query->where('status', $request->status);
         }
 
-        if ($request->has('search')) {
+        if ($request->has('search') && !empty($request->search)) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('first_name', 'like', "%{$search}%")
                   ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$search}%"])
+                  ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$search}%"])
                   ->orWhere('email', 'like', "%{$search}%")
                   ->orWhere('phone', 'like', "%{$search}%")
                   ->orWhere('id_number', 'like', "%{$search}%");
