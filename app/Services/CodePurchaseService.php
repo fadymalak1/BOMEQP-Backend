@@ -79,18 +79,42 @@ class CodePurchaseService
             ];
         }
 
-        // Get pricing
+        // Get pricing (effective_from and effective_to are date fields, not datetime)
+        $today = now()->toDateString();
         $pricing = CertificatePricing::where('course_id', $request->course_id)
             ->where('acc_id', $request->acc_id)
-            ->where('effective_from', '<=', now())
-            ->where(function ($q) {
-                $q->whereNull('effective_to')->orWhere('effective_to', '>=', now());
+            ->where('effective_from', '<=', $today)
+            ->where(function ($q) use ($today) {
+                $q->whereNull('effective_to')->orWhere('effective_to', '>=', $today);
             })
-            ->latest()
+            ->latest('effective_from')
             ->first();
 
         if (!$pricing) {
-            return ['valid' => false, 'message' => 'Pricing not found for this course', 'code' => 404];
+            // Check if pricing exists but is not active (for better error message)
+            $inactivePricing = CertificatePricing::where('course_id', $request->course_id)
+                ->where('acc_id', $request->acc_id)
+                ->first();
+            
+            if ($inactivePricing) {
+                $message = 'No active price found for this course. ';
+                $today = now()->toDateString();
+                
+                if ($inactivePricing->effective_from > $today) {
+                    $message .= 'Price will be effective from ' . $inactivePricing->effective_from . '.';
+                } elseif ($inactivePricing->effective_to && $inactivePricing->effective_to < $today) {
+                    $message .= 'Price expired on ' . $inactivePricing->effective_to . '.';
+                } else {
+                    $message .= 'Please contact the ACC to set up pricing for this course.';
+                }
+                return ['valid' => false, 'message' => $message, 'code' => 404];
+            }
+            
+            return [
+                'valid' => false, 
+                'message' => 'No price found for this course. Please contact the ACC to set up pricing for this course.', 
+                'code' => 404
+            ];
         }
 
         return [
