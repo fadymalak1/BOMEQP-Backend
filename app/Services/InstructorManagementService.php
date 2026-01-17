@@ -236,6 +236,40 @@ class InstructorManagementService
      */
     public function requestAuthorization(Request $request, Instructor $instructor, TrainingCenter $trainingCenter): array
     {
+        // Validate that Training Center has authorization with the requested ACC
+        $trainingCenterAccAuthorization = \App\Models\TrainingCenterAccAuthorization::where('training_center_id', $trainingCenter->id)
+            ->where('acc_id', $request->acc_id)
+            ->where('status', 'approved')
+            ->first();
+
+        if (!$trainingCenterAccAuthorization) {
+            return [
+                'success' => false,
+                'message' => 'Training Center does not have authorization with this ACC. Please request authorization for the ACC first.',
+                'code' => 403
+            ];
+        }
+
+        // Check if there's already an active authorization request for this instructor and ACC
+        $existingAuthorization = InstructorAccAuthorization::where('instructor_id', $instructor->id)
+            ->where('acc_id', $request->acc_id)
+            ->where('training_center_id', $trainingCenter->id)
+            ->whereIn('status', ['pending', 'approved'])
+            ->first();
+
+        if ($existingAuthorization) {
+            $statusMessage = $existingAuthorization->status === 'pending' 
+                ? 'pending' 
+                : 'approved';
+            
+            return [
+                'success' => false,
+                'message' => "There is already an authorization request {$statusMessage} for this instructor with this ACC. Please wait for the current request to be processed or use the existing authorization.",
+                'code' => 409, // Conflict status code
+                'existing_authorization_id' => $existingAuthorization->id,
+            ];
+        }
+
         // Validate that either sub_category_id or course_ids is provided
         if (!$request->has('sub_category_id') && !$request->has('course_ids')) {
             return [
