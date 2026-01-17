@@ -13,7 +13,8 @@ class Certificate extends Model
     protected $fillable = [
         'certificate_number',
         'course_id',
-        'class_id',
+        'class_id', // Kept for backward compatibility
+        'training_class_id', // New field for training class reference
         'training_center_id',
         'instructor_id',
         'trainee_name',
@@ -43,6 +44,11 @@ class Certificate extends Model
     public function classModel(): BelongsTo
     {
         return $this->belongsTo(ClassModel::class, 'class_id');
+    }
+
+    public function trainingClass(): BelongsTo
+    {
+        return $this->belongsTo(TrainingClass::class, 'training_class_id');
     }
 
     public function trainingCenter(): BelongsTo

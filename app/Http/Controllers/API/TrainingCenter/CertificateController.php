@@ -397,7 +397,7 @@ class CertificateController extends Controller
                 properties: [
                     new OA\Property(property: "acc_id", type: "integer", example: 1, description: "ID of the authorized ACC"),
                     new OA\Property(property: "course_id", type: "integer", example: 1, description: "ID of the course from the selected ACC"),
-                    new OA\Property(property: "class_id", type: "integer", nullable: true, example: 1),
+                    new OA\Property(property: "training_class_id", type: "integer", nullable: true, example: 1, description: "ID of the training class"),
                     new OA\Property(property: "instructor_id", type: "integer", nullable: true, example: 1),
                     new OA\Property(property: "trainee_name", type: "string", example: "John Doe", description: "Student name"),
                     new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
@@ -426,7 +426,7 @@ class CertificateController extends Controller
         $request->validate([
             'acc_id' => 'required|exists:accs,id',
             'course_id' => 'required|exists:courses,id',
-            'class_id' => 'nullable|exists:classes,id',
+            'training_class_id' => 'nullable|exists:training_classes,id',
             'instructor_id' => 'nullable|exists:instructors,id',
             'trainee_name' => 'required|string|max:255',
             'trainee_id_number' => 'nullable|string|max:255',
@@ -473,9 +473,9 @@ class CertificateController extends Controller
             ], 404);
         }
 
-        // Check if there's already a certificate for this trainee in this class
-        if ($request->class_id) {
-            $existingCertificate = Certificate::where('class_id', $request->class_id)
+        // Check if there's already a certificate for this trainee in this training class
+        if ($request->training_class_id) {
+            $existingCertificate = Certificate::where('training_class_id', $request->training_class_id)
                 ->where('training_center_id', $trainingCenter->id)
                 ->where('trainee_name', $request->trainee_name)
                 ->whereIn('status', ['valid', 'expired']) // Check for valid or expired certificates
@@ -483,7 +483,7 @@ class CertificateController extends Controller
 
             if ($existingCertificate) {
                 return response()->json([
-                    'message' => 'A certificate already exists for this trainee in this class',
+                    'message' => 'A certificate already exists for this trainee in this training class',
                     'existing_certificate' => [
                         'id' => $existingCertificate->id,
                         'certificate_number' => $existingCertificate->certificate_number,
@@ -517,7 +517,7 @@ class CertificateController extends Controller
             $certificate = Certificate::create([
                 'certificate_number' => $certificateNumber,
                 'course_id' => $request->course_id,
-                'class_id' => $request->class_id,
+                'training_class_id' => $request->training_class_id,
                 'training_center_id' => $trainingCenter->id,
                 'instructor_id' => $request->instructor_id,
                 'trainee_name' => $request->trainee_name,

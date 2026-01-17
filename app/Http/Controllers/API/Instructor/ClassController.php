@@ -88,7 +88,7 @@ class ClassController extends Controller
         }
 
         $class = TrainingClass::where('instructor_id', $instructor->id)
-            ->with(['course', 'trainingCenter', 'classModel', 'completion'])
+            ->with(['course', 'trainingCenter', 'completion', 'createdBy'])
             ->findOrFail($id);
 
         return response()->json(['class' => $class]);

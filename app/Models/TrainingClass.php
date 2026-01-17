@@ -17,7 +17,9 @@ class TrainingClass extends Model
     protected $fillable = [
         'training_center_id',
         'course_id',
-        'class_id',
+        'class_id', // Now nullable - kept for backward compatibility
+        'name', // Class name
+        'created_by', // User who created the class
         'instructor_id',
         'start_date',
         'end_date',
@@ -54,6 +56,11 @@ class TrainingClass extends Model
     public function classModel(): BelongsTo
     {
         return $this->belongsTo(ClassModel::class, 'class_id');
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function instructor(): BelongsTo

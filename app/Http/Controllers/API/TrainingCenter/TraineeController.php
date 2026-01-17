@@ -120,7 +120,7 @@ class TraineeController extends Controller
         }
 
         $trainee = Trainee::where('training_center_id', $trainingCenter->id)
-            ->with(['trainingClasses.course', 'trainingClasses.instructor', 'trainingClasses.classModel'])
+            ->with(['trainingClasses.course', 'trainingClasses.instructor', 'trainingClasses.createdBy'])
             ->findOrFail($id);
 
         return response()->json(['trainee' => $trainee]);

@@ -65,7 +65,7 @@ class ClassController extends Controller
         }
 
         $classes = TrainingClass::where('training_center_id', $trainingCenter->id)
-            ->with(['course', 'instructor', 'classModel', 'trainees'])
+            ->with(['course', 'instructor', 'trainees', 'createdBy'])
             ->get()
             ->map(function ($class) {
                 $classData = $class->toArray();
@@ -104,10 +104,10 @@ class ClassController extends Controller
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
-                required: ["course_id", "class_id", "instructor_id", "start_date", "end_date", "location"],
+                required: ["course_id", "name", "instructor_id", "start_date", "end_date", "location"],
                 properties: [
                     new OA\Property(property: "course_id", type: "integer", example: 1),
-                    new OA\Property(property: "class_id", type: "integer", example: 1),
+                    new OA\Property(property: "name", type: "string", example: "Class A - January 2024", description: "Class name"),
                     new OA\Property(property: "instructor_id", type: "integer", example: 1),
                     new OA\Property(property: "start_date", type: "string", format: "date", example: "2024-01-15"),
                     new OA\Property(property: "end_date", type: "string", format: "date", example: "2024-01-20"),
@@ -140,7 +140,7 @@ class ClassController extends Controller
     {
         $request->validate([
             'course_id' => 'required|exists:courses,id',
-            'class_id' => 'required|exists:classes,id',
+            'name' => 'required|string|max:255',
             'instructor_id' => 'required|exists:instructors,id',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
@@ -187,7 +187,8 @@ class ClassController extends Controller
         $class = TrainingClass::create([
             'training_center_id' => $trainingCenter->id,
             'course_id' => $request->course_id,
-            'class_id' => $request->class_id,
+            'name' => $request->name,
+            'created_by' => $user->id,
             'instructor_id' => $request->instructor_id,
             'start_date' => $request->start_date,
             'end_date' => $request->end_date,
@@ -249,7 +250,7 @@ class ClassController extends Controller
         }
 
         $class = TrainingClass::where('training_center_id', $trainingCenter->id)
-            ->with(['course', 'instructor', 'trainingCenter', 'classModel', 'completion', 'trainees'])
+            ->with(['course', 'instructor', 'trainingCenter', 'completion', 'trainees', 'createdBy'])
             ->findOrFail($id);
         return response()->json(['class' => $class]);
     }
@@ -310,7 +311,7 @@ class ClassController extends Controller
 
         $request->validate([
             'course_id' => 'sometimes|exists:courses,id',
-            'class_id' => 'sometimes|exists:classes,id',
+            'name' => 'sometimes|string|max:255',
             'instructor_id' => 'sometimes|exists:instructors,id',
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after:start_date',
@@ -325,7 +326,7 @@ class ClassController extends Controller
         ]);
 
         $updateData = $request->only([
-            'course_id', 'class_id', 'instructor_id', 'start_date', 'end_date',
+            'course_id', 'name', 'instructor_id', 'start_date', 'end_date',
             'exam_date', 'exam_score', 'location', 'location_details', 'status'
         ]);
 
@@ -458,8 +459,7 @@ class ClassController extends Controller
                 $instructorUser = \App\Models\User::where('email', $instructor->email)->first();
                 if ($instructorUser) {
                     $notificationService = new \App\Services\NotificationService();
-                    $classModel = $class->classModel;
-                    $className = $classModel ? $classModel->name : "Class #{$class->id}";
+                    $className = $class->name ?? "Class #{$class->id}";
                     $courseName = $class->course ? $class->course->name : 'Unknown Course';
                     
                     $notificationService->notifyInstructorClassCompleted(
