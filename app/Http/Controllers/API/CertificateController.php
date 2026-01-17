@@ -53,11 +53,22 @@ class CertificateController extends Controller
             return response()->json(['message' => 'Certificate not found'], 404);
         }
 
+        // Check if certificate has expired based on expiry_date
+        $isExpired = false;
+        if ($certificate->expiry_date && $certificate->expiry_date < now()->toDateString()) {
+            $isExpired = true;
+            // Update status if not already set to expired
+            if ($certificate->status !== 'expired') {
+                $certificate->update(['status' => 'expired']);
+                $certificate->refresh();
+            }
+        }
+
         if ($certificate->status === 'revoked') {
             return response()->json(['message' => 'Certificate has been revoked'], 400);
         }
 
-        if ($certificate->status === 'expired') {
+        if ($certificate->status === 'expired' || $isExpired) {
             return response()->json(['message' => 'Certificate has expired'], 400);
         }
 

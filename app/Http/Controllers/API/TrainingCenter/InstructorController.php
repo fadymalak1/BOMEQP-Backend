@@ -352,7 +352,26 @@ class InstructorController extends Controller
     {
         $acc = \App\Models\ACC::findOrFail($accId);
         
-        $categories = $acc->categories()->where('status', 'active')->get();
+        // Get user associated with ACC (ACC admin user)
+        $accUser = \App\Models\User::where('email', $acc->email)
+            ->where('role', 'acc_admin')
+            ->first();
+        
+        // Get categories assigned to ACC from pivot table
+        $assignedCategories = $acc->categories()
+            ->where('status', 'active')
+            ->get();
+        
+        // Get categories created by ACC (if ACC user exists)
+        $accCreatedCategories = collect([]);
+        if ($accUser) {
+            $accCreatedCategories = \App\Models\Category::where('created_by', $accUser->id)
+                ->where('status', 'active')
+                ->get();
+        }
+        
+        // Merge both collections and remove duplicates
+        $categories = $assignedCategories->merge($accCreatedCategories)->unique('id')->values();
 
         return response()->json([
             'categories' => $categories,
@@ -391,6 +410,8 @@ class InstructorController extends Controller
     {
         $category = \App\Models\Category::findOrFail($categoryId);
         
+        // Get all active sub-categories for this category
+        // This includes both Group Admin created and ACC created sub-categories
         $subCategories = \App\Models\SubCategory::where('category_id', $categoryId)
             ->where('status', 'active')
             ->get();

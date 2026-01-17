@@ -13,3 +13,6 @@ Schedule::command('subscriptions:check-expired')->daily();
 
 // Schedule discount codes status check daily
 Schedule::command('discount-codes:check-status')->daily();
+
+// Schedule certificate expiration check daily
+Schedule::command('certificates:check-expired')->daily();
