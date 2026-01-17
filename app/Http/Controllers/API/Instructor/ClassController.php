@@ -146,12 +146,13 @@ class ClassController extends Controller
 
         $class = TrainingClass::where('instructor_id', $instructor->id)->findOrFail($id);
 
-        // Check if class end date has passed
-        if (now()->lt($class->end_date)) {
-            return response()->json(['message' => 'Class end date has not been reached'], 400);
-        }
-
-        $class->update(['status' => 'completed']);
+        // Check if class end date has passed (remove this check or make it optional)
+        // We'll update end_date to today when marking as complete
+        
+        $class->update([
+            'status' => 'completed',
+            'end_date' => now()->toDateString(), // Update end_date to today
+        ]);
 
         $completion = ClassCompletion::updateOrCreate(
             ['training_class_id' => $class->id],

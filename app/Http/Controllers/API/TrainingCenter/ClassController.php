@@ -438,7 +438,10 @@ class ClassController extends Controller
         $class = TrainingClass::where('training_center_id', $trainingCenter->id)->findOrFail($id);
 
         if ($class->status !== 'completed') {
-            $class->update(['status' => 'completed']);
+            $class->update([
+                'status' => 'completed',
+                'end_date' => now()->toDateString(), // Update end_date to today
+            ]);
 
             ClassCompletion::create([
                 'training_class_id' => $class->id,
