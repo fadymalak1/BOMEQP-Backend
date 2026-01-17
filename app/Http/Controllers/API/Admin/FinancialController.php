@@ -48,10 +48,11 @@ class FinancialController extends Controller
     #[OA\Get(
         path: "/admin/financial/transactions",
         summary: "Get all transactions",
-        description: "Get all transactions for Group Admin with comprehensive details including payer, payee, commission ledger, and reference information.",
+        description: "Get all transactions for Group Admin with comprehensive details including payer, payee, commission ledger, and reference information. Supports pagination and search.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by transaction ID, type, status, description, payer name (ACC/Training Center), payee name (ACC/Training Center/Instructor), payment gateway transaction ID, amount, or currency"),
             new OA\Parameter(name: "type", in: "query", schema: new OA\Schema(type: "string", enum: ["subscription", "code_purchase", "material_purchase", "course_purchase", "commission", "settlement"]), example: "subscription"),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "completed", "failed", "refunded"]), example: "completed"),
             new OA\Parameter(name: "payer_type", in: "query", schema: new OA\Schema(type: "string", enum: ["acc", "training_center", "group"]), example: "acc"),

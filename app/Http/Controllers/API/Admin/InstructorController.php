@@ -311,11 +311,16 @@ class InstructorController extends Controller
     }
 
     #[OA\Get(
-        path: "/admin/instructors/pending-commission-requests",
+        path: "/admin/instructor-authorizations/pending-commission",
         summary: "Get pending commission requests",
-        description: "Get instructor authorization requests that are approved by ACC Admin and waiting for commission setting by Group Admin.",
+        description: "Get instructor authorization requests that are approved by ACC Admin and waiting for commission setting by Group Admin, with pagination and search.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by authorization ID, instructor name (first, last, or full name), ACC name, or training center name"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 15), example: 15),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 1), example: 1)
+        ],
         responses: [
             new OA\Response(
                 response: 200,
@@ -323,7 +328,10 @@ class InstructorController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "authorizations", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "total", type: "integer", example: 5)
+                        new OA\Property(property: "current_page", type: "integer", example: 1),
+                        new OA\Property(property: "per_page", type: "integer", example: 15),
+                        new OA\Property(property: "total", type: "integer", example: 5),
+                        new OA\Property(property: "last_page", type: "integer", example: 1)
                     ]
                 )
             ),
@@ -332,16 +340,43 @@ class InstructorController extends Controller
     )]
     public function pendingCommissionRequests(Request $request)
     {
-        $authorizations = InstructorAccAuthorization::where('status', 'approved')
+        $query = InstructorAccAuthorization::where('status', 'approved')
             ->where('group_admin_status', 'pending')
             ->whereNotNull('authorization_price')
-            ->with(['instructor', 'acc', 'trainingCenter'])
-            ->orderBy('reviewed_at', 'desc')
-            ->get();
+            ->with(['instructor', 'acc', 'trainingCenter']);
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
+                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                            ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                            ->orWhere('email', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('acc', function ($accQuery) use ($searchTerm) {
+                        $accQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('email', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                        $tcQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('email', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $authorizations = $query->orderBy('reviewed_at', 'desc')->paginate($perPage);
 
         return response()->json([
-            'authorizations' => $authorizations,
-            'total' => $authorizations->count()
+            'authorizations' => $authorizations->items(),
+            'current_page' => $authorizations->currentPage(),
+            'per_page' => $authorizations->perPage(),
+            'total' => $authorizations->total(),
+            'last_page' => $authorizations->lastPage(),
         ], 200);
     }
 }

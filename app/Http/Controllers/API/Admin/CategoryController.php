@@ -12,26 +12,62 @@ class CategoryController extends Controller
     #[OA\Get(
         path: "/admin/categories",
         summary: "List all categories",
-        description: "Get all categories with their subcategories.",
+        description: "Get all categories with their subcategories, pagination, and search.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by category name (English or Arabic), description, or status"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 15), example: 15),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 1), example: 1)
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "Categories retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "categories", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "categories", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer", example: 1),
+                        new OA\Property(property: "per_page", type: "integer", example: 15),
+                        new OA\Property(property: "total", type: "integer", example: 50),
+                        new OA\Property(property: "last_page", type: "integer", example: 4)
                     ]
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated")
         ]
     )]
-    public function index()
+    public function index(Request $request)
     {
-        $categories = Category::with('subCategories')->get();
-        return response()->json(['categories' => $categories]);
+        $query = Category::with('subCategories');
+
+        // Filter by status
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('name_ar', 'like', "%{$searchTerm}%")
+                    ->orWhere('description', 'like', "%{$searchTerm}%")
+                    ->orWhere('status', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $categories = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        return response()->json([
+            'categories' => $categories->items(),
+            'current_page' => $categories->currentPage(),
+            'per_page' => $categories->perPage(),
+            'total' => $categories->total(),
+            'last_page' => $categories->lastPage(),
+        ]);
     }
 
     #[OA\Post(

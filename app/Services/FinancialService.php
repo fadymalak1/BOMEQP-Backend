@@ -107,8 +107,106 @@ class FinancialService
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            
+            // Get matching IDs for each entity type
+            $matchingAccIds = \App\Models\ACC::where('name', 'like', "%{$searchTerm}%")
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $matchingTrainingCenterIds = \App\Models\TrainingCenter::where('name', 'like', "%{$searchTerm}%")
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $matchingInstructorIds = \App\Models\Instructor::where('first_name', 'like', "%{$searchTerm}%")
+                ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $query->where(function ($q) use ($searchTerm, $matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhere('transaction_type', 'like', "%{$searchTerm}%")
+                    ->orWhere('status', 'like', "%{$searchTerm}%")
+                    ->orWhere('description', 'like', "%{$searchTerm}%")
+                    ->orWhere('payment_gateway_transaction_id', 'like', "%{$searchTerm}%")
+                    ->orWhere('amount', 'like', "%{$searchTerm}%")
+                    ->orWhere('currency', 'like', "%{$searchTerm}%")
+                    // Search in payer
+                    ->orWhere(function ($payerQuery) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                        $payerQuery->where(function ($q) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                            if (!empty($matchingAccIds)) {
+                                $q->where('payer_type', 'acc')->whereIn('payer_id', $matchingAccIds);
+                            }
+                            if (!empty($matchingTrainingCenterIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingTrainingCenterIds) {
+                                    $subQ->where('payer_type', 'training_center')->whereIn('payer_id', $matchingTrainingCenterIds);
+                                });
+                            }
+                        });
+                    })
+                    // Search in payee
+                    ->orWhere(function ($payeeQuery) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                        $payeeQuery->where(function ($q) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                            if (!empty($matchingAccIds)) {
+                                $q->where('payee_type', 'acc')->whereIn('payee_id', $matchingAccIds);
+                            }
+                            if (!empty($matchingTrainingCenterIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingTrainingCenterIds) {
+                                    $subQ->where('payee_type', 'training_center')->whereIn('payee_id', $matchingTrainingCenterIds);
+                                });
+                            }
+                            if (!empty($matchingInstructorIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingInstructorIds) {
+                                    $subQ->where('payee_type', 'instructor')->whereIn('payee_id', $matchingInstructorIds);
+                                });
+                            }
+                        });
+                    });
+            });
+        }
+
+        // Get summary statistics (before search filter for accurate totals)
+        $summaryBaseQuery = Transaction::where(function ($q) {
+            $q->where('payee_type', 'group')
+              ->orWhere('payer_type', 'group')
+              ->orWhere(function ($subQ) {
+                  $subQ->whereNotNull('commission_amount')
+                       ->where('commission_amount', '>', 0);
+              })
+              ->orWhereHas('commissionLedgers', function ($ledgerQ) {
+                  $ledgerQ->where('group_commission_amount', '>', 0);
+              });
+        });
+        
+        // Apply same filters to summary (except search)
+        if ($request->has('type')) {
+            $summaryBaseQuery->where('transaction_type', $request->type);
+        }
+        if ($request->has('status')) {
+            $summaryBaseQuery->where('status', $request->status);
+        }
+        if ($request->has('payer_type')) {
+            $summaryBaseQuery->where('payer_type', $request->payer_type);
+        }
+        if ($request->has('payee_type')) {
+            $summaryBaseQuery->where('payee_type', $request->payee_type);
+        }
+        if ($request->has('date_from')) {
+            $summaryBaseQuery->whereDate('created_at', '>=', $request->date_from);
+        }
+        if ($request->has('date_to')) {
+            $summaryBaseQuery->whereDate('created_at', '<=', $request->date_to);
+        }
+        
         // Get summary statistics
-        $summaryQuery = clone $query;
+        $summaryQuery = clone $summaryBaseQuery;
         $allTransactions = $summaryQuery->get();
         $completedTransactions = $allTransactions->where('status', 'completed');
         $pendingTransactions = $allTransactions->where('status', 'pending');

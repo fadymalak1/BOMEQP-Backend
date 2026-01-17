@@ -21,16 +21,25 @@ class CodeController extends Controller
     #[OA\Get(
         path: "/admin/code-batches/pending-payments",
         summary: "Get all pending manual payment requests",
-        description: "Get all pending manual payment requests from all ACCs.",
+        description: "Get all pending manual payment requests from all ACCs with pagination and search.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by batch ID, training center name/email, ACC name/email, course name, or amount"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 15), example: 15),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 1), example: 1)
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "Pending requests retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "batches", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "batches", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer", example: 1),
+                        new OA\Property(property: "per_page", type: "integer", example: 15),
+                        new OA\Property(property: "total", type: "integer", example: 50),
+                        new OA\Property(property: "last_page", type: "integer", example: 4)
                     ]
                 )
             ),
@@ -39,14 +48,39 @@ class CodeController extends Controller
     )]
     public function pendingPayments(Request $request)
     {
-        $batches = CodeBatch::where('payment_method', 'manual_payment')
+        $query = CodeBatch::where('payment_method', 'manual_payment')
             ->where('payment_status', 'pending')
-            ->with(['trainingCenter', 'acc', 'course', 'certificateCodes'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+            ->with(['trainingCenter', 'acc', 'course', 'certificateCodes']);
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhere('total_amount', 'like', "%{$searchTerm}%")
+                    ->orWhere('payment_amount', 'like', "%{$searchTerm}%")
+                    ->orWhere('quantity', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                        $tcQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('email', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('acc', function ($accQuery) use ($searchTerm) {
+                        $accQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('email', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                        $courseQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('name_ar', 'like', "%{$searchTerm}%")
+                            ->orWhere('code', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $batches = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return response()->json([
-            'batches' => $batches->map(function ($batch) {
+            'batches' => $batches->getCollection()->map(function ($batch) {
                 return [
                     'id' => $batch->id,
                     'training_center' => [
@@ -71,7 +105,11 @@ class CodeController extends Controller
                     'created_at' => $batch->created_at,
                     'updated_at' => $batch->updated_at,
                 ];
-            })
+            }),
+            'current_page' => $batches->currentPage(),
+            'per_page' => $batches->perPage(),
+            'total' => $batches->total(),
+            'last_page' => $batches->lastPage(),
         ]);
     }
 
