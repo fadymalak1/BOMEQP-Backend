@@ -18,7 +18,7 @@ class FinancialController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by transaction ID, type, status, description, payer name, payee name, or payment gateway transaction ID"),
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by transaction ID, type, status, description, payer name (ACC/Training Center/Instructor), payee name (ACC/Training Center/Instructor), or payment gateway transaction ID"),
             new OA\Parameter(name: "type", in: "query", schema: new OA\Schema(type: "string", enum: ["subscription", "code_purchase", "material_purchase", "course_purchase", "commission", "settlement"]), example: "subscription"),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "completed", "failed", "refunded"]), example: "completed"),
             new OA\Parameter(name: "date_from", in: "query", schema: new OA\Schema(type: "string", format: "date"), example: "2024-01-01"),
@@ -80,14 +80,70 @@ class FinancialController extends Controller
         // Search functionality
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
+            
+            // Get matching IDs for each entity type
+            $matchingAccIds = \App\Models\ACC::where('name', 'like', "%{$searchTerm}%")
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $matchingTrainingCenterIds = \App\Models\TrainingCenter::where('name', 'like', "%{$searchTerm}%")
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $matchingInstructorIds = \App\Models\Instructor::where('first_name', 'like', "%{$searchTerm}%")
+                ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                ->orWhere('email', 'like', "%{$searchTerm}%")
+                ->pluck('id')
+                ->toArray();
+            
+            $query->where(function ($q) use ($searchTerm, $matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
                 $q->where('id', 'like', "%{$searchTerm}%")
                     ->orWhere('transaction_type', 'like', "%{$searchTerm}%")
                     ->orWhere('status', 'like', "%{$searchTerm}%")
                     ->orWhere('description', 'like', "%{$searchTerm}%")
                     ->orWhere('payment_gateway_transaction_id', 'like', "%{$searchTerm}%")
                     ->orWhere('amount', 'like', "%{$searchTerm}%")
-                    ->orWhere('currency', 'like', "%{$searchTerm}%");
+                    ->orWhere('currency', 'like', "%{$searchTerm}%")
+                    // Search in payer
+                    ->orWhere(function ($payerQuery) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                        $payerQuery->where(function ($q) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                            if (!empty($matchingAccIds)) {
+                                $q->where('payer_type', 'acc')->whereIn('payer_id', $matchingAccIds);
+                            }
+                            if (!empty($matchingTrainingCenterIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingTrainingCenterIds) {
+                                    $subQ->where('payer_type', 'training_center')->whereIn('payer_id', $matchingTrainingCenterIds);
+                                });
+                            }
+                            if (!empty($matchingInstructorIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingInstructorIds) {
+                                    $subQ->where('payer_type', 'instructor')->whereIn('payer_id', $matchingInstructorIds);
+                                });
+                            }
+                        });
+                    })
+                    // Search in payee
+                    ->orWhere(function ($payeeQuery) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                        $payeeQuery->where(function ($q) use ($matchingAccIds, $matchingTrainingCenterIds, $matchingInstructorIds) {
+                            if (!empty($matchingAccIds)) {
+                                $q->where('payee_type', 'acc')->whereIn('payee_id', $matchingAccIds);
+                            }
+                            if (!empty($matchingTrainingCenterIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingTrainingCenterIds) {
+                                    $subQ->where('payee_type', 'training_center')->whereIn('payee_id', $matchingTrainingCenterIds);
+                                });
+                            }
+                            if (!empty($matchingInstructorIds)) {
+                                $q->orWhere(function ($subQ) use ($matchingInstructorIds) {
+                                    $subQ->where('payee_type', 'instructor')->whereIn('payee_id', $matchingInstructorIds);
+                                });
+                            }
+                        });
+                    });
             });
         }
 
