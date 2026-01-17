@@ -40,8 +40,37 @@ class DiscountCodeController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $discountCodes = DiscountCode::where('acc_id', $acc->id)->get();
-        return response()->json(['discount_codes' => $discountCodes]);
+        $query = DiscountCode::where('acc_id', $acc->id);
+
+        // Filter by status if provided
+        if ($request->has('status')) {
+            $validStatuses = ['active', 'expired', 'depleted', 'inactive'];
+            if (in_array($request->status, $validStatuses)) {
+                $query->where('status', $request->status);
+            }
+        }
+
+        // Filter by discount_type if provided
+        if ($request->has('discount_type')) {
+            $validTypes = ['time_limited', 'quantity_based'];
+            if (in_array($request->discount_type, $validTypes)) {
+                $query->where('discount_type', $request->discount_type);
+            }
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('code', 'like', "%{$searchTerm}%")
+                    ->orWhere('status', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $discountCodes = $query->orderBy('created_at', 'desc')->paginate($perPage);
+        
+        return response()->json($discountCodes);
     }
 
     #[OA\Get(

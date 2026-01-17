@@ -413,12 +413,15 @@ class CourseManagementService
             });
         }
 
-        $courses = $query->orderBy('created_at', 'desc')->get();
+        $perPage = $request->get('per_page', 15);
+        $courses = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         // Add pricing to each course
-        return $courses->map(function ($course) use ($acc) {
+        $courses->getCollection()->transform(function ($course) use ($acc) {
             return $this->addPricingToCourse($course, $acc);
-        })->values();
+        });
+
+        return $courses;
     }
 }
 

@@ -28,7 +28,9 @@ class CourseController extends Controller
             new OA\Parameter(name: "sub_category_id", in: "query", schema: new OA\Schema(type: "integer")),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string")),
             new OA\Parameter(name: "level", in: "query", schema: new OA\Schema(type: "string")),
-            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"))
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), description: "Search by course name, code, or description"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
         ],
         responses: [
             new OA\Response(
@@ -36,7 +38,11 @@ class CourseController extends Controller
                 description: "Courses retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "courses", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
                     ]
                 )
             ),
@@ -55,7 +61,7 @@ class CourseController extends Controller
 
         $courses = $this->courseService->getCoursesWithPricing($request, $acc);
 
-        return response()->json(['courses' => $courses]);
+        return response()->json($courses);
     }
 
     #[OA\Post(

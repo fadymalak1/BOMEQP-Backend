@@ -9,9 +9,40 @@ use App\Models\TrainingCenter;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class TrainingCenterController extends Controller
 {
+    #[OA\Get(
+        path: "/acc/training-centers/requests",
+        summary: "List training center authorization requests",
+        description: "Get all training center authorization requests for the authenticated ACC with pagination and search.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by training center name, email, country, city, or request ID"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "returned"]), description: "Filter by request status"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Requests retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function requests(Request $request)
     {
         $user = $request->user();
@@ -21,12 +52,35 @@ class TrainingCenterController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $requests = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
-            ->with('trainingCenter')
-            ->orderBy('request_date', 'desc')
-            ->get();
+        $query = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
+            ->with('trainingCenter');
 
-        return response()->json(['requests' => $requests]);
+        // Filter by status if provided
+        if ($request->has('status')) {
+            $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
+            if (in_array($request->status, $validStatuses)) {
+                $query->where('status', $request->status);
+            }
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                        $tcQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('email', 'like', "%{$searchTerm}%")
+                            ->orWhere('country', 'like', "%{$searchTerm}%")
+                            ->orWhere('city', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $requests = $query->orderBy('request_date', 'desc')->paginate($perPage);
+
+        return response()->json($requests);
     }
 
     public function approve(Request $request, $id)
@@ -151,6 +205,35 @@ class TrainingCenterController extends Controller
         return response()->json(['message' => 'Request returned successfully']);
     }
 
+    #[OA\Get(
+        path: "/acc/training-centers",
+        summary: "List approved training centers",
+        description: "Get all approved training centers for the authenticated ACC with pagination and search.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by training center name, email, country, or city"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Training centers retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -160,13 +243,38 @@ class TrainingCenterController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $trainingCenters = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
+        $query = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
             ->where('status', 'approved')
-            ->with('trainingCenter')
-            ->get()
-            ->pluck('trainingCenter');
+            ->with('trainingCenter');
 
-        return response()->json(['training_centers' => $trainingCenters]);
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->whereHas('trainingCenter', function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhere('country', 'like', "%{$searchTerm}%")
+                    ->orWhere('city', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $authorizations = $query->orderBy('reviewed_at', 'desc')->paginate($perPage);
+
+        // Transform to return training centers directly
+        $trainingCenters = $authorizations->getCollection()->map(function ($authorization) {
+            return $authorization->trainingCenter;
+        });
+
+        return response()->json([
+            'data' => $trainingCenters,
+            'current_page' => $authorizations->currentPage(),
+            'per_page' => $authorizations->perPage(),
+            'total' => $authorizations->total(),
+            'last_page' => $authorizations->lastPage(),
+            'from' => $authorizations->firstItem(),
+            'to' => $authorizations->lastItem(),
+        ]);
     }
 }
 

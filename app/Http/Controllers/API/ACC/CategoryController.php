@@ -26,7 +26,10 @@ class CategoryController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active")
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by category name (English or Arabic)"),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
         ],
         responses: [
             new OA\Response(
@@ -34,7 +37,11 @@ class CategoryController extends Controller
                 description: "Categories retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "categories", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
                     ]
                 )
             ),
@@ -70,8 +77,19 @@ class CategoryController extends Controller
             $query->where('status', $request->status);
         }
 
-        $categories = $query->orderBy('name')->get();
-        return response()->json(['categories' => $categories]);
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('name_ar', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $categories = $query->orderBy('name')->paginate($perPage);
+        
+        return response()->json($categories);
     }
 
     #[OA\Get(
@@ -380,8 +398,11 @@ class CategoryController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by sub-category name (English or Arabic)"),
             new OA\Parameter(name: "category_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
-            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active")
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), example: "active"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
         ],
         responses: [
             new OA\Response(
@@ -389,7 +410,11 @@ class CategoryController extends Controller
                 description: "Subcategories retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "sub_categories", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
                     ]
                 )
             ),
@@ -426,8 +451,19 @@ class CategoryController extends Controller
             $query->where('status', $request->status);
         }
 
-        $subCategories = $query->orderBy('name')->get();
-        return response()->json(['sub_categories' => $subCategories]);
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('name_ar', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $subCategories = $query->orderBy('name')->paginate($perPage);
+        
+        return response()->json($subCategories);
     }
 
     #[OA\Get(

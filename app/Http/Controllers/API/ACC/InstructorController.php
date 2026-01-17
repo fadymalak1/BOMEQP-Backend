@@ -10,9 +10,41 @@ use App\Models\TrainingCenter;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class InstructorController extends Controller
 {
+    #[OA\Get(
+        path: "/acc/instructors/requests",
+        summary: "List instructor authorization requests",
+        description: "Get all instructor authorization requests for the authenticated ACC with pagination and search.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, email, training center name, or request ID"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "returned"]), description: "Filter by request status"),
+            new OA\Parameter(name: "payment_status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "paid", "failed"]), description: "Filter by payment status"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Requests retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function requests(Request $request)
     {
         $user = $request->user();
@@ -22,11 +54,45 @@ class InstructorController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $requests = InstructorAccAuthorization::where('acc_id', $acc->id)
-            ->with(['instructor', 'trainingCenter', 'subCategory.courses'])
-            ->orderBy('request_date', 'desc')
-            ->get()
-            ->map(function ($authorization) {
+        $query = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->with(['instructor', 'trainingCenter', 'subCategory.courses']);
+
+        // Filter by status if provided
+        if ($request->has('status')) {
+            $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
+            if (in_array($request->status, $validStatuses)) {
+                $query->where('status', $request->status);
+            }
+        }
+
+        // Filter by payment_status if provided
+        if ($request->has('payment_status')) {
+            $validPaymentStatuses = ['pending', 'paid', 'failed'];
+            if (in_array($request->payment_status, $validPaymentStatuses)) {
+                $query->where('payment_status', $request->payment_status);
+            }
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
+                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('email', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                        $tcQuery->where('name', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $requests = $query->orderBy('request_date', 'desc')
+            ->paginate($perPage)
+            ->through(function ($authorization) {
                 $data = $authorization->toArray();
                 
                 // If there is a sub_category, add sub_category name and courses
@@ -51,7 +117,7 @@ class InstructorController extends Controller
                 return $data;
             });
 
-        return response()->json(['requests' => $requests]);
+        return response()->json($requests);
     }
 
     public function approve(Request $request, $id)
