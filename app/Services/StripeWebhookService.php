@@ -3,11 +3,19 @@
 namespace App\Services;
 
 use App\Models\Transaction;
+use App\Services\TransferService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class StripeWebhookService
 {
+    protected TransferService $transferService;
+
+    public function __construct(TransferService $transferService)
+    {
+        $this->transferService = $transferService;
+    }
+
     /**
      * Handle payment intent succeeded event
      *
@@ -35,6 +43,10 @@ class StripeWebhookService
                         'payment_intent_id' => $paymentIntent['id'],
                         'transaction_type' => $transaction->transaction_type,
                     ]);
+
+                    // تنفيذ التحويل التلقائي بعد نجاح الدفعة
+                    $this->triggerAutomaticTransfer($transaction);
+
                 } catch (\Exception $e) {
                     DB::rollBack();
                     Log::error('Failed to update transaction to completed', [
@@ -47,12 +59,62 @@ class StripeWebhookService
                     'transaction_id' => $transaction->id,
                     'payment_intent_id' => $paymentIntent['id'],
                 ]);
+
+                // حتى لو كانت المعاملة مكتملة مسبقاً، نتأكد من وجود transfer
+                // (في حالة فشل التحويل الأول)
+                $this->triggerAutomaticTransfer($transaction);
             }
         } else {
             Log::warning('Payment succeeded webhook received but transaction not found', [
                 'payment_intent_id' => $paymentIntent['id'],
                 'amount' => $paymentIntent['amount'] ?? null,
                 'currency' => $paymentIntent['currency'] ?? null,
+            ]);
+        }
+    }
+
+    /**
+     * Trigger automatic transfer for completed transaction
+     *
+     * @param Transaction $transaction
+     * @return void
+     */
+    protected function triggerAutomaticTransfer(Transaction $transaction): void
+    {
+        try {
+            // التحقق من عدم وجود transfer مكتمل لهذه المعاملة
+            $existingTransfer = \App\Models\Transfer::where('transaction_id', $transaction->id)
+                ->where('status', 'completed')
+                ->first();
+
+            if ($existingTransfer) {
+                Log::info('Transfer already completed for this transaction', [
+                    'transaction_id' => $transaction->id,
+                    'transfer_id' => $existingTransfer->id,
+                ]);
+                return;
+            }
+
+            // تنفيذ التحويل التلقائي
+            $result = $this->transferService->handleAutomaticTransfer($transaction);
+
+            if ($result['success']) {
+                Log::info('Automatic transfer triggered successfully', [
+                    'transaction_id' => $transaction->id,
+                    'transfer_id' => $result['transfer']->id ?? null,
+                ]);
+            } else {
+                Log::warning('Automatic transfer failed', [
+                    'transaction_id' => $transaction->id,
+                    'error' => $result['message'] ?? 'Unknown error',
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Exception in triggerAutomaticTransfer', [
+                'transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }

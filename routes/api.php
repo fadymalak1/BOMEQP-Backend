@@ -22,9 +22,10 @@ Route::post('/auth/reset-password', [App\Http\Controllers\API\AuthController::cl
     Route::get('/auth/verify-email/{token}', [App\Http\Controllers\API\AuthController::class, 'verifyEmail']);
     Route::get('/certificates/verify/{code}', [App\Http\Controllers\API\CertificateController::class, 'verify']);
     
-    // Countries and Cities (Public endpoints for dropdowns)
+    // Countries, Cities, and Nationalities (Public endpoints for dropdowns)
 Route::get('/countries', [App\Http\Controllers\API\CountryController::class, 'index']);
 Route::get('/cities', [App\Http\Controllers\API\CityController::class, 'index']);
+Route::get('/nationalities', [App\Http\Controllers\API\NationalityController::class, 'index']);
 
 // Stripe webhook (public, but verified by signature)
 Route::post('/stripe/webhook', [App\Http\Controllers\API\StripeController::class, 'handleWebhook']);
