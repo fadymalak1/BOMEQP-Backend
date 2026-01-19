@@ -142,18 +142,76 @@ class ProfileController extends Controller
             }
         }
 
+        if ($request->hasFile('company_registration_certificate')) {
+            $certFile = $request->file('company_registration_certificate');
+            $validation = $this->fileUploadService->validateFile($certFile, 10, ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'message' => $validation['message'],
+                    'error_code' => $validation['error_code'] ?? null,
+                    'hint' => $validation['hint'] ?? null
+                ], 422);
+            }
+        }
+
+        if ($request->hasFile('facility_floorplan')) {
+            $floorplanFile = $request->file('facility_floorplan');
+            $validation = $this->fileUploadService->validateFile($floorplanFile, 10, ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'message' => $validation['message'],
+                    'error_code' => $validation['error_code'] ?? null,
+                    'hint' => $validation['hint'] ?? null
+                ], 422);
+            }
+        }
+
         // Validate input
         try {
             $request->validate([
+                // Company Information
                 'name' => 'sometimes|string|max:255',
+                'website' => 'nullable|string|url|max:255',
+                'email' => 'sometimes|email|max:255|unique:training_centers,email,' . $trainingCenter->id,
+                'phone' => 'sometimes|string|max:255',
+                'fax' => 'nullable|string|max:255',
+                'training_provider_type' => 'sometimes|in:Training Center,Institute,University',
+                // Physical Address
+                'address' => 'sometimes|string',
+                'city' => 'sometimes|string|max:255',
+                'country' => 'sometimes|string|max:255',
+                'physical_postal_code' => 'sometimes|string|max:255',
+                // Mailing Address
+                'mailing_same_as_physical' => 'sometimes|boolean',
+                'mailing_address' => 'nullable|string|required_if:mailing_same_as_physical,false',
+                'mailing_city' => 'nullable|string|max:255|required_if:mailing_same_as_physical,false',
+                'mailing_country' => 'nullable|string|max:255|required_if:mailing_same_as_physical,false',
+                'mailing_postal_code' => 'nullable|string|max:255|required_if:mailing_same_as_physical,false',
+                // Primary Contact
+                'primary_contact_title' => 'sometimes|in:Mr.,Mrs.,Eng.,Prof.',
+                'primary_contact_first_name' => 'sometimes|string|max:255',
+                'primary_contact_last_name' => 'sometimes|string|max:255',
+                'primary_contact_email' => 'sometimes|email|max:255',
+                'primary_contact_country' => 'sometimes|string|max:255',
+                'primary_contact_mobile' => 'sometimes|string|max:255',
+                // Secondary Contact
+                'has_secondary_contact' => 'sometimes|boolean',
+                'secondary_contact_title' => 'nullable|in:Mr.,Mrs.,Eng.,Prof.|required_if:has_secondary_contact,true',
+                'secondary_contact_first_name' => 'nullable|string|max:255|required_if:has_secondary_contact,true',
+                'secondary_contact_last_name' => 'nullable|string|max:255|required_if:has_secondary_contact,true',
+                'secondary_contact_email' => 'nullable|email|max:255|required_if:has_secondary_contact,true',
+                'secondary_contact_country' => 'nullable|string|max:255|required_if:has_secondary_contact,true',
+                'secondary_contact_mobile' => 'nullable|string|max:255|required_if:has_secondary_contact,true',
+                // Additional Information
+                'company_gov_registry_number' => 'sometimes|string|max:255',
+                'company_registration_certificate' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                'facility_floorplan' => 'nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                'interested_fields' => 'nullable|array',
+                'interested_fields.*' => 'string|in:QHSE,Food Safety,Management',
+                'how_did_you_hear_about_us' => 'nullable|string',
+                // Legacy fields
                 'legal_name' => 'sometimes|string|max:255',
                 'registration_number' => 'sometimes|string|max:255|unique:training_centers,registration_number,' . $trainingCenter->id,
-                'country' => 'sometimes|string|max:255',
-                'city' => 'sometimes|string|max:255',
-                'address' => 'sometimes|string',
-                'phone' => 'sometimes|string|max:255',
-                'email' => 'sometimes|email|max:255|unique:training_centers,email,' . $trainingCenter->id,
-                'website' => 'nullable|string|url|max:255',
                 'logo_url' => 'nullable|string|url|max:500',
                 'logo' => 'sometimes|nullable|image|mimes:jpeg,jpg,png|max:5120', // Max 5MB
             ]);
@@ -179,18 +237,77 @@ class ProfileController extends Controller
                 }
             }
 
-            // Get only the fillable fields that are present in the request (excluding logo_url if logo file was uploaded)
-            $updateData = $request->only([
-                'name',
-                'legal_name',
-                'registration_number',
-                'country',
-                'city',
-                'address',
-                'phone',
-                'email',
-                'website',
-            ]);
+            // Process company registration certificate file upload
+            if ($request->hasFile('company_registration_certificate')) {
+                $certFile = $request->file('company_registration_certificate');
+                if ($certFile && $certFile->isValid()) {
+                    $certResult = $this->fileUploadService->uploadDocument(
+                        $certFile,
+                        $trainingCenter->id,
+                        'training_center',
+                        'registration_certificate'
+                    );
+                    if ($certResult['success']) {
+                        $trainingCenter->company_registration_certificate_url = $certResult['url'];
+                        $trainingCenter->save();
+                    } else {
+                        throw new \Exception($certResult['error'] ?? 'Registration certificate upload failed');
+                    }
+                }
+            }
+
+            // Process facility floorplan file upload
+            if ($request->hasFile('facility_floorplan')) {
+                $floorplanFile = $request->file('facility_floorplan');
+                if ($floorplanFile && $floorplanFile->isValid()) {
+                    $floorplanResult = $this->fileUploadService->uploadDocument(
+                        $floorplanFile,
+                        $trainingCenter->id,
+                        'training_center',
+                        'floorplan'
+                    );
+                    if ($floorplanResult['success']) {
+                        $trainingCenter->facility_floorplan_url = $floorplanResult['url'];
+                        $trainingCenter->save();
+                    } else {
+                        throw new \Exception($floorplanResult['error'] ?? 'Floorplan upload failed');
+                    }
+                }
+            }
+
+            // Handle mailing address - if same as physical, copy physical address fields
+            $updateData = [];
+            if ($request->has('mailing_same_as_physical') && $request->mailing_same_as_physical) {
+                $updateData['mailing_same_as_physical'] = true;
+                $updateData['mailing_address'] = $request->input('address', $trainingCenter->address);
+                $updateData['mailing_city'] = $request->input('city', $trainingCenter->city);
+                $updateData['mailing_country'] = $request->input('country', $trainingCenter->country);
+                $updateData['mailing_postal_code'] = $request->input('physical_postal_code', $trainingCenter->physical_postal_code);
+            }
+
+            // Get all fillable fields from request
+            $fillableFields = [
+                'name', 'legal_name', 'registration_number', 'country', 'city', 'address',
+                'phone', 'email', 'website', 'fax', 'training_provider_type',
+                'physical_postal_code',
+                'mailing_same_as_physical', 'mailing_address', 'mailing_city', 'mailing_country', 'mailing_postal_code',
+                'primary_contact_title', 'primary_contact_first_name', 'primary_contact_last_name',
+                'primary_contact_email', 'primary_contact_country', 'primary_contact_mobile',
+                'has_secondary_contact', 'secondary_contact_title', 'secondary_contact_first_name',
+                'secondary_contact_last_name', 'secondary_contact_email', 'secondary_contact_country', 'secondary_contact_mobile',
+                'company_gov_registry_number', 'interested_fields', 'how_did_you_hear_about_us',
+            ];
+
+            foreach ($fillableFields as $field) {
+                if ($request->has($field)) {
+                    $value = $request->input($field);
+                    // Handle array fields (interested_fields)
+                    if ($field === 'interested_fields' && is_string($value)) {
+                        $value = json_decode($value, true);
+                    }
+                    $updateData[$field] = $value;
+                }
+            }
 
             // Only include logo_url if logo file was NOT uploaded
             if (!$request->hasFile('logo') && $request->has('logo_url')) {
@@ -199,7 +316,7 @@ class ProfileController extends Controller
 
             // Filter out null values to only update provided fields
             $updateData = array_filter($updateData, function ($value) {
-                return $value !== null;
+                return $value !== null && $value !== '';
             });
 
             if (!empty($updateData)) {

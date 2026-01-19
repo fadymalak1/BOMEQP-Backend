@@ -24,12 +24,47 @@ class TrainingCenter extends Model
         'logo_url',
         'referred_by_group',
         'status',
+        // Company Information
+        'fax',
+        'training_provider_type',
+        // Physical Address
+        'physical_postal_code',
+        // Mailing Address
+        'mailing_same_as_physical',
+        'mailing_address',
+        'mailing_city',
+        'mailing_country',
+        'mailing_postal_code',
+        // Primary Contact
+        'primary_contact_title',
+        'primary_contact_first_name',
+        'primary_contact_last_name',
+        'primary_contact_email',
+        'primary_contact_country',
+        'primary_contact_mobile',
+        // Secondary Contact
+        'has_secondary_contact',
+        'secondary_contact_title',
+        'secondary_contact_first_name',
+        'secondary_contact_last_name',
+        'secondary_contact_email',
+        'secondary_contact_country',
+        'secondary_contact_mobile',
+        // Additional Information
+        'company_gov_registry_number',
+        'company_registration_certificate_url',
+        'facility_floorplan_url',
+        'interested_fields',
+        'how_did_you_hear_about_us',
     ];
 
     protected function casts(): array
     {
         return [
             'referred_by_group' => 'boolean',
+            'mailing_same_as_physical' => 'boolean',
+            'has_secondary_contact' => 'boolean',
+            'interested_fields' => 'array',
         ];
     }
 

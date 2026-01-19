@@ -36,6 +36,7 @@ class ACCProfileService
             'registration_number' => $acc->registration_number,
             'email' => $acc->email,
             'phone' => $acc->phone,
+            'fax' => $acc->fax,
             'country' => $acc->country,
             'address' => $acc->address,
             'mailing_address' => [
@@ -43,6 +44,7 @@ class ACCProfileService
                 'city' => $acc->mailing_city,
                 'country' => $acc->mailing_country,
                 'postal_code' => $acc->mailing_postal_code,
+                'same_as_physical' => $acc->mailing_same_as_physical ?? false,
             ],
             'physical_address' => [
                 'street' => $acc->physical_street,
@@ -56,6 +58,29 @@ class ACCProfileService
             'commission_percentage' => $acc->commission_percentage,
             'stripe_account_id' => $acc->stripe_account_id,
             'stripe_account_configured' => !empty($acc->stripe_account_id),
+            'primary_contact' => [
+                'title' => $acc->primary_contact_title,
+                'first_name' => $acc->primary_contact_first_name,
+                'last_name' => $acc->primary_contact_last_name,
+                'email' => $acc->primary_contact_email,
+                'country' => $acc->primary_contact_country,
+                'mobile' => $acc->primary_contact_mobile,
+                'passport_url' => $acc->primary_contact_passport_url,
+            ],
+            'secondary_contact' => [
+                'title' => $acc->secondary_contact_title,
+                'first_name' => $acc->secondary_contact_first_name,
+                'last_name' => $acc->secondary_contact_last_name,
+                'email' => $acc->secondary_contact_email,
+                'country' => $acc->secondary_contact_country,
+                'mobile' => $acc->secondary_contact_mobile,
+                'passport_url' => $acc->secondary_contact_passport_url,
+            ],
+            'company_gov_registry_number' => $acc->company_gov_registry_number,
+            'company_registration_certificate_url' => $acc->company_registration_certificate_url,
+            'how_did_you_hear_about_us' => $acc->how_did_you_hear_about_us,
+            'agreed_to_receive_communications' => $acc->agreed_to_receive_communications ?? false,
+            'agreed_to_terms_and_conditions' => $acc->agreed_to_terms_and_conditions ?? false,
             'documents' => $acc->documents->map(function ($document) {
                 return [
                     'id' => $document->id,
@@ -159,6 +184,84 @@ class ACCProfileService
                 }
             }
 
+            // Process primary contact passport upload
+            if ($request->hasFile('primary_contact_passport')) {
+                $passportFile = $request->file('primary_contact_passport');
+                if ($passportFile && $passportFile->isValid()) {
+                    $passportResult = $this->fileUploadService->uploadDocument(
+                        $passportFile,
+                        $acc->id,
+                        'acc',
+                        'primary_contact_passport'
+                    );
+                    if ($passportResult['success']) {
+                        $oldFilesToDelete[] = $acc->primary_contact_passport_url;
+                        $acc->update(['primary_contact_passport_url' => $passportResult['url']]);
+                        $uploadedFiles[] = $passportResult['file_path'];
+                        $hasFileUpdates = true;
+                        $acc->refresh();
+                    } else {
+                        throw new \Exception($passportResult['error'] ?? 'Primary contact passport upload failed');
+                    }
+                }
+            }
+
+            // Process secondary contact passport upload
+            if ($request->hasFile('secondary_contact_passport')) {
+                $passportFile = $request->file('secondary_contact_passport');
+                if ($passportFile && $passportFile->isValid()) {
+                    $passportResult = $this->fileUploadService->uploadDocument(
+                        $passportFile,
+                        $acc->id,
+                        'acc',
+                        'secondary_contact_passport'
+                    );
+                    if ($passportResult['success']) {
+                        $oldFilesToDelete[] = $acc->secondary_contact_passport_url;
+                        $acc->update(['secondary_contact_passport_url' => $passportResult['url']]);
+                        $uploadedFiles[] = $passportResult['file_path'];
+                        $hasFileUpdates = true;
+                        $acc->refresh();
+                    } else {
+                        throw new \Exception($passportResult['error'] ?? 'Secondary contact passport upload failed');
+                    }
+                }
+            }
+
+            // Process company registration certificate upload
+            if ($request->hasFile('company_registration_certificate')) {
+                $certFile = $request->file('company_registration_certificate');
+                if ($certFile && $certFile->isValid()) {
+                    $certResult = $this->fileUploadService->uploadDocument(
+                        $certFile,
+                        $acc->id,
+                        'acc',
+                        'registration_certificate'
+                    );
+                    if ($certResult['success']) {
+                        $oldFilesToDelete[] = $acc->company_registration_certificate_url;
+                        $acc->update(['company_registration_certificate_url' => $certResult['url']]);
+                        $uploadedFiles[] = $certResult['file_path'];
+                        $hasFileUpdates = true;
+                        $acc->refresh();
+                    } else {
+                        throw new \Exception($certResult['error'] ?? 'Registration certificate upload failed');
+                    }
+                }
+            }
+
+            // Handle mailing address same as physical logic
+            if ($request->has('mailing_same_as_physical') && $request->mailing_same_as_physical) {
+                $acc->update([
+                    'mailing_same_as_physical' => true,
+                    'mailing_street' => $acc->physical_street ?? $request->input('physical_street'),
+                    'mailing_city' => $acc->physical_city ?? $request->input('physical_city'),
+                    'mailing_country' => $acc->physical_country ?? $request->input('physical_country'),
+                    'mailing_postal_code' => $acc->physical_postal_code ?? $request->input('physical_postal_code'),
+                ]);
+                $acc->refresh();
+            }
+
             // Process document uploads/updates
             if ($hasDocumentsInput || $hasDocumentFiles) {
                 $docResult = $this->handleDocuments($request, $acc);
@@ -242,17 +345,28 @@ class ACCProfileService
         
         // Define all updatable text fields
         $textFields = [
-            'name', 'legal_name', 'phone', 'country', 'address',
-            'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
+            'name', 'legal_name', 'phone', 'fax', 'country', 'address',
+            'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code', 'mailing_same_as_physical',
             'physical_street', 'physical_city', 'physical_country', 'physical_postal_code',
-            'website', 'logo_url', 'stripe_account_id'
+            'website', 'logo_url', 'stripe_account_id',
+            'primary_contact_title', 'primary_contact_first_name', 'primary_contact_last_name',
+            'primary_contact_email', 'primary_contact_country', 'primary_contact_mobile',
+            'secondary_contact_title', 'secondary_contact_first_name', 'secondary_contact_last_name',
+            'secondary_contact_email', 'secondary_contact_country', 'secondary_contact_mobile',
+            'company_gov_registry_number', 'how_did_you_hear_about_us',
+            'agreed_to_receive_communications', 'agreed_to_terms_and_conditions'
         ];
         
         // Fields that can be set to null (cleared)
         $nullableFields = [
-            'website', 'logo_url', 'stripe_account_id', 'address',
+            'website', 'logo_url', 'stripe_account_id', 'address', 'fax',
             'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code',
-            'physical_street', 'physical_city', 'physical_country', 'physical_postal_code'
+            'physical_street', 'physical_city', 'physical_country', 'physical_postal_code',
+            'primary_contact_title', 'primary_contact_first_name', 'primary_contact_last_name',
+            'primary_contact_email', 'primary_contact_country', 'primary_contact_mobile',
+            'secondary_contact_title', 'secondary_contact_first_name', 'secondary_contact_last_name',
+            'secondary_contact_email', 'secondary_contact_country', 'secondary_contact_mobile',
+            'how_did_you_hear_about_us'
         ];
         
         foreach ($textFields as $field) {

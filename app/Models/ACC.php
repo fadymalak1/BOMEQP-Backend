@@ -41,6 +41,33 @@ class ACC extends Model
         'commission_percentage',
         'stripe_account_id',
         'rejection_reason',
+        // Company Information
+        'fax',
+        // Mailing Address
+        'mailing_same_as_physical',
+        // Primary Contact
+        'primary_contact_title',
+        'primary_contact_first_name',
+        'primary_contact_last_name',
+        'primary_contact_email',
+        'primary_contact_country',
+        'primary_contact_mobile',
+        'primary_contact_passport_url',
+        // Secondary Contact
+        'secondary_contact_title',
+        'secondary_contact_first_name',
+        'secondary_contact_last_name',
+        'secondary_contact_email',
+        'secondary_contact_country',
+        'secondary_contact_mobile',
+        'secondary_contact_passport_url',
+        // Additional Information
+        'company_gov_registry_number',
+        'company_registration_certificate_url',
+        'how_did_you_hear_about_us',
+        // Agreement Checkboxes
+        'agreed_to_receive_communications',
+        'agreed_to_terms_and_conditions',
     ];
 
     protected function casts(): array
@@ -51,6 +78,9 @@ class ACC extends Model
             'registration_paid_at' => 'datetime',
             'approved_at' => 'datetime',
             'commission_percentage' => 'decimal:2',
+            'mailing_same_as_physical' => 'boolean',
+            'agreed_to_receive_communications' => 'boolean',
+            'agreed_to_terms_and_conditions' => 'boolean',
         ];
     }
 

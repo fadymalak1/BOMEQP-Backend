@@ -236,6 +236,43 @@ class ProfileController extends Controller
             }
         }
 
+        // Validate file uploads (if any)
+        if ($request->hasFile('primary_contact_passport')) {
+            $passportFile = $request->file('primary_contact_passport');
+            $validation = $this->fileUploadService->validateFile($passportFile, 10, ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'message' => $validation['message'],
+                    'error_code' => $validation['error_code'] ?? null,
+                    'hint' => $validation['hint'] ?? null
+                ], 422);
+            }
+        }
+
+        if ($request->hasFile('secondary_contact_passport')) {
+            $passportFile = $request->file('secondary_contact_passport');
+            $validation = $this->fileUploadService->validateFile($passportFile, 10, ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'message' => $validation['message'],
+                    'error_code' => $validation['error_code'] ?? null,
+                    'hint' => $validation['hint'] ?? null
+                ], 422);
+            }
+        }
+
+        if ($request->hasFile('company_registration_certificate')) {
+            $certFile = $request->file('company_registration_certificate');
+            $validation = $this->fileUploadService->validateFile($certFile, 10, ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'message' => $validation['message'],
+                    'error_code' => $validation['error_code'] ?? null,
+                    'hint' => $validation['hint'] ?? null
+                ], 422);
+            }
+        }
+
         // Validate all input data
         try {
             $request->validate([
@@ -243,20 +280,47 @@ class ProfileController extends Controller
                 'name' => 'sometimes|nullable|string|max:255',
                 'legal_name' => 'sometimes|nullable|string|max:255',
                 'phone' => 'sometimes|nullable|string|max:255',
+                'fax' => 'nullable|string|max:255',
                 'country' => 'sometimes|nullable|string|max:255',
                 'address' => 'sometimes|nullable|string',
                 
                 // Mailing Address
-                'mailing_street' => 'sometimes|nullable|string|max:255',
-                'mailing_city' => 'sometimes|nullable|string|max:255',
-                'mailing_country' => 'sometimes|nullable|string|max:255',
-                'mailing_postal_code' => 'sometimes|nullable|string|max:20',
+                'mailing_same_as_physical' => 'sometimes|boolean',
+                'mailing_street' => 'nullable|string|max:255|required_if:mailing_same_as_physical,false',
+                'mailing_city' => 'nullable|string|max:255|required_if:mailing_same_as_physical,false',
+                'mailing_country' => 'nullable|string|max:255|required_if:mailing_same_as_physical,false',
+                'mailing_postal_code' => 'nullable|string|max:20|required_if:mailing_same_as_physical,false',
                 
                 // Physical Address
                 'physical_street' => 'sometimes|nullable|string|max:255',
                 'physical_city' => 'sometimes|nullable|string|max:255',
                 'physical_country' => 'sometimes|nullable|string|max:255',
                 'physical_postal_code' => 'sometimes|nullable|string|max:20',
+                
+                // Primary Contact
+                'primary_contact_title' => 'sometimes|in:Mr.,Mrs.,Eng.,Prof.',
+                'primary_contact_first_name' => 'sometimes|string|max:255',
+                'primary_contact_last_name' => 'sometimes|string|max:255',
+                'primary_contact_email' => 'sometimes|email|max:255',
+                'primary_contact_country' => 'sometimes|string|max:255',
+                'primary_contact_mobile' => 'sometimes|string|max:255',
+                'primary_contact_passport' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                
+                // Secondary Contact (Required)
+                'secondary_contact_title' => 'sometimes|in:Mr.,Mrs.,Eng.,Prof.',
+                'secondary_contact_first_name' => 'sometimes|string|max:255',
+                'secondary_contact_last_name' => 'sometimes|string|max:255',
+                'secondary_contact_email' => 'sometimes|email|max:255',
+                'secondary_contact_country' => 'sometimes|string|max:255',
+                'secondary_contact_mobile' => 'sometimes|string|max:255',
+                'secondary_contact_passport' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                
+                // Additional Information
+                'company_gov_registry_number' => 'sometimes|string|max:255',
+                'company_registration_certificate' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                'how_did_you_hear_about_us' => 'nullable|string',
+                'agreed_to_receive_communications' => 'sometimes|boolean',
+                'agreed_to_terms_and_conditions' => 'sometimes|boolean',
                 
                 // Additional Information
                 'website' => 'sometimes|nullable|url|max:255',
