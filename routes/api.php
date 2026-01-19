@@ -33,6 +33,7 @@ Route::post('/stripe/webhook', [App\Http\Controllers\API\StripeController::class
 Route::get('/storage/instructors/cv/{filename}', [App\Http\Controllers\API\FileController::class, 'instructorCv']);
 Route::get('/storage/instructors/certificates/{filename}', [App\Http\Controllers\API\FileController::class, 'instructorCertificate']);
 Route::get('/storage/instructors/photo/{filename}', [App\Http\Controllers\API\FileController::class, 'instructorPhoto']);
+Route::get('/storage/instructors/passport/{filename}', [App\Http\Controllers\API\FileController::class, 'instructorPassport']);
 // General storage route (must be last to avoid conflicts)
 Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, 'serveFile'])->where('path', '.+');
 

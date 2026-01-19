@@ -61,6 +61,12 @@ class DashboardController extends Controller
         $profile = [
             'name' => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
             'email' => $instructor->email ?? null,
+            'date_of_birth' => $instructor->date_of_birth ? $instructor->date_of_birth->format('Y-m-d') : null,
+            'phone' => $instructor->phone ?? null,
+            'passport_image_url' => $instructor->passport_image_url ?? null,
+            'cv_url' => $instructor->cv_url ?? null,
+            'photo_url' => $instructor->photo_url ?? null,
+            'languages' => $instructor->specializations ?? [],
             'is_assessor' => $instructor->is_assessor ?? false,
         ];
 

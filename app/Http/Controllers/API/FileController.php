@@ -105,6 +105,38 @@ class FileController extends Controller
     }
 
     #[OA\Get(
+        path: "/storage/instructors/passport/{filename}",
+        summary: "Get instructor passport copy",
+        description: "Serve an instructor passport copy file. This is a public endpoint.",
+        tags: ["Files"],
+        parameters: [
+            new OA\Parameter(name: "filename", in: "path", required: true, schema: new OA\Schema(type: "string"), example: "passport_1234567890.pdf")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "File retrieved successfully"),
+            new OA\Response(response: 404, description: "File not found")
+        ]
+    )]
+    public function instructorPassport(Request $request, string $filename)
+    {
+        $filePath = 'instructors/passport/' . $filename;
+        
+        if (!Storage::disk('public')->exists($filePath)) {
+            return response()->json([
+                'message' => 'File not found'
+            ], 404);
+        }
+
+        $fullPath = Storage::disk('public')->path($filePath);
+        $mimeType = Storage::disk('public')->mimeType($filePath) ?? 'application/pdf';
+        
+        return response()->file($fullPath, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
+    }
+
+    #[OA\Get(
         path: "/storage/{path}",
         summary: "Get file from storage",
         description: "Serve a file from public storage. Only authorized paths are allowed.",

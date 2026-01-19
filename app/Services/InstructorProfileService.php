@@ -36,13 +36,17 @@ class InstructorProfileService
             'full_name' => $instructor->first_name . ' ' . $instructor->last_name,
             'email' => $instructor->email,
             'phone' => $instructor->phone,
+            'date_of_birth' => $instructor->date_of_birth,
             'id_number' => $instructor->id_number,
             'country' => $instructor->country,
             'city' => $instructor->city,
             'cv_url' => $instructor->cv_url,
+            'passport_image_url' => $instructor->passport_image_url,
             'photo_url' => $instructor->photo_url,
             'certificates' => $instructor->certificates_json ?? [],
             'specializations' => $instructor->specializations ?? [],
+            'languages' => $instructor->specializations ?? [], // Alias for backward compatibility
+            'is_assessor' => $instructor->is_assessor,
             'status' => $instructor->status,
             'training_center' => $instructor->trainingCenter,
             'user' => $userAccount ? [
@@ -87,7 +91,7 @@ class InstructorProfileService
             }
 
             // Process basic text fields
-            $textFields = ['first_name', 'last_name', 'phone', 'country', 'city', 'id_number'];
+            $textFields = ['first_name', 'last_name', 'phone', 'date_of_birth', 'country', 'city', 'id_number'];
             foreach ($textFields as $field) {
                 if ($request->has($field) || array_key_exists($field, $allRequestData)) {
                     $value = $request->input($field);
@@ -105,6 +109,16 @@ class InstructorProfileService
                 }
                 $updateData['cv_url'] = $cvResult['url'];
                 $uploadedFiles[] = $cvResult['file_path'];
+            }
+
+            // Handle Passport file upload
+            if ($request->hasFile('passport')) {
+                $passportResult = $this->uploadPassport($request, $instructor);
+                if (!$passportResult['success']) {
+                    throw new \Exception($passportResult['error'] ?? 'Passport upload failed');
+                }
+                $updateData['passport_image_url'] = $passportResult['url'];
+                $uploadedFiles[] = $passportResult['file_path'];
             }
 
             // Handle profile image upload
@@ -126,9 +140,9 @@ class InstructorProfileService
                 $uploadedFiles = array_merge($uploadedFiles, $certificatesResult['uploaded_files'] ?? []);
             }
 
-            // Handle specializations
-            if ($request->has('specializations')) {
-                $specializations = $request->input('specializations');
+            // Handle specializations/languages
+            if ($request->has('specializations') || $request->has('languages')) {
+                $specializations = $request->input('languages') ?? $request->input('specializations');
                 if (is_array($specializations)) {
                     $updateData['specializations'] = array_filter($specializations);
                 }
@@ -246,6 +260,93 @@ class InstructorProfileService
 
         } catch (\Exception $e) {
             Log::error('Error uploading CV file', [
+                'instructor_id' => $instructor->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Upload passport file
+     *
+     * @param Request $request
+     * @param Instructor $instructor
+     * @return array
+     */
+    private function uploadPassport(Request $request, Instructor $instructor): array
+    {
+        try {
+            $passportFile = $request->file('passport');
+
+            // Validate file (JPEG, PNG, PDF, max 10MB)
+            $validation = $this->fileUploadService->validateFile($passportFile, 10, [
+                'application/pdf',
+                'image/jpeg',
+                'image/jpg',
+                'image/png'
+            ]);
+            if (!$validation['valid']) {
+                return [
+                    'success' => false,
+                    'error' => $validation['message']
+                ];
+            }
+
+            // Check available disk space
+            $fileSize = $passportFile->getSize();
+            $freeSpace = disk_free_space(storage_path('app/public'));
+            if ($freeSpace !== false && $freeSpace < $fileSize * 2) {
+                return [
+                    'success' => false,
+                    'error' => 'Insufficient disk space to upload file'
+                ];
+            }
+
+            // Delete old passport if exists
+            if ($instructor->passport_image_url) {
+                $this->fileUploadService->deleteOldFile($instructor->passport_image_url, 'instructor', $instructor->id, 'passport');
+            }
+
+            // Upload new passport
+            $originalName = $passportFile->getClientOriginalName();
+            $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+            $fileName = time() . '_' . $instructor->id . '_' . $sanitizedName;
+
+            // Ensure directory exists
+            $directory = 'instructors/passport';
+            if (!Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->makeDirectory($directory);
+            }
+
+            // Store file
+            $passportPath = $passportFile->storeAs($directory, $fileName, 'public');
+
+            if (!$passportPath || !Storage::disk('public')->exists($passportPath)) {
+                throw new \Exception('Failed to store passport file');
+            }
+
+            // Generate URL using the API route
+            $passportUrl = url('/api/storage/instructors/passport/' . $fileName);
+
+            Log::info('Passport file uploaded successfully', [
+                'instructor_id' => $instructor->id,
+                'file_name' => $fileName,
+                'passport_url' => $passportUrl,
+            ]);
+
+            return [
+                'success' => true,
+                'url' => $passportUrl,
+                'file_path' => $passportPath
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error uploading passport file', [
                 'instructor_id' => $instructor->id,
                 'error' => $e->getMessage()
             ]);

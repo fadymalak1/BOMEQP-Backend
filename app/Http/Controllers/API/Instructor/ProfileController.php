@@ -69,10 +69,12 @@ class ProfileController extends Controller
                         new OA\Property(property: "first_name", type: "string", nullable: true, example: "John", description: "First name of the instructor"),
                         new OA\Property(property: "last_name", type: "string", nullable: true, example: "Doe", description: "Last name of the instructor"),
                         new OA\Property(property: "phone", type: "string", nullable: true, example: "+1234567890", description: "Phone number"),
+                        new OA\Property(property: "date_of_birth", type: "string", format: "date", nullable: true, example: "1990-01-15", description: "Date of birth"),
                         new OA\Property(property: "country", type: "string", nullable: true, example: "Egypt", description: "Country"),
                         new OA\Property(property: "city", type: "string", nullable: true, example: "Cairo", description: "City"),
                         new OA\Property(property: "photo", type: "string", format: "binary", nullable: true, description: "Profile image file (jpg, jpeg, png, max 5MB)"),
                         new OA\Property(property: "cv", type: "string", format: "binary", nullable: true, description: "CV file (PDF, max 10MB)"),
+                        new OA\Property(property: "passport", type: "string", format: "binary", nullable: true, description: "Passport copy (JPEG, PNG, PDF, max 10MB)"),
                         new OA\Property(
                             property: "certificates", 
                             type: "array", 
@@ -146,10 +148,12 @@ class ProfileController extends Controller
             'first_name' => 'sometimes|string|max:255',
             'last_name' => 'sometimes|string|max:255',
             'phone' => 'sometimes|string|max:255',
+            'date_of_birth' => 'sometimes|date|before:today',
             'country' => 'sometimes|string|max:255',
             'city' => 'sometimes|string|max:255',
             'photo' => 'nullable|image|mimes:jpeg,jpg,png|max:5120', // Max 5MB
             'cv' => 'nullable|file|mimes:pdf|max:10240',
+            'passport' => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:10240',
             'certificates' => 'nullable|array',
             'certificates.*.name' => 'required_with:certificates|string|max:255',
             'certificates.*.issue_date' => 'required_with:certificates|date',
@@ -158,6 +162,7 @@ class ProfileController extends Controller
             'certificate_files' => 'nullable|array',
             'certificate_files.*' => 'nullable|file|mimes:pdf|max:10240',
             'specializations' => 'nullable|array',
+            'languages' => 'nullable|array',
         ]);
 
         // Process updates using service
