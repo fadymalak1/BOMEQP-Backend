@@ -77,6 +77,7 @@ class TraineeManagementService
                 'last_name' => $request->last_name,
                 'email' => $request->email,
                 'phone' => $request->phone,
+                'nationality' => $request->nationality,
                 'id_number' => $request->id_number,
                 'id_image_url' => $idImageUrl,
                 'card_image_url' => $cardImageUrl,
@@ -159,7 +160,7 @@ class TraineeManagementService
             DB::beginTransaction();
 
             // Collect update data - handle POST (multipart/form-data), PUT (form-urlencoded), and other formats
-            $allowedFields = ['first_name', 'last_name', 'email', 'phone', 'id_number', 'status'];
+            $allowedFields = ['first_name', 'last_name', 'email', 'phone', 'nationality', 'id_number', 'status'];
             $updateData = [];
             
             // Get all request data - Laravel automatically parses POST multipart/form-data

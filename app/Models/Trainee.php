@@ -17,6 +17,7 @@ class Trainee extends Model
         'last_name',
         'email',
         'phone',
+        'nationality',
         'id_number',
         'id_image_url',
         'card_image_url',

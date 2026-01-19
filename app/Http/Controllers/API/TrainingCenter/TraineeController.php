@@ -141,15 +141,16 @@ class TraineeController extends Controller
             content: new OA\MediaType(
                 mediaType: "multipart/form-data",
                 schema: new OA\Schema(
-                    required: ["first_name", "last_name", "email", "phone", "id_number", "id_image", "card_image"],
+                    required: ["first_name", "last_name", "email", "phone", "nationality", "id_number", "id_image", "card_image"],
                     properties: [
                         new OA\Property(property: "first_name", type: "string", example: "John"),
                         new OA\Property(property: "last_name", type: "string", example: "Doe"),
                         new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
                         new OA\Property(property: "phone", type: "string", example: "+1234567890"),
+                        new OA\Property(property: "nationality", type: "string", example: "US"),
                         new OA\Property(property: "id_number", type: "string", example: "ID123456"),
-                        new OA\Property(property: "id_image", type: "string", format: "binary", description: "ID image (JPEG, PNG, PDF, max 10MB)"),
-                        new OA\Property(property: "card_image", type: "string", format: "binary", description: "Card image (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "id_image", type: "string", format: "binary", description: "Passport/National ID copy (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "card_image", type: "string", format: "binary", description: "Pic Upload (JPEG, PNG, PDF, max 10MB)"),
                         new OA\Property(property: "enrolled_classes", type: "array", nullable: true, items: new OA\Items(type: "integer"), example: [1, 2]),
                         new OA\Property(property: "status", type: "string", enum: ["active", "inactive", "suspended"], nullable: true, example: "active")
                     ]
@@ -186,6 +187,7 @@ class TraineeController extends Controller
             'last_name' => 'required|string|max:255',
             'email' => 'required|email|unique:trainees,email',
             'phone' => 'required|string|max:255',
+            'nationality' => 'required|string|max:255',
             'id_number' => 'required|string|unique:trainees,id_number',
             'id_image' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240', // 10MB max
             'card_image' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240', // 10MB max
@@ -231,13 +233,14 @@ class TraineeController extends Controller
                 schema: new OA\Schema(
                     properties: [
                         new OA\Property(property: "_method", type: "string", example: "PUT", nullable: true, description: "HTTP method override (optional, for compatibility with PUT endpoints)"),
-                        new OA\Property(property: "first_name", type: "string", nullable: true),
-                        new OA\Property(property: "last_name", type: "string", nullable: true),
-                        new OA\Property(property: "email", type: "string", format: "email", nullable: true),
-                        new OA\Property(property: "phone", type: "string", nullable: true),
-                        new OA\Property(property: "id_number", type: "string", nullable: true),
-                        new OA\Property(property: "id_image", type: "string", format: "binary", nullable: true, description: "ID image (JPEG, PNG, PDF, max 10MB)"),
-                        new OA\Property(property: "card_image", type: "string", format: "binary", nullable: true, description: "Card image (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "first_name", type: "string", example: "John"),
+                        new OA\Property(property: "last_name", type: "string", example: "Doe"),
+                        new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
+                        new OA\Property(property: "phone", type: "string", example: "+1234567890"),
+                        new OA\Property(property: "nationality", type: "string", example: "US"),
+                        new OA\Property(property: "id_number", type: "string", example: "ID123456"),
+                        new OA\Property(property: "id_image", type: "string", format: "binary", description: "Passport/National ID copy (JPEG, PNG, PDF, max 10MB)"),
+                        new OA\Property(property: "card_image", type: "string", format: "binary", description: "Pic Upload (JPEG, PNG, PDF, max 10MB)"),
                         new OA\Property(property: "enrolled_classes", type: "array", nullable: true, items: new OA\Items(type: "integer")),
                         new OA\Property(property: "status", type: "string", enum: ["active", "inactive", "suspended"], nullable: true)
                     ]
@@ -272,13 +275,14 @@ class TraineeController extends Controller
         $trainee = Trainee::where('training_center_id', $trainingCenter->id)->findOrFail($id);
 
         $request->validate([
-            'first_name' => 'sometimes|string|max:255',
-            'last_name' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|unique:trainees,email,' . $id,
-            'phone' => 'sometimes|string|max:255',
-            'id_number' => 'sometimes|string|unique:trainees,id_number,' . $id,
-            'id_image' => 'sometimes|file|mimes:jpeg,jpg,png,pdf|max:10240',
-            'card_image' => 'sometimes|file|mimes:jpeg,jpg,png,pdf|max:10240',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'email' => 'required|email|unique:trainees,email,' . $id,
+            'phone' => 'required|string|max:255',
+            'nationality' => 'required|string|max:255',
+            'id_number' => 'required|string|unique:trainees,id_number,' . $id,
+            'id_image' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240',
+            'card_image' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240',
             'enrolled_classes' => 'nullable|array',
             'enrolled_classes.*' => 'exists:training_classes,id',
             'status' => 'sometimes|in:active,inactive,suspended',
