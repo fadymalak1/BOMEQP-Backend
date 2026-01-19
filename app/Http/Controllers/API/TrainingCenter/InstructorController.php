@@ -94,17 +94,17 @@ class InstructorController extends Controller
             content: new OA\MediaType(
                 mediaType: "multipart/form-data",
                 schema: new OA\Schema(
-                    required: ["first_name", "last_name", "email", "phone", "id_number"],
+                    required: ["first_name", "last_name", "email", "date_of_birth", "phone", "languages", "is_assessor", "cv", "passport"],
                     properties: [
                         new OA\Property(property: "first_name", type: "string", example: "John"),
                         new OA\Property(property: "last_name", type: "string", example: "Doe"),
                         new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
+                        new OA\Property(property: "date_of_birth", type: "string", format: "date", example: "1990-01-15"),
                         new OA\Property(property: "phone", type: "string", example: "+1234567890"),
-                        new OA\Property(property: "id_number", type: "string", example: "ID123456"),
-                        new OA\Property(property: "cv", type: "string", format: "binary", description: "CV file (PDF, max 10MB)"),
-                        new OA\Property(property: "certificates_json", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "specializations", type: "array", items: new OA\Items(type: "string")),
-                        new OA\Property(property: "is_assessor", type: "boolean", example: false)
+                        new OA\Property(property: "languages", type: "array", items: new OA\Items(type: "string"), example: ["English", "Arabic"]),
+                        new OA\Property(property: "is_assessor", type: "boolean", example: false, description: "true for Assessor, false for Instructor"),
+                        new OA\Property(property: "cv", type: "string", format: "binary", description: "CV + supporting certificates (PDF, max 10MB)"),
+                        new OA\Property(property: "passport", type: "string", format: "binary", description: "Passport copy (JPEG, PNG, PDF, max 10MB)")
                     ]
                 )
             )
@@ -131,12 +131,13 @@ class InstructorController extends Controller
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'email' => 'required|email|unique:instructors,email|unique:users,email',
-            'phone' => 'required|string',
-            'id_number' => 'required|string|unique:instructors,id_number',
-            'cv' => 'nullable|file|mimes:pdf|max:10240',
-            'certificates_json' => 'nullable|array',
-            'specializations' => 'nullable|array',
-            'is_assessor' => 'nullable|boolean',
+            'date_of_birth' => 'required|date|before:today',
+            'phone' => 'required|string|max:255',
+            'languages' => 'required|array|min:1',
+            'languages.*' => 'string|max:255',
+            'is_assessor' => 'required|boolean',
+            'cv' => 'required|file|mimes:pdf|max:10240',
+            'passport' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240',
         ]);
 
         $user = $request->user();
@@ -209,13 +210,15 @@ class InstructorController extends Controller
                 schema: new OA\Schema(
                     properties: [
                         new OA\Property(property: "_method", type: "string", example: "PUT", nullable: true, description: "HTTP method override (optional, for compatibility with PUT endpoints)"),
-                        new OA\Property(property: "first_name", type: "string", nullable: true),
-                        new OA\Property(property: "last_name", type: "string", nullable: true),
-                        new OA\Property(property: "phone", type: "string", nullable: true),
-                        new OA\Property(property: "cv", type: "string", format: "binary", nullable: true),
-                        new OA\Property(property: "certificates_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
-                        new OA\Property(property: "specializations", type: "array", nullable: true, items: new OA\Items(type: "string")),
-                        new OA\Property(property: "is_assessor", type: "boolean", nullable: true)
+                        new OA\Property(property: "first_name", type: "string", example: "John"),
+                        new OA\Property(property: "last_name", type: "string", example: "Doe"),
+                        new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
+                        new OA\Property(property: "date_of_birth", type: "string", format: "date", example: "1990-01-15"),
+                        new OA\Property(property: "phone", type: "string", example: "+1234567890"),
+                        new OA\Property(property: "languages", type: "array", items: new OA\Items(type: "string"), example: ["English", "Arabic"]),
+                        new OA\Property(property: "is_assessor", type: "boolean", example: false, description: "true for Assessor, false for Instructor"),
+                        new OA\Property(property: "cv", type: "string", format: "binary", description: "CV + supporting certificates (PDF, max 10MB)"),
+                        new OA\Property(property: "passport", type: "string", format: "binary", description: "Passport copy (JPEG, PNG, PDF, max 10MB)")
                     ]
                 )
             )
@@ -248,15 +251,16 @@ class InstructorController extends Controller
         $instructor = Instructor::where('training_center_id', $trainingCenter->id)->findOrFail($id);
 
         $request->validate([
-            'first_name' => 'sometimes|string|max:255',
-            'last_name' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|unique:instructors,email,' . $id,
-            'phone' => 'sometimes|string',
-            'id_number' => 'sometimes|string|unique:instructors,id_number,' . $id,
-            'cv' => 'nullable|file|mimes:pdf|max:10240',
-            'certificates_json' => 'nullable|array',
-            'specializations' => 'nullable|array',
-            'is_assessor' => 'nullable|boolean',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'email' => 'required|email|unique:instructors,email,' . $id,
+            'date_of_birth' => 'required|date|before:today',
+            'phone' => 'required|string|max:255',
+            'languages' => 'required|array|min:1',
+            'languages.*' => 'string|max:255',
+            'is_assessor' => 'required|boolean',
+            'cv' => 'required|file|mimes:pdf|max:10240',
+            'passport' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240',
         ]);
 
         try {

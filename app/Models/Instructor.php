@@ -18,10 +18,12 @@ class Instructor extends Model
         'last_name',
         'email',
         'phone',
+        'date_of_birth',
         'id_number',
         'country',
         'city',
         'cv_url',
+        'passport_image_url',
         'photo_url',
         'certificates_json',
         'specializations',
@@ -32,6 +34,7 @@ class Instructor extends Model
     protected function casts(): array
     {
         return [
+            'date_of_birth' => 'date',
             'certificates_json' => 'array',
             'specializations' => 'array',
             'is_assessor' => 'boolean',

@@ -43,7 +43,7 @@ class InstructorManagementService
         try {
             DB::beginTransaction();
 
-            // Handle CV upload
+            // Handle CV upload (required)
             $cvUrl = null;
             if ($request->hasFile('cv')) {
                 $cvResult = $this->fileUploadService->uploadDocument(
@@ -58,6 +58,21 @@ class InstructorManagementService
                 }
             }
 
+            // Handle Passport upload (required)
+            $passportImageUrl = null;
+            if ($request->hasFile('passport')) {
+                $passportResult = $this->fileUploadService->uploadDocument(
+                    $request->file('passport'),
+                    $trainingCenter->id,
+                    'training_center',
+                    'instructor_passport'
+                );
+
+                if ($passportResult['success']) {
+                    $passportImageUrl = $passportResult['url'];
+                }
+            }
+
             // Generate random password
             $password = Str::random(12);
             $instructorName = $request->first_name . ' ' . $request->last_name;
@@ -69,11 +84,13 @@ class InstructorManagementService
                 'last_name' => $request->last_name,
                 'email' => $request->email,
                 'phone' => $request->phone,
-                'id_number' => $request->id_number,
+                'date_of_birth' => $request->date_of_birth,
+                'id_number' => $request->id_number ?? null,
                 'cv_url' => $cvUrl,
-                'certificates_json' => $request->certificates_json ?? $request->certificates,
-                'specializations' => $request->specializations,
-                'is_assessor' => $request->boolean('is_assessor', false),
+                'passport_image_url' => $passportImageUrl,
+                'certificates_json' => $request->certificates_json ?? $request->certificates ?? null,
+                'specializations' => $request->languages ?? $request->specializations,
+                'is_assessor' => $request->boolean('is_assessor'),
                 'status' => 'pending',
             ]);
 
@@ -156,27 +173,16 @@ class InstructorManagementService
                 $request->merge($parsedData);
             }
 
-            if ($request->has('first_name') || array_key_exists('first_name', $allRequestData)) {
-                $updateData['first_name'] = $request->input('first_name');
-            }
-            if ($request->has('last_name') || array_key_exists('last_name', $allRequestData)) {
-                $updateData['last_name'] = $request->input('last_name');
-            }
-            if ($request->has('phone') || array_key_exists('phone', $allRequestData)) {
-                $updateData['phone'] = $request->input('phone');
-            }
-            if ($request->has('certificates_json') || $request->has('certificates') || 
-                array_key_exists('certificates_json', $allRequestData) || array_key_exists('certificates', $allRequestData)) {
-                $updateData['certificates_json'] = $request->input('certificates_json') ?? $request->input('certificates');
-            }
-            if ($request->has('specializations') || array_key_exists('specializations', $allRequestData)) {
-                $updateData['specializations'] = $request->input('specializations');
-            }
-            if ($request->has('is_assessor') || array_key_exists('is_assessor', $allRequestData)) {
-                $updateData['is_assessor'] = $request->boolean('is_assessor');
-            }
+            // All fields are required for update
+            $updateData['first_name'] = $request->input('first_name');
+            $updateData['last_name'] = $request->input('last_name');
+            $updateData['email'] = $request->input('email');
+            $updateData['date_of_birth'] = $request->input('date_of_birth');
+            $updateData['phone'] = $request->input('phone');
+            $updateData['specializations'] = $request->input('languages') ?? $request->input('specializations');
+            $updateData['is_assessor'] = $request->boolean('is_assessor');
 
-            // Handle CV upload
+            // Handle CV upload (required)
             if ($request->hasFile('cv')) {
                 // Delete old CV if exists
                 if ($instructor->cv_url) {
@@ -203,6 +209,36 @@ class InstructorManagementService
 
                 if ($cvResult['success']) {
                     $updateData['cv_url'] = $cvResult['url'];
+                }
+            }
+
+            // Handle Passport upload (required)
+            if ($request->hasFile('passport')) {
+                // Delete old passport if exists
+                if ($instructor->passport_image_url) {
+                    try {
+                        $oldPath = str_replace(Storage::disk('public')->url(''), '', $instructor->passport_image_url);
+                        $oldPath = ltrim($oldPath, '/storage/');
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning('Failed to delete old passport', [
+                            'instructor_id' => $instructor->id,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+
+                $passportResult = $this->fileUploadService->uploadDocument(
+                    $request->file('passport'),
+                    $trainingCenter->id,
+                    'training_center',
+                    'instructor_passport'
+                );
+
+                if ($passportResult['success']) {
+                    $updateData['passport_image_url'] = $passportResult['url'];
                 }
             }
 
