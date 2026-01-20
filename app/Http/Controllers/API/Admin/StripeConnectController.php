@@ -450,7 +450,7 @@ class StripeConnectController extends Controller
     #[OA\Get(
         path: "/admin/stripe-connect/stats",
         summary: "Get Stripe Connect statistics",
-        description: "Get overall statistics about Stripe Connect accounts including counts and success rate.",
+        description: "Get overall statistics about Stripe Connect ACCs including counts and success rate.",
         tags: ["Admin - Stripe Connect"],
         security: [["sanctum" => []]],
         responses: [
@@ -460,7 +460,45 @@ class StripeConnectController extends Controller
     public function stats()
     {
         try {
-            $statistics = $this->stripeConnectService->getStatistics();
+            // Calculate statistics for ACCs only (matching the accounts endpoint)
+            $stats = [
+                'total' => 0,
+                'connected' => 0,
+                'pending' => 0,
+                'failed' => 0,
+                'inactive' => 0,
+                'updating' => 0,
+            ];
+
+            // Count ACCs by status
+            $accs = ACC::selectRaw('stripe_connect_status, COUNT(*) as count')
+                ->groupBy('stripe_connect_status')
+                ->get();
+            
+            foreach ($accs as $acc) {
+                $count = (int) $acc->count;
+                $stats['total'] += $count;
+                if ($acc->stripe_connect_status) {
+                    $status = $acc->stripe_connect_status;
+                    $stats[$status] = ($stats[$status] ?? 0) + $count;
+                }
+            }
+
+            // Calculate success rate
+            $successRate = $stats['total'] > 0 
+                ? round(($stats['connected'] / $stats['total']) * 100, 2)
+                : 0;
+
+            $statistics = [
+                'total' => $stats['total'],
+                'connected' => $stats['connected'] ?? 0,
+                'pending' => $stats['pending'] ?? 0,
+                'failed' => $stats['failed'] ?? 0,
+                'inactive' => $stats['inactive'] ?? 0,
+                'updating' => $stats['updating'] ?? 0,
+                'success_rate' => $successRate,
+                'updated_at' => now()->toIso8601String(),
+            ];
 
             return response()->json([
                 'success' => true,
