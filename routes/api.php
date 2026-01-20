@@ -267,6 +267,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/accs', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'index']);
         Route::post('/accs/{id}/request-authorization', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'requestAuthorization']);
         Route::get('/authorizations', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'authorizations']);
+        Route::post('/authorizations', [App\Http\Controllers\API\TrainingCenter\ACCController::class, 'store']);
         
         // ACC Courses and Categories for instructor authorization
         Route::get('/accs/{accId}/categories', [App\Http\Controllers\API\TrainingCenter\InstructorController::class, 'getAccCategories']);
