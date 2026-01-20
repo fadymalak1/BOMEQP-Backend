@@ -9,6 +9,7 @@ use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use OpenApi\Attributes as OA;
 
 class CertificateTemplateController extends Controller
@@ -316,11 +317,12 @@ class CertificateTemplateController extends Controller
     #[OA\Delete(
         path: "/acc/certificate-templates/{id}",
         summary: "Delete certificate template",
-        description: "Delete a certificate template. Cannot delete if certificates are using this template.",
+        description: "Delete a certificate template. Cannot delete if certificates are using this template unless force=true parameter is provided.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "force", in: "query", required: false, schema: new OA\Schema(type: "boolean", default: false), description: "If true, deletes all certificates using this template before deleting the template")
         ],
         responses: [
             new OA\Response(response: 200, description: "Template deleted successfully"),
@@ -329,9 +331,9 @@ class CertificateTemplateController extends Controller
             new OA\Response(response: 409, description: "Cannot delete template: certificates are using this template")
         ]
     )]
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $user = request()->user();
+        $user = $request->user();
         $acc = ACC::where('email', $user->email)->first();
 
         if (!$acc) {
@@ -342,22 +344,88 @@ class CertificateTemplateController extends Controller
         
         // Check if there are certificates using this template
         $certificateCount = $template->certificates()->count();
-        if ($certificateCount > 0) {
+        $force = $request->boolean('force', false);
+        
+        if ($certificateCount > 0 && !$force) {
             return response()->json([
                 'message' => 'Cannot delete certificate template',
-                'error' => "This template is being used by {$certificateCount} certificate(s). Please reassign or delete the certificates first before deleting this template.",
-                'certificate_count' => $certificateCount
+                'error' => "This template is being used by {$certificateCount} certificate(s). Please reassign or delete the certificates first before deleting this template, or use force=true to delete the template and all associated certificates.",
+                'certificate_count' => $certificateCount,
+                'hint' => 'Add ?force=true to delete this template and all associated certificates'
             ], 409);
         }
-        
-        // Delete background image if exists
-        if ($template->background_image_url) {
-            $this->deleteBackgroundImage($template->background_image_url);
+
+        try {
+            DB::beginTransaction();
+
+            // If force delete, delete all associated certificates first
+            if ($force && $certificateCount > 0) {
+                $certificates = $template->certificates()->get();
+                
+                // Delete certificate PDF files from storage if they exist
+                foreach ($certificates as $certificate) {
+                    if ($certificate->certificate_pdf_url) {
+                        try {
+                            $urlParts = parse_url($certificate->certificate_pdf_url);
+                            $path = ltrim($urlParts['path'] ?? '', '/');
+                            
+                            // Extract file path and delete from storage
+                            if (Storage::disk('public')->exists($path)) {
+                                Storage::disk('public')->delete($path);
+                            }
+                        } catch (\Exception $e) {
+                            Log::warning('Failed to delete certificate PDF file', [
+                                'certificate_id' => $certificate->id,
+                                'pdf_url' => $certificate->certificate_pdf_url,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+                
+                // Delete all certificates
+                $template->certificates()->delete();
+                
+                Log::info('Force deleted certificates with template', [
+                    'template_id' => $template->id,
+                    'certificate_count' => $certificateCount,
+                ]);
+            }
+            
+            // Delete background image if exists
+            if ($template->background_image_url) {
+                $this->deleteBackgroundImage($template->background_image_url);
+            }
+
+            // Delete the template
+            $template->delete();
+
+            DB::commit();
+
+            $message = $force && $certificateCount > 0 
+                ? "Template and {$certificateCount} associated certificate(s) deleted successfully"
+                : 'Template deleted successfully';
+
+            return response()->json([
+                'message' => $message,
+                'certificates_deleted' => $force ? $certificateCount : 0
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Failed to delete certificate template', [
+                'template_id' => $id,
+                'force' => $force,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to delete certificate template',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        $template->delete();
-
-        return response()->json(['message' => 'Template deleted successfully']);
     }
 
     /**
