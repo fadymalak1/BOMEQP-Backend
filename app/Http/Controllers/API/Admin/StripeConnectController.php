@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\StripeConnectService;
 use App\Models\StripeConnectLog;
 use App\Models\AdminActivityLog;
+use App\Models\ACC;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
@@ -21,43 +22,60 @@ class StripeConnectController extends Controller
 
     #[OA\Get(
         path: "/admin/stripe-connect/accounts",
-        summary: "Get all accounts with Stripe Connect status",
-        description: "Get a list of all accounts (ACCs, Training Centers, Instructors) with their Stripe Connect status. Includes search and filter capabilities.",
+        summary: "Get all ACCs with Stripe Connect status",
+        description: "Get a list of all ACCs with their Stripe Connect status. Includes search and filter capabilities.",
         tags: ["Admin - Stripe Connect"],
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by name or email"),
             new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "connected", "failed", "inactive", "updating"])),
-            new OA\Parameter(name: "type", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["acc", "training_center", "instructor"])),
             new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 15)),
             new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 1))
         ],
         responses: [
-            new OA\Response(response: 200, description: "Accounts retrieved successfully"),
+            new OA\Response(response: 200, description: "ACCs retrieved successfully"),
             new OA\Response(response: 401, description: "Unauthenticated")
         ]
     )]
     public function index(Request $request)
     {
         try {
-            $accounts = $this->stripeConnectService->getAllAccounts($request);
+            // Query only ACCs directly
+            $query = ACC::select('id', 'name', 'email', 'phone', 'stripe_account_id', 'stripe_connect_status', 'stripe_connected_at')
+                ->when($request->has('search'), function($q) use ($request) {
+                    $search = $request->search;
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%");
+                })
+                ->when($request->has('status'), function($q) use ($request) {
+                    $q->where('stripe_connect_status', $request->status);
+                });
 
-            // Pagination manually if needed
             $perPage = $request->get('per_page', 15);
-            $page = $request->get('page', 1);
-            $offset = ($page - 1) * $perPage;
-            
-            $paginatedAccounts = array_slice($accounts, $offset, $perPage);
-            $total = count($accounts);
+            $accs = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            // Format the response
+            $accounts = $accs->map(function($acc) {
+                return [
+                    'id' => $acc->id,
+                    'name' => $acc->name,
+                    'email' => $acc->email,
+                    'phone' => $acc->phone,
+                    'type' => 'acc',
+                    'stripe_account_id' => $acc->stripe_account_id,
+                    'stripe_connect_status' => $acc->stripe_connect_status,
+                    'stripe_connected_at' => $acc->stripe_connected_at?->toIso8601String(),
+                ];
+            });
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'accounts' => $paginatedAccounts,
-                    'total' => $total,
-                    'page' => $page,
-                    'per_page' => $perPage,
-                    'last_page' => ceil($total / $perPage),
+                    'accounts' => $accounts,
+                    'total' => $accs->total(),
+                    'page' => $accs->currentPage(),
+                    'per_page' => $accs->perPage(),
+                    'last_page' => $accs->lastPage(),
                 ],
             ]);
         } catch (\Exception $e) {
