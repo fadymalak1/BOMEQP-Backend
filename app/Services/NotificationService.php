@@ -753,6 +753,31 @@ class NotificationService
     }
 
     /**
+     * Notify ACC about Stripe Connect onboarding link sent
+     */
+    public function notifyStripeOnboardingLinkSent(int $userId, string $accountType, string $accountName, string $onboardingUrl): void
+    {
+        $accountTypeLabel = match($accountType) {
+            'acc' => 'Accreditation Body',
+            'training_center' => 'Training Center',
+            'instructor' => 'Instructor',
+            default => 'Account',
+        };
+
+        $this->send(
+            $userId,
+            'stripe_onboarding_link_sent',
+            'Stripe Connect Setup Required',
+            "A Stripe Connect onboarding link has been sent to your email for your {$accountTypeLabel} account. Please check your email and complete the setup to start receiving payments.",
+            [
+                'account_type' => $accountType,
+                'account_name' => $accountName,
+                'onboarding_url' => $onboardingUrl,
+            ]
+        );
+    }
+
+    /**
      * Notify ACC about manual payment request
      */
     public function notifyManualPaymentRequest(int $userId, int $batchId, string $trainingCenterName, int $quantity, float $amount): void

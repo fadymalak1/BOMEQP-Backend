@@ -880,6 +880,7 @@ class StripeConnectService
             $name = $this->getAccountName($account, $accountType);
 
             if ($email) {
+                // Send email
                 Mail::to($email)->send(new StripeOnboardingMail($name, $accountType, $onboardingUrl));
                 
                 Log::info('Stripe onboarding email sent successfully', [
@@ -887,6 +888,9 @@ class StripeConnectService
                     'account_type' => $accountType,
                     'account_name' => $name,
                 ]);
+
+                // Send notification to user
+                $this->sendOnboardingNotification($account, $accountType, $name, $onboardingUrl);
             } else {
                 Log::warning('Cannot send onboarding email: no email address found', [
                     'account_type' => $accountType,
@@ -899,6 +903,48 @@ class StripeConnectService
                 'account_type' => $accountType,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+            ]);
+        }
+    }
+
+    /**
+     * Send notification to user about onboarding link
+     */
+    protected function sendOnboardingNotification($account, string $accountType, string $accountName, string $onboardingUrl): void
+    {
+        try {
+            $email = $this->getAccountEmail($account, $accountType);
+            
+            if (!$email) {
+                return;
+            }
+
+            // Find user by email
+            $user = \App\Models\User::where('email', $email)->first();
+            
+            if ($user) {
+                $this->notificationService->notifyStripeOnboardingLinkSent(
+                    $user->id,
+                    $accountType,
+                    $accountName,
+                    $onboardingUrl
+                );
+
+                Log::info('Stripe onboarding notification sent', [
+                    'user_id' => $user->id,
+                    'account_type' => $accountType,
+                    'account_id' => $account->id ?? null,
+                ]);
+            } else {
+                Log::warning('User not found for onboarding notification', [
+                    'email' => $email,
+                    'account_type' => $accountType,
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to send onboarding notification', [
+                'account_type' => $accountType,
+                'error' => $e->getMessage(),
             ]);
         }
     }

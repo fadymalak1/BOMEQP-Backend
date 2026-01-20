@@ -316,6 +316,7 @@ class CertificateTemplateController extends Controller
     #[OA\Delete(
         path: "/acc/certificate-templates/{id}",
         summary: "Delete certificate template",
+        description: "Delete a certificate template. Cannot delete if certificates are using this template.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
@@ -324,7 +325,8 @@ class CertificateTemplateController extends Controller
         responses: [
             new OA\Response(response: 200, description: "Template deleted successfully"),
             new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 404, description: "Template not found")
+            new OA\Response(response: 404, description: "Template not found"),
+            new OA\Response(response: 409, description: "Cannot delete template: certificates are using this template")
         ]
     )]
     public function destroy($id)
@@ -337,6 +339,16 @@ class CertificateTemplateController extends Controller
         }
 
         $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+        
+        // Check if there are certificates using this template
+        $certificateCount = $template->certificates()->count();
+        if ($certificateCount > 0) {
+            return response()->json([
+                'message' => 'Cannot delete certificate template',
+                'error' => "This template is being used by {$certificateCount} certificate(s). Please reassign or delete the certificates first before deleting this template.",
+                'certificate_count' => $certificateCount
+            ], 409);
+        }
         
         // Delete background image if exists
         if ($template->background_image_url) {
