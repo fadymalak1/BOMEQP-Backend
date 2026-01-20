@@ -23,9 +23,10 @@ class ACCManagementService
      *
      * @param ACC $acc
      * @param int $approvedBy
+     * @param float $commissionPercentage Commission percentage (required)
      * @return array
      */
-    public function approveApplication(ACC $acc, int $approvedBy): array
+    public function approveApplication(ACC $acc, int $approvedBy, float $commissionPercentage): array
     {
         try {
             DB::beginTransaction();
@@ -34,6 +35,7 @@ class ACCManagementService
                 'status' => 'active',
                 'approved_at' => now(),
                 'approved_by' => $approvedBy,
+                'commission_percentage' => $commissionPercentage,
             ]);
 
             // Activate the user account associated with this ACC
@@ -57,6 +59,7 @@ class ACCManagementService
             DB::rollBack();
             Log::error('Failed to approve ACC application', [
                 'acc_id' => $acc->id,
+                'commission_percentage' => $commissionPercentage,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

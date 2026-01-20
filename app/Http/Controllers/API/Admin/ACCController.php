@@ -117,12 +117,21 @@ class ACCController extends Controller
     #[OA\Put(
         path: "/admin/accs/applications/{id}/approve",
         summary: "Approve ACC application",
-        description: "Approve an ACC application and activate the associated user account.",
+        description: "Approve an ACC application and activate the associated user account. Commission percentage is required.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
         ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["commission_percentage"],
+                properties: [
+                    new OA\Property(property: "commission_percentage", type: "number", format: "float", example: 10.0, minimum: 0, maximum: 100, description: "Commission percentage for this ACC (required, 0-100)")
+                ]
+            )
+        ),
         responses: [
             new OA\Response(
                 response: 200,
@@ -135,15 +144,30 @@ class ACCController extends Controller
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 404, description: "Application not found")
+            new OA\Response(response: 404, description: "Application not found"),
+            new OA\Response(response: 422, description: "Validation error - commission_percentage is required")
         ]
     )]
     public function approve(Request $request, $id)
     {
         $acc = ACC::findOrFail($id);
 
+        // Validate commission_percentage is required
+        $request->validate([
+            'commission_percentage' => 'required|numeric|min:0|max:100',
+        ], [
+            'commission_percentage.required' => 'Commission percentage is required when approving ACC application.',
+            'commission_percentage.numeric' => 'Commission percentage must be a number.',
+            'commission_percentage.min' => 'Commission percentage must be at least 0.',
+            'commission_percentage.max' => 'Commission percentage cannot exceed 100.',
+        ]);
+
         try {
-            $result = $this->accService->approveApplication($acc, $request->user()->id);
+            $result = $this->accService->approveApplication(
+                $acc, 
+                $request->user()->id,
+                $request->commission_percentage
+            );
             return response()->json([
                 'message' => $result['message'],
                 'acc' => $result['acc']
