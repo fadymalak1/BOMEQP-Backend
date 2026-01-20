@@ -66,4 +66,5 @@ class Transaction extends Model
     {
         return $this->hasOne(Transfer::class, 'transaction_id');
     }
+}
 
