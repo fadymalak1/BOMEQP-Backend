@@ -31,11 +31,29 @@ class ACCManagementService
         try {
             DB::beginTransaction();
 
-            $acc->update([
-                'status' => 'active',
-                'approved_at' => now(),
-                'approved_by' => $approvedBy,
+            // Ensure commission_percentage is properly cast
+            $commissionPercentage = (float) $commissionPercentage;
+
+            Log::info('Updating ACC with commission percentage', [
+                'acc_id' => $acc->id,
                 'commission_percentage' => $commissionPercentage,
+                'type' => gettype($commissionPercentage),
+            ]);
+
+            // Update using save() to ensure all attributes are saved
+            $acc->status = 'active';
+            $acc->approved_at = now();
+            $acc->approved_by = $approvedBy;
+            $acc->commission_percentage = $commissionPercentage;
+            $acc->save();
+
+            // Refresh to get updated values from database
+            $acc->refresh();
+
+            Log::info('ACC updated successfully', [
+                'acc_id' => $acc->id,
+                'commission_percentage' => $acc->commission_percentage,
+                'commission_percentage_type' => gettype($acc->commission_percentage),
             ]);
 
             // Activate the user account associated with this ACC

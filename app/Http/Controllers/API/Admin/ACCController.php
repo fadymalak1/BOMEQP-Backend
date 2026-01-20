@@ -162,11 +162,20 @@ class ACCController extends Controller
             'commission_percentage.max' => 'Commission percentage cannot exceed 100.',
         ]);
 
+        // Convert to float to ensure proper type
+        $commissionPercentage = (float) $request->commission_percentage;
+
+        Log::info('Approving ACC application with commission', [
+            'acc_id' => $acc->id,
+            'commission_percentage' => $commissionPercentage,
+            'request_value' => $request->commission_percentage,
+        ]);
+
         try {
             $result = $this->accService->approveApplication(
                 $acc, 
                 $request->user()->id,
-                $request->commission_percentage
+                $commissionPercentage
             );
             return response()->json([
                 'message' => $result['message'],
