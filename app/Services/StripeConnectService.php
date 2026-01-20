@@ -10,9 +10,11 @@ use App\Models\AdminActivityLog;
 use App\Models\User;
 use App\Services\StripeService;
 use App\Services\NotificationService;
+use App\Mail\StripeOnboardingMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Stripe\Account;
 use Stripe\AccountLink;
 use Stripe\Exception\ApiErrorException;
@@ -135,6 +137,9 @@ class StripeConnectService
             );
 
             DB::commit();
+
+            // إرسال بريد إلكتروني برابط Onboarding
+            $this->sendOnboardingEmail($account, $accountType, $onboardingUrl);
 
             Log::info('Stripe Connect initiated successfully', [
                 'account_type' => $accountType,
@@ -875,17 +880,25 @@ class StripeConnectService
             $name = $this->getAccountName($account, $accountType);
 
             if ($email) {
-                // يمكن إضافة إرسال بريد إلكتروني هنا
-                // Mail::to($email)->send(new StripeOnboardingMail($name, $onboardingUrl));
+                Mail::to($email)->send(new StripeOnboardingMail($name, $accountType, $onboardingUrl));
                 
-                Log::info('Onboarding email would be sent', [
+                Log::info('Stripe onboarding email sent successfully', [
                     'email' => $email,
                     'account_type' => $accountType,
+                    'account_name' => $name,
+                ]);
+            } else {
+                Log::warning('Cannot send onboarding email: no email address found', [
+                    'account_type' => $accountType,
+                    'account_id' => $account->id ?? null,
                 ]);
             }
         } catch (\Exception $e) {
             Log::error('Failed to send onboarding email', [
+                'email' => $email ?? null,
+                'account_type' => $accountType,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
