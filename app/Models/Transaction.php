@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Transaction extends Model
@@ -55,5 +56,14 @@ class Transaction extends Model
     {
         return $this->hasMany(CommissionLedger::class, 'transaction_id');
     }
-}
+
+    public function transfers(): HasMany
+    {
+        return $this->hasMany(Transfer::class, 'transaction_id');
+    }
+
+    public function transfer(): HasOne
+    {
+        return $this->hasOne(Transfer::class, 'transaction_id');
+    }
 

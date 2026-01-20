@@ -152,6 +152,28 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/code-batches/pending-payments', [App\Http\Controllers\API\Admin\CodeController::class, 'pendingPayments']);
         Route::put('/code-batches/{id}/approve-payment', [App\Http\Controllers\API\Admin\CodeController::class, 'approvePayment']);
         Route::put('/code-batches/{id}/reject-payment', [App\Http\Controllers\API\Admin\CodeController::class, 'rejectPayment']);
+
+        // Transfers Management
+        Route::get('/transfers', [App\Http\Controllers\API\Admin\TransferController::class, 'index']);
+        Route::get('/transfers/{id}', [App\Http\Controllers\API\Admin\TransferController::class, 'show']);
+        Route::get('/transfers/reports/summary', [App\Http\Controllers\API\Admin\TransferController::class, 'summaryReport']);
+        Route::post('/transfers/{id}/retry', [App\Http\Controllers\API\Admin\TransferController::class, 'retry']);
+
+        // Stripe Connect Management
+        Route::prefix('stripe-connect')->group(function () {
+            Route::get('/accounts', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'index']);
+            Route::get('/accounts/{accountType}/{accountId}', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'show']);
+            Route::post('/initiate', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'initiate']);
+            Route::get('/status/{accountType}/{accountId}', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'status']);
+            Route::post('/retry/{accountType}/{accountId}', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'retry']);
+            Route::delete('/disconnect/{accountType}/{accountId}', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'disconnect']);
+            Route::post('/resend-link', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'resendLink']);
+            Route::get('/logs', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'logs']);
+            Route::get('/stats', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'stats']);
+        });
+
+        // Admin Activity Logs
+        Route::get('/activity-logs', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'activityLogs']);
     });
 
     // ACC routes

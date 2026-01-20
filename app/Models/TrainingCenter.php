@@ -56,6 +56,17 @@ class TrainingCenter extends Model
         'facility_floorplan_url',
         'interested_fields',
         'how_did_you_hear_about_us',
+        // Stripe Connect
+        'stripe_account_id',
+        'stripe_connect_status',
+        'stripe_onboarding_url',
+        'stripe_onboarding_completed',
+        'stripe_onboarding_completed_at',
+        'stripe_requirements',
+        'stripe_connected_by_admin',
+        'stripe_connected_at',
+        'stripe_last_status_check_at',
+        'stripe_last_error_message',
     ];
 
     protected function casts(): array
@@ -65,6 +76,11 @@ class TrainingCenter extends Model
             'mailing_same_as_physical' => 'boolean',
             'has_secondary_contact' => 'boolean',
             'interested_fields' => 'array',
+            'stripe_requirements' => 'array',
+            'stripe_onboarding_completed' => 'boolean',
+            'stripe_onboarding_completed_at' => 'datetime',
+            'stripe_connected_at' => 'datetime',
+            'stripe_last_status_check_at' => 'datetime',
         ];
     }
 

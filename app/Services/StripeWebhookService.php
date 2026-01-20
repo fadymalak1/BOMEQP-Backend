@@ -4,16 +4,21 @@ namespace App\Services;
 
 use App\Models\Transaction;
 use App\Services\TransferService;
+use App\Services\StripeConnectService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class StripeWebhookService
 {
     protected TransferService $transferService;
+    protected StripeConnectService $stripeConnectService;
 
-    public function __construct(TransferService $transferService)
-    {
+    public function __construct(
+        TransferService $transferService,
+        StripeConnectService $stripeConnectService
+    ) {
         $this->transferService = $transferService;
+        $this->stripeConnectService = $stripeConnectService;
     }
 
     /**
@@ -274,6 +279,15 @@ class StripeWebhookService
                 ]);
             }
         }
+    }
+
+    /**
+     * Handle Stripe Connect webhook events
+     * This method delegates to StripeConnectService
+     */
+    public function handleStripeConnectWebhook(array $event): void
+    {
+        $this->stripeConnectService->handleStripeConnectWebhook($event);
     }
 }
 

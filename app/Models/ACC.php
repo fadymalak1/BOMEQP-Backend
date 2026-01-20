@@ -68,6 +68,16 @@ class ACC extends Model
         // Agreement Checkboxes
         'agreed_to_receive_communications',
         'agreed_to_terms_and_conditions',
+        // Stripe Connect
+        'stripe_connect_status',
+        'stripe_onboarding_url',
+        'stripe_onboarding_completed',
+        'stripe_onboarding_completed_at',
+        'stripe_requirements',
+        'stripe_connected_by_admin',
+        'stripe_connected_at',
+        'stripe_last_status_check_at',
+        'stripe_last_error_message',
     ];
 
     protected function casts(): array
@@ -81,6 +91,11 @@ class ACC extends Model
             'mailing_same_as_physical' => 'boolean',
             'agreed_to_receive_communications' => 'boolean',
             'agreed_to_terms_and_conditions' => 'boolean',
+            'stripe_requirements' => 'array',
+            'stripe_onboarding_completed' => 'boolean',
+            'stripe_onboarding_completed_at' => 'datetime',
+            'stripe_connected_at' => 'datetime',
+            'stripe_last_status_check_at' => 'datetime',
         ];
     }
 

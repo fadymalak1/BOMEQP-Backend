@@ -89,6 +89,12 @@ class TransferService
                 // فشل التحويل - سيتم إعادة المحاولة لاحقاً
                 $transfer->markAsFailed($transferResult['error'] ?? 'Transfer failed');
 
+                // جدولة إعادة المحاولة إذا كان عدد المحاولات أقل من 3
+                if ($transfer->canRetry()) {
+                    \App\Jobs\RetryFailedTransferJob::dispatch($transfer, 60)
+                        ->delay(now()->addMinutes(1));
+                }
+
                 Log::error('Automatic transfer failed', [
                     'transfer_id' => $transfer->id,
                     'transaction_id' => $transaction->id,

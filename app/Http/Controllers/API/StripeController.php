@@ -334,6 +334,14 @@ class StripeController extends Controller
                     $this->webhookService->handleDisputeCreated($event['data']['object']);
                     break;
 
+                // Stripe Connect events
+                case 'account.updated':
+                case 'account.external_account.created':
+                case 'account.external_account.updated':
+                case 'account.application.deauthorized':
+                    $this->webhookService->handleStripeConnectWebhook($event);
+                    break;
+
                 default:
                     Log::info('Unhandled Stripe webhook event', ['event_type' => $event['type']]);
             }

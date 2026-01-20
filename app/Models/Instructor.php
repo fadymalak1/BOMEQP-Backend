@@ -29,6 +29,17 @@ class Instructor extends Model
         'specializations',
         'status',
         'is_assessor',
+        // Stripe Connect
+        'stripe_account_id',
+        'stripe_connect_status',
+        'stripe_onboarding_url',
+        'stripe_onboarding_completed',
+        'stripe_onboarding_completed_at',
+        'stripe_requirements',
+        'stripe_connected_by_admin',
+        'stripe_connected_at',
+        'stripe_last_status_check_at',
+        'stripe_last_error_message',
     ];
 
     protected function casts(): array
@@ -38,6 +49,11 @@ class Instructor extends Model
             'certificates_json' => 'array',
             'specializations' => 'array',
             'is_assessor' => 'boolean',
+            'stripe_requirements' => 'array',
+            'stripe_onboarding_completed' => 'boolean',
+            'stripe_onboarding_completed_at' => 'datetime',
+            'stripe_connected_at' => 'datetime',
+            'stripe_last_status_check_at' => 'datetime',
         ];
     }
 
