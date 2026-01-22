@@ -248,7 +248,7 @@ class TraineeController extends Controller
     #[OA\Post(
         path: "/training-center/trainees/{id}",
         summary: "Update trainee",
-        description: "Update trainee information. Use POST method for file uploads. Can update personal details, images, and enrolled classes. Laravel's method spoofing with _method=PUT is supported for compatibility.",
+        description: "Update trainee information. Use POST method for file uploads. Can update personal details, images, and enrolled classes. Laravel method spoofing with _method=PUT is supported for compatibility.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -379,19 +379,15 @@ class TraineeController extends Controller
 
         // Delete associated files
         if ($trainee->id_image_url) {
-            // Extract path from URL - remove the storage URL base
             $storageUrl = Storage::disk('public')->url('');
             $idImagePath = str_replace($storageUrl, '', $trainee->id_image_url);
-            // Remove leading slash if present
             $idImagePath = ltrim($idImagePath, '/');
             Storage::disk('public')->delete($idImagePath);
         }
 
         if ($trainee->card_image_url) {
-            // Extract path from URL - remove the storage URL base
             $storageUrl = Storage::disk('public')->url('');
             $cardImagePath = str_replace($storageUrl, '', $trainee->card_image_url);
-            // Remove leading slash if present
             $cardImagePath = ltrim($cardImagePath, '/');
             Storage::disk('public')->delete($cardImagePath);
         }
@@ -410,4 +406,3 @@ class TraineeController extends Controller
         return response()->json(['message' => 'Trainee deleted successfully'], 200);
     }
 }
-
