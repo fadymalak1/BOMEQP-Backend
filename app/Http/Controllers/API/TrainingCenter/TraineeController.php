@@ -29,7 +29,7 @@ class TraineeController extends Controller
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string"), example: "active"),
-            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John", description: "Search by trainee full name (first name, last name, or both), email, phone, or ID number"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John", description: "Search by trainee name, email, phone, or ID number"),
             new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
             new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
         ],
@@ -40,18 +40,26 @@ class TraineeController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "trainees", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "pagination", type: "object", properties: [
-                            new OA\Property(property: "current_page", type: "integer"),
-                            new OA\Property(property: "last_page", type: "integer"),
-                            new OA\Property(property: "per_page", type: "integer"),
-                            new OA\Property(property: "total", type: "integer")
-                        ]),
-                        new OA\Property(property: "statistics", type: "object", properties: [
-                            new OA\Property(property: "total", type: "integer", example: 100, description: "Total number of trainees"),
-                            new OA\Property(property: "active", type: "integer", example: 80, description: "Number of active trainees"),
-                            new OA\Property(property: "inactive", type: "integer", example: 15, description: "Number of inactive trainees"),
-                            new OA\Property(property: "suspended", type: "integer", example: 5, description: "Number of suspended trainees")
-                        ])
+                        new OA\Property(
+                            property: "pagination",
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "current_page", type: "integer"),
+                                new OA\Property(property: "last_page", type: "integer"),
+                                new OA\Property(property: "per_page", type: "integer"),
+                                new OA\Property(property: "total", type: "integer")
+                            ]
+                        ),
+                        new OA\Property(
+                            property: "statistics",
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "total", type: "integer", example: 100, description: "Total number of trainees"),
+                                new OA\Property(property: "active", type: "integer", example: 80, description: "Number of active trainees"),
+                                new OA\Property(property: "inactive", type: "integer", example: 15, description: "Number of inactive trainees"),
+                                new OA\Property(property: "suspended", type: "integer", example: 5, description: "Number of suspended trainees")
+                            ]
+                        )
                     ]
                 )
             ),
