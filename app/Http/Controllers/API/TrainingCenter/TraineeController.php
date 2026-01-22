@@ -40,7 +40,12 @@ class TraineeController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "trainees", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "pagination", type: "object"),
+                        new OA\Property(property: "pagination", type: "object", properties: [
+                            new OA\Property(property: "current_page", type: "integer"),
+                            new OA\Property(property: "last_page", type: "integer"),
+                            new OA\Property(property: "per_page", type: "integer"),
+                            new OA\Property(property: "total", type: "integer")
+                        ]),
                         new OA\Property(property: "statistics", type: "object", properties: [
                             new OA\Property(property: "total", type: "integer", example: 100, description: "Total number of trainees"),
                             new OA\Property(property: "active", type: "integer", example: 80, description: "Number of active trainees"),
