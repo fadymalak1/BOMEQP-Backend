@@ -40,7 +40,13 @@ class TraineeController extends Controller
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "trainees", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "pagination", type: "object")
+                        new OA\Property(property: "pagination", type: "object"),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 100, description: "Total number of trainees"),
+                            new OA\Property(property: "active", type: "integer", example: 80, description: "Number of active trainees"),
+                            new OA\Property(property: "inactive", type: "integer", example: 15, description: "Number of inactive trainees"),
+                            new OA\Property(property: "suspended", type: "integer", example: 5, description: "Number of suspended trainees")
+                        ])
                     ]
                 )
             ),
@@ -80,6 +86,14 @@ class TraineeController extends Controller
 
         $trainees = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 15);
 
+        // Calculate statistics for all trainees in this training center (not just paginated results)
+        $statistics = [
+            'total' => Trainee::where('training_center_id', $trainingCenter->id)->count(),
+            'active' => Trainee::where('training_center_id', $trainingCenter->id)->where('status', 'active')->count(),
+            'inactive' => Trainee::where('training_center_id', $trainingCenter->id)->where('status', 'inactive')->count(),
+            'suspended' => Trainee::where('training_center_id', $trainingCenter->id)->where('status', 'suspended')->count(),
+        ];
+
         return response()->json([
             'trainees' => $trainees->items(),
             'pagination' => [
@@ -87,7 +101,8 @@ class TraineeController extends Controller
                 'last_page' => $trainees->lastPage(),
                 'per_page' => $trainees->perPage(),
                 'total' => $trainees->total(),
-            ]
+            ],
+            'statistics' => $statistics,
         ]);
     }
 

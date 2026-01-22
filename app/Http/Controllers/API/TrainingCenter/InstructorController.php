@@ -41,7 +41,14 @@ class InstructorController extends Controller
                         new OA\Property(property: "current_page", type: "integer"),
                         new OA\Property(property: "per_page", type: "integer"),
                         new OA\Property(property: "total", type: "integer"),
-                        new OA\Property(property: "last_page", type: "integer")
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(property: "statistics", type: "object", properties: [
+                            new OA\Property(property: "total", type: "integer", example: 50, description: "Total number of instructors"),
+                            new OA\Property(property: "pending", type: "integer", example: 5, description: "Number of pending instructors"),
+                            new OA\Property(property: "active", type: "integer", example: 40, description: "Number of active instructors"),
+                            new OA\Property(property: "suspended", type: "integer", example: 3, description: "Number of suspended instructors"),
+                            new OA\Property(property: "inactive", type: "integer", example: 2, description: "Number of inactive instructors")
+                        ])
                     ]
                 )
             ),
@@ -79,8 +86,24 @@ class InstructorController extends Controller
 
         $perPage = $request->get('per_page', 15);
         $instructors = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        // Calculate statistics for all instructors in this training center (not just paginated results)
+        $statistics = [
+            'total' => Instructor::where('training_center_id', $trainingCenter->id)->count(),
+            'pending' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'pending')->count(),
+            'active' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'active')->count(),
+            'suspended' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'suspended')->count(),
+            'inactive' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'inactive')->count(),
+        ];
             
-        return response()->json($instructors);
+        return response()->json([
+            'data' => $instructors->items(),
+            'current_page' => $instructors->currentPage(),
+            'per_page' => $instructors->perPage(),
+            'total' => $instructors->total(),
+            'last_page' => $instructors->lastPage(),
+            'statistics' => $statistics,
+        ]);
     }
 
     #[OA\Post(
