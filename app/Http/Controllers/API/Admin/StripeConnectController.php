@@ -39,8 +39,32 @@ class StripeConnectController extends Controller
     )]
     public function index(Request $request)
     {
-        try 
-        'phone' => $acc->phone,
+        try {
+            $query = ACC::query();
+
+            // Search functionality
+            if ($request->has('search') && !empty($request->search)) {
+                $searchTerm = $request->search;
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', "%{$searchTerm}%")
+                        ->orWhere('email', 'like', "%{$searchTerm}%");
+                });
+            }
+
+            // Filter by status
+            if ($request->has('status') && !empty($request->status)) {
+                $query->where('stripe_connect_status', $request->status);
+            }
+
+            $perPage = $request->get('per_page', 15);
+            $accs = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            $accounts = $accs->map(function ($acc) {
+                return [
+                    'id' => $acc->id,
+                    'name' => $acc->name,
+                    'email' => $acc->email,
+                    'phone' => $acc->phone,
                     'type' => 'acc',
                     'stripe_account_id' => $acc->stripe_account_id,
                     'stripe_connect_status' => $acc->stripe_connect_status,
@@ -467,7 +491,7 @@ class StripeConnectController extends Controller
             // Calculate success rate
             $successRate = $stats['total'] > 0 
                 ? round(($stats['connected'] / $stats['total']) * 100, 2)
-                : 0;r
+                : 0;
 
             $statistics = [
                 'total' => $stats['total'],
