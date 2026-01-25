@@ -259,9 +259,10 @@ class AuthController extends Controller
         $request->validate([
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . $request->user()->id,
+            'language' => 'sometimes|string|in:en,hi,zh-CN',
         ]);
 
-        $request->user()->update($request->only(['name', 'email']));
+        $request->user()->update($request->only(['name', 'email', 'language']));
 
         return response()->json(['message' => 'Profile updated successfully', 'user' => $request->user()]);
     }

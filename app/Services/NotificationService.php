@@ -9,7 +9,65 @@ use Illuminate\Support\Facades\Log;
 class NotificationService
 {
     /**
-     * Send a notification to a user
+     * Get translated notification text
+     */
+    private function getTranslatedNotification(string $key, string $language, array $replace = []): array
+    {
+        // Validate language, fallback to 'en' if invalid
+        $validLanguages = ['en', 'hi', 'zh-CN'];
+        $language = in_array($language, $validLanguages) ? $language : 'en';
+        
+        // Convert snake_case keys to camelCase to match translation placeholders
+        // e.g., 'acc_name' -> 'accName', 'training_center_name' -> 'trainingCenterName'
+        $formattedReplace = [];
+        foreach ($replace as $k => $v) {
+            // Skip non-string values that shouldn't be in translations
+            if (is_array($v) || is_object($v)) {
+                continue;
+            }
+            
+            // Convert snake_case to camelCase for translation placeholders
+            $camelKey = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $k))));
+            $formattedReplace[$camelKey] = is_numeric($v) ? number_format((float)$v, 2) : (string)$v;
+            // Also keep original key for backward compatibility
+            $formattedReplace[$k] = is_numeric($v) ? number_format((float)$v, 2) : (string)$v;
+        }
+        
+        // Set locale for translation
+        $originalLocale = app()->getLocale();
+        app()->setLocale($language);
+        
+        try {
+            // Get translation - Laravel will automatically replace placeholders
+            $translation = trans("notifications.{$key}", $formattedReplace);
+            
+            // If translation doesn't exist, try English as fallback
+            if ($translation === "notifications.{$key}") {
+                app()->setLocale('en');
+                $translation = trans("notifications.{$key}", $formattedReplace);
+            }
+        } finally {
+            // Restore original locale
+            app()->setLocale($originalLocale);
+        }
+        
+        // Handle both array and string translations
+        if (is_array($translation)) {
+            return [
+                'title' => $translation['title'] ?? $key,
+                'message' => $translation['message'] ?? '',
+            ];
+        }
+        
+        // If it's a string, return as message (for backward compatibility)
+        return [
+            'title' => $key,
+            'message' => $translation,
+        ];
+    }
+
+    /**
+     * Send a notification to a user with localization support
      */
     public function send(
         int $userId,
@@ -19,11 +77,22 @@ class NotificationService
         ?array $data = null
     ): Notification {
         try {
+            // Get user's language preference
+            $user = User::find($userId);
+            $language = $user && $user->language ? $user->language : 'en';
+            
+            // Try to get translated notification if type matches a translation key
+            $translated = $this->getTranslatedNotification($type, $language, $data ?? []);
+            
+            // Use translated title and message if available, otherwise use provided ones
+            $finalTitle = $translated['title'] !== $type ? $translated['title'] : $title;
+            $finalMessage = !empty($translated['message']) ? $translated['message'] : $message;
+            
             return Notification::create([
                 'user_id' => $userId,
                 'type' => $type,
-                'title' => $title,
-                'message' => $message,
+                'title' => $finalTitle,
+                'message' => $finalMessage,
                 'data' => $data,
                 'is_read' => false,
             ]);
@@ -91,7 +160,7 @@ class NotificationService
             'acc_application',
             'New ACC Application',
             "A new ACC application has been submitted: {$accName}",
-            ['acc_id' => $accId]
+            ['acc_id' => $accId, 'accName' => $accName]
         );
     }
 
@@ -105,7 +174,7 @@ class NotificationService
             'training_center_application',
             'New Training Center Application',
             "A new Training Center application has been submitted: {$trainingCenterName}",
-            ['training_center_id' => $trainingCenterId]
+            ['training_center_id' => $trainingCenterId, 'trainingCenterName' => $trainingCenterName]
         );
     }
 
@@ -119,7 +188,7 @@ class NotificationService
             'acc_approved',
             'ACC Application Approved',
             "Your ACC application for '{$accName}' has been approved. You can now access your workspace.",
-            ['acc_id' => $accId]
+            ['acc_id' => $accId, 'accName' => $accName]
         );
     }
 
@@ -133,7 +202,7 @@ class NotificationService
             'acc_rejected',
             'ACC Application Rejected',
             "Your ACC application for '{$accName}' has been rejected. Reason: {$reason}",
-            ['acc_id' => $accId, 'reason' => $reason]
+            ['acc_id' => $accId, 'accName' => $accName, 'reason' => $reason]
         );
     }
 
@@ -147,7 +216,7 @@ class NotificationService
             'subscription_paid',
             'Subscription Payment Successful',
             "Your subscription payment of $" . number_format($amount, 2) . " has been processed successfully.",
-            ['subscription_id' => $subscriptionId, 'amount' => $amount]
+            ['subscription_id' => $subscriptionId, 'amount' => number_format($amount, 2)]
         );
     }
 
@@ -167,7 +236,7 @@ class NotificationService
             $type,
             $title,
             $message,
-            ['acc_id' => $accId, 'acc_name' => $accName, 'amount' => $amount, 'is_renewal' => $isRenewal]
+            ['acc_id' => $accId, 'accName' => $accName, 'amount' => number_format($amount, 2), 'is_renewal' => $isRenewal]
         );
     }
 
@@ -181,7 +250,7 @@ class NotificationService
             'subscription_expiring',
             'Subscription Expiring Soon',
             "Your subscription will expire on {$expiryDate}. Please renew to continue using the platform.",
-            ['subscription_id' => $subscriptionId, 'expiry_date' => $expiryDate]
+            ['subscription_id' => $subscriptionId, 'expiryDate' => $expiryDate]
         );
     }
 
@@ -201,18 +270,19 @@ class NotificationService
         
         $data = [
             'authorization_id' => $authorizationId,
-            'instructor_name' => $instructorName,
-            'training_center_name' => $trainingCenterName,
+            'instructorName' => $instructorName,
+            'trainingCenterName' => $trainingCenterName,
+            'coursesInfo' => $coursesInfo,
         ];
         
         if ($subCategoryId) {
             $data['sub_category_id'] = $subCategoryId;
-            $data['sub_category_name'] = $subCategoryName;
+            $data['subCategoryName'] = $subCategoryName;
         }
         
         if ($courseIds) {
             $data['course_ids'] = $courseIds;
-            $data['courses_count'] = count($courseIds);
+            $data['coursesCount'] = $coursesCount ?? count($courseIds);
         }
 
         $this->send(
@@ -237,8 +307,11 @@ class NotificationService
         
         $data = [
             'authorization_id' => $authorizationId,
-            'instructor_name' => $instructorName,
-            'acc_name' => $accName,
+            'instructorName' => $instructorName,
+            'accName' => $accName,
+            'priceInfo' => $priceInfo,
+            'commissionInfo' => $commissionInfo,
+            'coursesInfo' => $coursesInfo,
         ];
         
         if ($authorizationPrice) {
@@ -250,7 +323,7 @@ class NotificationService
         }
         
         if ($coursesCount) {
-            $data['courses_count'] = $coursesCount;
+            $data['coursesCount'] = $coursesCount;
         }
 
         $this->send(
@@ -272,7 +345,7 @@ class NotificationService
             'instructor_authorization_payment_success',
             'Payment Successful',
             "Payment of $" . number_format($amount, 2) . " for instructor '{$instructorName}' authorization has been processed successfully. The instructor is now officially authorized.",
-            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'amount' => $amount]
+            ['authorization_id' => $authorizationId, 'instructorName' => $instructorName, 'amount' => number_format($amount, 2)]
         );
     }
 
@@ -286,7 +359,7 @@ class NotificationService
             'instructor_authorization_rejected',
             'Instructor Authorization Rejected',
             "The authorization request for instructor '{$instructorName}' has been rejected. Reason: {$reason}",
-            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'reason' => $reason]
+            ['authorization_id' => $authorizationId, 'instructorName' => $instructorName, 'reason' => $reason]
         );
     }
 
@@ -300,7 +373,7 @@ class NotificationService
             'code_purchased',
             'Certificate Codes Purchased',
             "You have successfully purchased {$quantity} certificate code(s) for $" . number_format($amount, 2) . ".",
-            ['batch_id' => $batchId, 'quantity' => $quantity, 'amount' => $amount]
+            ['batch_id' => $batchId, 'quantity' => $quantity, 'amount' => number_format($amount, 2)]
         );
     }
 
@@ -314,7 +387,7 @@ class NotificationService
             'training_center_authorized',
             'Authorization Approved',
             "Your authorization request with {$accName} has been approved.",
-            ['authorization_id' => $authorizationId, 'acc_name' => $accName]
+            ['authorization_id' => $authorizationId, 'accName' => $accName]
         );
     }
 
@@ -328,7 +401,7 @@ class NotificationService
             'training_center_authorization_rejected',
             'Authorization Rejected',
             "Your authorization request with {$accName} has been rejected. Reason: {$reason}",
-            ['authorization_id' => $authorizationId, 'acc_name' => $accName, 'reason' => $reason]
+            ['authorization_id' => $authorizationId, 'accName' => $accName, 'reason' => $reason]
         );
     }
 
@@ -342,7 +415,7 @@ class NotificationService
             'training_center_authorization_returned',
             'Authorization Request Returned',
             "Your authorization request with {$accName} has been returned for revision. Comment: {$comment}",
-            ['authorization_id' => $authorizationId, 'acc_name' => $accName, 'comment' => $comment]
+            ['authorization_id' => $authorizationId, 'accName' => $accName, 'comment' => $comment]
         );
     }
 
@@ -454,9 +527,9 @@ class NotificationService
             "Instructor '{$instructorName}' has been approved by {$accName}. Please set the commission percentage. Authorization price: $" . number_format($authorizationPrice, 2) . ".",
             [
                 'authorization_id' => $authorizationId,
-                'instructor_name' => $instructorName,
-                'acc_name' => $accName,
-                'authorization_price' => $authorizationPrice
+                'instructorName' => $instructorName,
+                'accName' => $accName,
+                'authorizationPrice' => number_format($authorizationPrice, 2)
             ]
         );
     }
@@ -471,7 +544,7 @@ class NotificationService
             'code_purchase_acc',
             'Certificate Codes Purchased',
             "{$trainingCenterName} purchased {$quantity} certificate code(s). Your commission: $" . number_format($commission, 2) . ".",
-            ['batch_id' => $batchId, 'training_center_name' => $trainingCenterName, 'quantity' => $quantity, 'amount' => $amount, 'commission' => $commission]
+            ['batch_id' => $batchId, 'trainingCenterName' => $trainingCenterName, 'quantity' => $quantity, 'amount' => number_format($amount, 2), 'commission' => number_format($commission, 2)]
         );
     }
 
@@ -485,7 +558,7 @@ class NotificationService
             'training_center_approved',
             'Training Center Application Approved',
             "Your Training Center application for '{$trainingCenterName}' has been approved. You can now access your workspace.",
-            ['training_center_id' => $trainingCenterId]
+            ['training_center_id' => $trainingCenterId, 'trainingCenterName' => $trainingCenterName]
         );
     }
 
@@ -499,7 +572,7 @@ class NotificationService
             'training_center_rejected',
             'Training Center Application Rejected',
             "Your Training Center application for '{$trainingCenterName}' has been rejected. Reason: {$reason}",
-            ['training_center_id' => $trainingCenterId, 'reason' => $reason]
+            ['training_center_id' => $trainingCenterId, 'trainingCenterName' => $trainingCenterName, 'reason' => $reason]
         );
     }
 
@@ -513,7 +586,7 @@ class NotificationService
             'instructor_authorization_returned',
             'Instructor Authorization Request Returned',
             "Your authorization request for instructor '{$instructorName}' with {$accName} has been returned for revision. Comment: {$comment}",
-            ['authorization_id' => $authorizationId, 'instructor_name' => $instructorName, 'acc_name' => $accName, 'comment' => $comment]
+            ['authorization_id' => $authorizationId, 'instructorName' => $instructorName, 'accName' => $accName, 'comment' => $comment]
         );
     }
 
@@ -529,11 +602,11 @@ class NotificationService
             "Commission has been set for instructor '{$instructorName}' authorization with {$accName}. Authorization price: $" . number_format($authorizationPrice, 2) . ", Commission: {$commissionPercentage}%, Courses: {$coursesCount}. You can now proceed with payment.",
             [
                 'authorization_id' => $authorizationId,
-                'instructor_name' => $instructorName,
-                'acc_name' => $accName,
-                'authorization_price' => $authorizationPrice,
-                'commission_percentage' => $commissionPercentage,
-                'courses_count' => $coursesCount
+                'instructorName' => $instructorName,
+                'accName' => $accName,
+                'authorizationPrice' => number_format($authorizationPrice, 2),
+                'commissionPercentage' => $commissionPercentage,
+                'coursesCount' => $coursesCount
             ]
         );
     }
@@ -570,10 +643,10 @@ class NotificationService
             "A certificate has been generated for trainee {$traineeName} in course {$courseName} by {$trainingCenterName}. Certificate Number: {$certificateNumber}.",
             [
                 'certificate_id' => $certificateId,
-                'certificate_number' => $certificateNumber,
-                'trainee_name' => $traineeName,
-                'course_name' => $courseName,
-                'training_center_name' => $trainingCenterName
+                'certificateNumber' => $certificateNumber,
+                'traineeName' => $traineeName,
+                'courseName' => $courseName,
+                'trainingCenterName' => $trainingCenterName
             ]
         );
     }
@@ -590,10 +663,10 @@ class NotificationService
             "Class '{$className}' for course '{$courseName}' has been marked as completed by {$trainingCenterName}. Completion rate: {$completionRate}%.",
             [
                 'class_id' => $classId,
-                'class_name' => $className,
-                'course_name' => $courseName,
-                'training_center_name' => $trainingCenterName,
-                'completion_rate' => $completionRate
+                'className' => $className,
+                'courseName' => $courseName,
+                'trainingCenterName' => $trainingCenterName,
+                'completionRate' => $completionRate
             ]
         );
     }
@@ -610,11 +683,11 @@ class NotificationService
             "A new certificate has been generated. Certificate Number: {$certificateNumber}, Trainee: {$traineeName}, Course: {$courseName}, Training Center: {$trainingCenterName}, ACC: {$accName}.",
             [
                 'certificate_id' => $certificateId,
-                'certificate_number' => $certificateNumber,
-                'trainee_name' => $traineeName,
-                'course_name' => $courseName,
-                'training_center_name' => $trainingCenterName,
-                'acc_name' => $accName
+                'certificateNumber' => $certificateNumber,
+                'traineeName' => $traineeName,
+                'courseName' => $courseName,
+                'trainingCenterName' => $trainingCenterName,
+                'accName' => $accName
             ]
         );
     }
@@ -634,7 +707,8 @@ class NotificationService
         
         $data = [
             'authorization_id' => $authorizationId,
-            'training_center_name' => $trainingCenterName,
+            'trainingCenterName' => $trainingCenterName,
+            'locationInfo' => $locationInfo,
         ];
         
         if ($country) {
