@@ -176,6 +176,12 @@ class InstructorController extends Controller
             'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
         ]);
 
+        // Update instructor status from pending to active if authorized by ACC
+        $instructor = Instructor::find($authorization->instructor_id);
+        if ($instructor && $instructor->status === 'pending') {
+            $instructor->update(['status' => 'active']);
+        }
+
         // Get course IDs from documents_json
         $documentsData = $authorization->documents_json ?? [];
         $courseIds = $documentsData['requested_course_ids'] ?? [];
