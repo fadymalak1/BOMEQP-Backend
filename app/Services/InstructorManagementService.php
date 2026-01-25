@@ -286,26 +286,6 @@ class InstructorManagementService
             ];
         }
 
-        // Check if there's already an active authorization request for this instructor and ACC
-        $existingAuthorization = InstructorAccAuthorization::where('instructor_id', $instructor->id)
-            ->where('acc_id', $request->acc_id)
-            ->where('training_center_id', $trainingCenter->id)
-            ->whereIn('status', ['pending', 'approved'])
-            ->first();
-
-        if ($existingAuthorization) {
-            $statusMessage = $existingAuthorization->status === 'pending' 
-                ? 'pending' 
-                : 'approved';
-            
-            return [
-                'success' => false,
-                'message' => "There is already an authorization request {$statusMessage} for this instructor with this ACC. Please wait for the current request to be processed or use the existing authorization.",
-                'code' => 409, // Conflict status code
-                'existing_authorization_id' => $existingAuthorization->id,
-            ];
-        }
-
         // Validate that either sub_category_id or course_ids is provided
         if (!$request->has('sub_category_id') && !$request->has('course_ids')) {
             return [
@@ -356,6 +336,42 @@ class InstructorManagementService
             }
 
             $courseIds = $request->course_ids;
+        }
+
+        // Check if there's already a pending authorization request for this instructor, ACC, and same category/courses
+        $existingAuthorizations = InstructorAccAuthorization::where('instructor_id', $instructor->id)
+            ->where('acc_id', $request->acc_id)
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('status', 'pending')
+            ->get();
+
+        // Check for conflicts: same sub_category_id or overlapping courses
+        foreach ($existingAuthorizations as $existingAuth) {
+            // Check if same sub_category_id
+            if ($request->has('sub_category_id') && 
+                $existingAuth->sub_category_id == $request->sub_category_id) {
+                return [
+                    'success' => false,
+                    'message' => "There is already a pending authorization request for this instructor with this ACC and sub-category. Please wait for the current request to be processed.",
+                    'code' => 409, // Conflict status code
+                    'existing_authorization_id' => $existingAuth->id,
+                ];
+            }
+
+            // Check if courses overlap
+            $existingCourseIds = $existingAuth->documents_json['requested_course_ids'] ?? [];
+            if (!empty($courseIds) && !empty($existingCourseIds)) {
+                $overlappingCourses = array_intersect($courseIds, $existingCourseIds);
+                if (!empty($overlappingCourses)) {
+                    return [
+                        'success' => false,
+                        'message' => "There is already a pending authorization request for this instructor with this ACC that includes some of the same courses. Please wait for the current request to be processed.",
+                        'code' => 409, // Conflict status code
+                        'existing_authorization_id' => $existingAuth->id,
+                        'overlapping_courses' => array_values($overlappingCourses),
+                    ];
+                }
+            }
         }
 
         try {

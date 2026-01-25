@@ -55,7 +55,7 @@ class InstructorController extends Controller
         }
 
         $query = InstructorAccAuthorization::where('acc_id', $acc->id)
-            ->with(['instructor', 'trainingCenter', 'subCategory.courses']);
+            ->with(['instructor', 'trainingCenter', 'subCategory.category', 'subCategory.courses']);
 
         // Filter by status if provided
         if ($request->has('status')) {
@@ -97,13 +97,26 @@ class InstructorController extends Controller
             ->through(function ($authorization) {
                 $data = $authorization->toArray();
                 
-                // If there is a sub_category, add sub_category name and courses
+                // Get requested course IDs from documents_json
+                $documentsData = $authorization->documents_json ?? [];
+                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+                
+                // If there is a sub_category, add sub_category name, category, and courses
                 if ($authorization->sub_category_id && $authorization->subCategory) {
+                    $subCategory = $authorization->subCategory;
+                    $category = $subCategory->category;
+                    
+                    $data['category'] = $category ? [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'name_ar' => $category->name_ar ?? null,
+                    ] : null;
+                    
                     $data['sub_category'] = [
-                        'id' => $authorization->subCategory->id,
-                        'name' => $authorization->subCategory->name,
-                        'name_ar' => $authorization->subCategory->name_ar,
-                        'courses' => $authorization->subCategory->courses->map(function ($course) {
+                        'id' => $subCategory->id,
+                        'name' => $subCategory->name,
+                        'name_ar' => $subCategory->name_ar,
+                        'courses' => $subCategory->courses->map(function ($course) {
                             return [
                                 'id' => $course->id,
                                 'name' => $course->name,
@@ -113,8 +126,25 @@ class InstructorController extends Controller
                         })
                     ];
                 } else {
+                    $data['category'] = null;
                     $data['sub_category'] = null;
                 }
+                
+                // Get requested courses by IDs (even if sub_category is null)
+                $requestedCourses = [];
+                if (!empty($requestedCourseIds)) {
+                    $courses = \App\Models\Course::whereIn('id', $requestedCourseIds)->get();
+                    $requestedCourses = $courses->map(function ($course) {
+                        return [
+                            'id' => $course->id,
+                            'name' => $course->name,
+                            'name_ar' => $course->name_ar,
+                            'code' => $course->code,
+                        ];
+                    })->toArray();
+                }
+                
+                $data['requested_courses'] = $requestedCourses;
                 
                 return $data;
             });
@@ -298,6 +328,41 @@ class InstructorController extends Controller
         return response()->json(['message' => 'Request returned successfully']);
     }
 
+    #[OA\Get(
+        path: "/acc/instructors",
+        summary: "List approved authorized instructors",
+        description: "Get all approved authorized instructors for the authenticated ACC with optional filtering, search, and pagination.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor full name (first name, last name, or both), email, phone, or training center name"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Approved instructors retrieved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "instructors", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(
+                            property: "pagination",
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "current_page", type: "integer"),
+                                new OA\Property(property: "last_page", type: "integer"),
+                                new OA\Property(property: "per_page", type: "integer"),
+                                new OA\Property(property: "total", type: "integer")
+                            ]
+                        )
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
     public function index(Request $request)
     {
         $user = $request->user();
@@ -307,13 +372,138 @@ class InstructorController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $instructors = InstructorAccAuthorization::where('acc_id', $acc->id)
+        // Get approved authorizations with instructor and related data
+        $query = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->where('status', 'approved')
-            ->with('instructor')
-            ->get()
-            ->pluck('instructor');
+            ->with([
+                'instructor.trainingCenter',
+                'instructor.courseAuthorizations' => function($q) use ($acc) {
+                    $q->where('acc_id', $acc->id)->where('status', 'active');
+                },
+                'instructor.courseAuthorizations.course',
+                'trainingCenter',
+                'subCategory.category',
+                'subCategory.courses'
+            ]);
 
-        return response()->json(['instructors' => $instructors]);
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->whereHas('instructor', function ($instructorQuery) use ($searchTerm) {
+                    $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
+                        ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                        ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                        ->orWhere('email', 'like', "%{$searchTerm}%")
+                        ->orWhere('phone', 'like', "%{$searchTerm}%");
+                })
+                ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                    $tcQuery->where('name', 'like', "%{$searchTerm}%");
+                });
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $authorizations = $query->orderBy('reviewed_at', 'desc')
+            ->paginate($perPage);
+
+        // Transform the data to include instructor details with authorization info
+        $instructors = $authorizations->through(function ($authorization) {
+            $instructor = $authorization->instructor;
+            
+            if (!$instructor) {
+                return null;
+            }
+
+            // Get authorized courses for this ACC
+            $authorizedCourses = $instructor->courseAuthorizations
+                ->where('acc_id', $authorization->acc_id)
+                ->where('status', 'active')
+                ->map(function ($courseAuth) {
+                    return [
+                        'id' => $courseAuth->course_id,
+                        'name' => $courseAuth->course->name ?? null,
+                        'name_ar' => $courseAuth->course->name_ar ?? null,
+                        'code' => $courseAuth->course->code ?? null,
+                        'authorized_at' => $courseAuth->authorized_at?->toISOString(),
+                    ];
+                })
+                ->values();
+
+            // Get requested course IDs from documents_json
+            $documentsData = $authorization->documents_json ?? [];
+            $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+            
+            // Build sub_category and category info
+            $subCategoryData = null;
+            $categoryData = null;
+            
+            if ($authorization->sub_category_id && $authorization->subCategory) {
+                $subCategory = $authorization->subCategory;
+                $category = $subCategory->category;
+                
+                $categoryData = $category ? [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'name_ar' => $category->name_ar ?? null,
+                ] : null;
+                
+                $subCategoryData = [
+                    'id' => $subCategory->id,
+                    'name' => $subCategory->name,
+                    'name_ar' => $subCategory->name_ar,
+                ];
+            }
+
+            return [
+                'id' => $instructor->id,
+                'first_name' => $instructor->first_name,
+                'last_name' => $instructor->last_name,
+                'email' => $instructor->email,
+                'phone' => $instructor->phone,
+                'date_of_birth' => $instructor->date_of_birth?->format('Y-m-d'),
+                'id_number' => $instructor->id_number,
+                'country' => $instructor->country,
+                'city' => $instructor->city,
+                'cv_url' => $instructor->cv_url,
+                'passport_image_url' => $instructor->passport_image_url,
+                'photo_url' => $instructor->photo_url,
+                'certificates_json' => $instructor->certificates_json,
+                'specializations' => $instructor->specializations,
+                'status' => $instructor->status,
+                'is_assessor' => $instructor->is_assessor,
+                'training_center' => $instructor->trainingCenter ? [
+                    'id' => $instructor->trainingCenter->id,
+                    'name' => $instructor->trainingCenter->name,
+                    'email' => $instructor->trainingCenter->email,
+                ] : null,
+                'authorization' => [
+                    'id' => $authorization->id,
+                    'request_date' => $authorization->request_date?->toISOString(),
+                    'reviewed_at' => $authorization->reviewed_at?->toISOString(),
+                    'reviewed_by' => $authorization->reviewed_by,
+                    'commission_percentage' => $authorization->commission_percentage,
+                    'authorization_price' => $authorization->authorization_price,
+                    'payment_status' => $authorization->payment_status,
+                    'payment_date' => $authorization->payment_date?->toISOString(),
+                    'group_admin_status' => $authorization->group_admin_status,
+                    'category' => $categoryData,
+                    'sub_category' => $subCategoryData,
+                ],
+                'authorized_courses' => $authorizedCourses,
+            ];
+        })->filter(); // Remove null values
+
+        return response()->json([
+            'instructors' => $instructors->values(),
+            'pagination' => [
+                'current_page' => $authorizations->currentPage(),
+                'last_page' => $authorizations->lastPage(),
+                'per_page' => $authorizations->perPage(),
+                'total' => $authorizations->total(),
+            ],
+        ]);
     }
 }
 
