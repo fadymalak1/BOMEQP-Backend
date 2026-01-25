@@ -372,53 +372,70 @@ class InstructorController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Get approved authorizations with instructor and related data
-        $query = InstructorAccAuthorization::where('acc_id', $acc->id)
+        // Get unique instructor IDs from approved authorizations
+        $instructorIdsQuery = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->where('status', 'approved')
-            ->with([
-                'instructor.trainingCenter',
-                'instructor.courseAuthorizations' => function($q) use ($acc) {
-                    $q->where('acc_id', $acc->id)->where('status', 'active');
-                },
-                'instructor.courseAuthorizations.course',
-                'trainingCenter',
-                'subCategory.category',
-                'subCategory.courses'
-            ]);
+            ->select('instructor_id')
+            ->distinct();
 
-        // Search functionality
+        // Apply search filter to instructor IDs if search is provided
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->whereHas('instructor', function ($instructorQuery) use ($searchTerm) {
-                    $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
-                        ->orWhere('last_name', 'like', "%{$searchTerm}%")
-                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
-                        ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
-                        ->orWhere('email', 'like', "%{$searchTerm}%")
-                        ->orWhere('phone', 'like', "%{$searchTerm}%");
-                })
-                ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
-                    $tcQuery->where('name', 'like', "%{$searchTerm}%");
-                });
+            $instructorIdsQuery->whereHas('instructor', function ($instructorQuery) use ($searchTerm) {
+                $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                    ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                    ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhere('phone', 'like', "%{$searchTerm}%");
+            })
+            ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                $tcQuery->where('name', 'like', "%{$searchTerm}%");
             });
         }
 
+        $instructorIds = $instructorIdsQuery->pluck('instructor_id')->toArray();
+
+        if (empty($instructorIds)) {
+            return response()->json([
+                'instructors' => [],
+                'pagination' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $request->get('per_page', 15),
+                    'total' => 0,
+                ],
+            ]);
+        }
+
+        // Query unique instructors
+        $instructorsQuery = Instructor::whereIn('id', $instructorIds)
+            ->with([
+                'trainingCenter',
+                'courseAuthorizations' => function($q) use ($acc) {
+                    $q->where('acc_id', $acc->id)->where('status', 'active');
+                },
+                'courseAuthorizations.course'
+            ]);
+
         $perPage = $request->get('per_page', 15);
-        $authorizations = $query->orderBy('reviewed_at', 'desc')
-            ->paginate($perPage);
+        $instructors = $instructorsQuery->orderBy('created_at', 'desc')->paginate($perPage);
 
-        // Transform the data to include instructor details with authorization info
-        $instructors = $authorizations->through(function ($authorization) {
-            $instructor = $authorization->instructor;
-            
-            if (!$instructor) {
-                return null;
-            }
+        // Get all approved authorizations for these instructors
+        $allAuthorizations = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('status', 'approved')
+            ->whereIn('instructor_id', $instructors->pluck('id')->toArray())
+            ->with(['subCategory.category', 'subCategory.courses', 'trainingCenter'])
+            ->get()
+            ->groupBy('instructor_id');
 
-            // Get authorized courses for this ACC
+        // Transform the data to include instructor details with aggregated authorization info
+        $instructorsData = $instructors->through(function ($instructor) use ($allAuthorizations, $acc) {
+            $instructorAuthorizations = $allAuthorizations->get($instructor->id, collect());
+
+            // Get all authorized courses for this instructor and ACC
             $authorizedCourses = $instructor->courseAuthorizations
-                ->where('acc_id', $authorization->acc_id)
+                ->where('acc_id', $acc->id)
                 ->where('status', 'active')
                 ->map(function ($courseAuth) {
                     return [
@@ -429,32 +446,49 @@ class InstructorController extends Controller
                         'authorized_at' => $courseAuth->authorized_at?->toISOString(),
                     ];
                 })
+                ->values()
+                ->unique('id')
                 ->values();
 
-            // Get requested course IDs from documents_json
-            $documentsData = $authorization->documents_json ?? [];
-            $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
-            
-            // Build sub_category and category info
-            $subCategoryData = null;
-            $categoryData = null;
-            
-            if ($authorization->sub_category_id && $authorization->subCategory) {
-                $subCategory = $authorization->subCategory;
-                $category = $subCategory->category;
+            // Aggregate authorization information
+            $authorizationsList = $instructorAuthorizations->map(function ($authorization) {
+                $subCategoryData = null;
+                $categoryData = null;
                 
-                $categoryData = $category ? [
-                    'id' => $category->id,
-                    'name' => $category->name,
-                    'name_ar' => $category->name_ar ?? null,
-                ] : null;
-                
-                $subCategoryData = [
-                    'id' => $subCategory->id,
-                    'name' => $subCategory->name,
-                    'name_ar' => $subCategory->name_ar,
+                if ($authorization->sub_category_id && $authorization->subCategory) {
+                    $subCategory = $authorization->subCategory;
+                    $category = $subCategory->category;
+                    
+                    $categoryData = $category ? [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'name_ar' => $category->name_ar ?? null,
+                    ] : null;
+                    
+                    $subCategoryData = [
+                        'id' => $subCategory->id,
+                        'name' => $subCategory->name,
+                        'name_ar' => $subCategory->name_ar,
+                    ];
+                }
+
+                return [
+                    'id' => $authorization->id,
+                    'request_date' => $authorization->request_date?->toISOString(),
+                    'reviewed_at' => $authorization->reviewed_at?->toISOString(),
+                    'reviewed_by' => $authorization->reviewed_by,
+                    'commission_percentage' => $authorization->commission_percentage,
+                    'authorization_price' => $authorization->authorization_price,
+                    'payment_status' => $authorization->payment_status,
+                    'payment_date' => $authorization->payment_date?->toISOString(),
+                    'group_admin_status' => $authorization->group_admin_status,
+                    'category' => $categoryData,
+                    'sub_category' => $subCategoryData,
                 ];
-            }
+            })->values();
+
+            // Get the latest authorization for summary
+            $latestAuthorization = $instructorAuthorizations->sortByDesc('reviewed_at')->first();
 
             return [
                 'id' => $instructor->id,
@@ -478,30 +512,30 @@ class InstructorController extends Controller
                     'name' => $instructor->trainingCenter->name,
                     'email' => $instructor->trainingCenter->email,
                 ] : null,
-                'authorization' => [
-                    'id' => $authorization->id,
-                    'request_date' => $authorization->request_date?->toISOString(),
-                    'reviewed_at' => $authorization->reviewed_at?->toISOString(),
-                    'reviewed_by' => $authorization->reviewed_by,
-                    'commission_percentage' => $authorization->commission_percentage,
-                    'authorization_price' => $authorization->authorization_price,
-                    'payment_status' => $authorization->payment_status,
-                    'payment_date' => $authorization->payment_date?->toISOString(),
-                    'group_admin_status' => $authorization->group_admin_status,
-                    'category' => $categoryData,
-                    'sub_category' => $subCategoryData,
-                ],
+                'latest_authorization' => $latestAuthorization ? [
+                    'id' => $latestAuthorization->id,
+                    'request_date' => $latestAuthorization->request_date?->toISOString(),
+                    'reviewed_at' => $latestAuthorization->reviewed_at?->toISOString(),
+                    'reviewed_by' => $latestAuthorization->reviewed_by,
+                    'commission_percentage' => $latestAuthorization->commission_percentage,
+                    'authorization_price' => $latestAuthorization->authorization_price,
+                    'payment_status' => $latestAuthorization->payment_status,
+                    'payment_date' => $latestAuthorization->payment_date?->toISOString(),
+                    'group_admin_status' => $latestAuthorization->group_admin_status,
+                ] : null,
+                'authorizations' => $authorizationsList,
                 'authorized_courses' => $authorizedCourses,
+                'authorizations_count' => $instructorAuthorizations->count(),
             ];
-        })->filter(); // Remove null values
+        });
 
         return response()->json([
-            'instructors' => $instructors->values(),
+            'instructors' => $instructorsData->values(),
             'pagination' => [
-                'current_page' => $authorizations->currentPage(),
-                'last_page' => $authorizations->lastPage(),
-                'per_page' => $authorizations->perPage(),
-                'total' => $authorizations->total(),
+                'current_page' => $instructors->currentPage(),
+                'last_page' => $instructors->lastPage(),
+                'per_page' => $instructors->perPage(),
+                'total' => $instructors->total(),
             ],
         ]);
     }

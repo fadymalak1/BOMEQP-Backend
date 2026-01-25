@@ -73,7 +73,10 @@ class CertificateController extends Controller
         }
 
         // Load relationships
-        $certificate->load(['course', 'trainingCenter', 'instructor', 'template']);
+        $certificate->load(['course.acc', 'trainingCenter', 'instructor', 'template']);
+
+        // Get ACC from course
+        $acc = $certificate->course->acc;
 
         return response()->json([
             'valid' => true,
@@ -94,7 +97,28 @@ class CertificateController extends Controller
                 'training_center' => [
                     'id' => $certificate->trainingCenter->id,
                     'name' => $certificate->trainingCenter->name,
+                    'legal_name' => $certificate->trainingCenter->legal_name,
+                    'registration_number' => $certificate->trainingCenter->registration_number,
+                    'country' => $certificate->trainingCenter->country,
+                    'city' => $certificate->trainingCenter->city,
+                    'address' => $certificate->trainingCenter->address,
+                    'phone' => $certificate->trainingCenter->phone,
+                    'email' => $certificate->trainingCenter->email,
+                    'website' => $certificate->trainingCenter->website,
+                    'logo_url' => $certificate->trainingCenter->logo_url,
                 ],
+                'acc' => $acc ? [
+                    'id' => $acc->id,
+                    'name' => $acc->name,
+                    'legal_name' => $acc->legal_name,
+                    'registration_number' => $acc->registration_number,
+                    'country' => $acc->country,
+                    'address' => $acc->address,
+                    'phone' => $acc->phone,
+                    'email' => $acc->email,
+                    'website' => $acc->website,
+                    'logo_url' => $acc->logo_url,
+                ] : null,
                 'instructor' => $certificate->instructor ? [
                     'id' => $certificate->instructor->id,
                     'name' => $certificate->instructor->name,
