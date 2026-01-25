@@ -39,7 +39,7 @@ class SubCategoryController extends Controller
             $query->where('category_id', $request->category_id);
         }
 
-        $subCategories = $query->get();
+        $subCategories = $query->orderBy('created_at', 'desc')->get();
         return response()->json(['sub_categories' => $subCategories]);
     }
 

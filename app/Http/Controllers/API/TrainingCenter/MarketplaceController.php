@@ -62,7 +62,7 @@ class MarketplaceController extends Controller
             });
         }
 
-        $materials = $query->get();
+        $materials = $query->orderBy('created_at', 'desc')->get();
         return response()->json(['materials' => $materials]);
     }
 

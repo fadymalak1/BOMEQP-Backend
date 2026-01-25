@@ -177,7 +177,7 @@ class WalletController extends Controller
         ];
 
         $perPage = $request->get('per_page', 15);
-        $transactions = $query->paginate($perPage);
+        $transactions = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         // Format transactions with detailed information
         $formattedTransactions = $transactions->getCollection()->map(function ($transaction) {

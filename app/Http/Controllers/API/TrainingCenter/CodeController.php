@@ -427,7 +427,7 @@ class CodeController extends Controller
             $query->where('status', $request->status);
         }
 
-        $codes = $query->get();
+        $codes = $query->orderBy('created_at', 'desc')->get();
 
         $summary = [
             'total' => CertificateCode::where('training_center_id', $trainingCenter->id)->count(),

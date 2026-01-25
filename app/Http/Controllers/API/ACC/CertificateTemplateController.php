@@ -51,6 +51,7 @@ class CertificateTemplateController extends Controller
 
         $templates = CertificateTemplate::where('acc_id', $acc->id)
             ->with('category')
+            ->orderBy('created_at', 'desc')
             ->get();
 
         return response()->json(['templates' => $templates]);

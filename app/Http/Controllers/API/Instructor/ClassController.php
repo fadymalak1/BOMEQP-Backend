@@ -50,7 +50,7 @@ class ClassController extends Controller
             $query->where('status', $request->status);
         }
 
-        $classes = $query->orderBy('start_date', 'desc')->get();
+        $classes = $query->orderBy('created_at', 'desc')->orderBy('start_date', 'desc')->get();
 
         return response()->json(['classes' => $classes]);
     }

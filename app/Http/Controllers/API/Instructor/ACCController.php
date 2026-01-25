@@ -66,6 +66,7 @@ class ACCController extends Controller
         $accIds = array_unique(array_merge($authorizedAccIds, $courseAccIds));
 
         $accs = ACC::whereIn('id', $accIds)
+            ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($acc) use ($instructor) {
                 // Get authorization info

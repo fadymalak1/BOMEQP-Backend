@@ -56,6 +56,7 @@ class TrainingCenterController extends Controller
         }
 
         $trainingCenters = TrainingCenter::whereIn('id', $trainingCenterIds)
+            ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($tc) use ($instructor) {
                 $classes = TrainingClass::where('instructor_id', $instructor->id)

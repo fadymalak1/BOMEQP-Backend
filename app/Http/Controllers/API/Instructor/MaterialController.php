@@ -27,6 +27,7 @@ class MaterialController extends Controller
         $materials = ACCMaterial::whereIn('course_id', $assignedCourseIds)
             ->where('status', 'active')
             ->with('course')
+            ->orderBy('created_at', 'desc')
             ->get();
 
         return response()->json(['materials' => $materials]);

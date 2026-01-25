@@ -58,7 +58,7 @@ class ACCController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
-        $accs = $query->orderBy('name', 'asc')->paginate($perPage);
+        $accs = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return response()->json($accs);
     }

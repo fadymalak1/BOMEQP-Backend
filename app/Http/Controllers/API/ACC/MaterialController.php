@@ -53,7 +53,7 @@ class MaterialController extends Controller
             $query->where('material_type', $request->material_type);
         }
 
-        $materials = $query->get();
+        $materials = $query->orderBy('created_at', 'desc')->get();
         return response()->json(['materials' => $materials]);
     }
 

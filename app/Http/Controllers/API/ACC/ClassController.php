@@ -169,8 +169,8 @@ class ClassController extends Controller
             });
         }
 
-        // Order by start date (upcoming first)
-        $query->orderBy('start_date', 'desc');
+        // Order by created_at (newest first), then start_date
+        $query->orderBy('created_at', 'desc')->orderBy('start_date', 'desc');
 
         // Paginate
         $perPage = $request->get('per_page', 15);
