@@ -170,7 +170,7 @@ class ClassController extends Controller
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 403, description: "Course not available - ACC authorization required"),
+            new OA\Response(response: 403, description: "Course not available - ACC authorization required, or Instructor not authorized to teach this course"),
             new OA\Response(response: 404, description: "Training center not found"),
             new OA\Response(response: 422, description: "Validation error")
         ]
@@ -207,6 +207,19 @@ class ClassController extends Controller
         $course = \App\Models\Course::findOrFail($request->course_id);
         if (!$approvedAccIds->contains($course->acc_id)) {
             return response()->json(['message' => 'Course not available. ACC authorization required.'], 403);
+        }
+
+        // Verify the instructor is authorized to teach this course from the ACC
+        $instructorAuthorization = \App\Models\InstructorCourseAuthorization::where('instructor_id', $request->instructor_id)
+            ->where('course_id', $request->course_id)
+            ->where('acc_id', $course->acc_id)
+            ->where('status', 'active')
+            ->first();
+
+        if (!$instructorAuthorization) {
+            return response()->json([
+                'message' => 'Instructor is not authorized to teach this course from the ACC.'
+            ], 403);
         }
 
         // Validate trainees belong to the training center before creating the class
@@ -333,6 +346,7 @@ class ClassController extends Controller
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "Instructor not authorized to teach this course from the ACC"),
             new OA\Response(response: 404, description: "Class not found"),
             new OA\Response(response: 422, description: "Validation error")
         ]
@@ -363,6 +377,28 @@ class ClassController extends Controller
             'trainee_ids' => 'nullable|array',
             'trainee_ids.*' => 'exists:trainees,id',
         ]);
+
+        // Determine which course and instructor to validate
+        $courseId = $request->has('course_id') ? $request->course_id : $class->course_id;
+        $instructorId = $request->has('instructor_id') ? $request->instructor_id : $class->instructor_id;
+
+        // If instructor or course is being updated, verify instructor authorization
+        if ($request->has('instructor_id') || $request->has('course_id')) {
+            $course = \App\Models\Course::findOrFail($courseId);
+            
+            // Verify the instructor is authorized to teach this course from the ACC
+            $instructorAuthorization = \App\Models\InstructorCourseAuthorization::where('instructor_id', $instructorId)
+                ->where('course_id', $courseId)
+                ->where('acc_id', $course->acc_id)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$instructorAuthorization) {
+                return response()->json([
+                    'message' => 'Instructor is not authorized to teach this course from the ACC.'
+                ], 403);
+            }
+        }
 
         $updateData = $request->only([
             'course_id', 'name', 'instructor_id', 'start_date', 'end_date',
