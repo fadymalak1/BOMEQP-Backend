@@ -262,9 +262,11 @@ class AuthController extends Controller
             'language' => 'sometimes|string|in:en,hi,zh-CN',
         ]);
 
-        $request->user()->update($request->only(['name', 'email', 'language']));
+        $user = $request->user();
+        $user->update($request->only(['name', 'email', 'language']));
+        $user->refresh();
 
-        return response()->json(['message' => 'Profile updated successfully', 'user' => $request->user()]);
+        return response()->json(['message' => 'Profile updated successfully', 'user' => $user]);
     }
 
     #[OA\Put(
