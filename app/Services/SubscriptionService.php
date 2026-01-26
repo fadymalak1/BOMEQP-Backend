@@ -149,12 +149,12 @@ class SubscriptionService
         ?string $paymentIntentId = null,
         ?bool $autoRenew = null
     ): array {
-        // Check if subscription is expired
-        if ($currentSubscription->subscription_end_date < now() && $acc->status === 'suspended') {
+        // Check if current subscription has ended - prevent renewal until subscription ends
+        if ($currentSubscription->subscription_end_date > now()) {
             return [
                 'success' => false,
-                'message' => 'Subscription expired. Account is suspended. Please renew to reactivate.',
-                'requires_payment' => true,
+                'message' => 'Cannot renew subscription. Current subscription is still active and ends on ' . $currentSubscription->subscription_end_date->format('Y-m-d') . '. Please wait until the subscription ends before renewing.',
+                'subscription_end_date' => $currentSubscription->subscription_end_date->format('Y-m-d'),
                 'code' => 400
             ];
         }

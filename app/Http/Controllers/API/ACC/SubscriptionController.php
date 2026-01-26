@@ -165,6 +165,14 @@ class SubscriptionController extends Controller
             return response()->json(['message' => 'No subscription found. Please create a new subscription.'], 404);
         }
 
+        // Check if current subscription has ended
+        if ($currentSubscription->subscription_end_date > now()) {
+            return response()->json([
+                'message' => 'Cannot create renewal payment intent. Current subscription is still active and ends on ' . $currentSubscription->subscription_end_date->format('Y-m-d') . '. Please wait until the subscription ends before renewing.',
+                'subscription_end_date' => $currentSubscription->subscription_end_date->format('Y-m-d'),
+            ], 400);
+        }
+
         if (!$this->stripeService->isConfigured()) {
             return response()->json([
                 'message' => 'Stripe payment is not configured'
@@ -380,6 +388,14 @@ class SubscriptionController extends Controller
 
         if (!$currentSubscription) {
             return response()->json(['message' => 'No subscription found. Please create a new subscription.'], 404);
+        }
+
+        // Check if current subscription has ended
+        if ($currentSubscription->subscription_end_date > now()) {
+            return response()->json([
+                'message' => 'Cannot renew subscription. Current subscription is still active and ends on ' . $currentSubscription->subscription_end_date->format('Y-m-d') . '. Please wait until the subscription ends before renewing.',
+                'subscription_end_date' => $currentSubscription->subscription_end_date->format('Y-m-d'),
+            ], 400);
         }
 
         try {
