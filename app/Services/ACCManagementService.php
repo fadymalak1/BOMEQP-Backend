@@ -24,20 +24,22 @@ class ACCManagementService
      * @param ACC $acc
      * @param int $approvedBy
      * @param float $commissionPercentage Commission percentage (required)
+     * @param float $subscriptionPrice Subscription price (required)
      * @return array
      */
-    public function approveApplication(ACC $acc, int $approvedBy, float $commissionPercentage): array
+    public function approveApplication(ACC $acc, int $approvedBy, float $commissionPercentage, float $subscriptionPrice): array
     {
         try {
             DB::beginTransaction();
 
-            // Ensure commission_percentage is properly cast
+            // Ensure values are properly cast
             $commissionPercentage = (float) $commissionPercentage;
+            $subscriptionPrice = (float) $subscriptionPrice;
 
-            Log::info('Updating ACC with commission percentage', [
+            Log::info('Updating ACC with commission percentage and subscription price', [
                 'acc_id' => $acc->id,
                 'commission_percentage' => $commissionPercentage,
-                'type' => gettype($commissionPercentage),
+                'subscription_price' => $subscriptionPrice,
             ]);
 
             // Update using save() to ensure all attributes are saved
@@ -45,6 +47,7 @@ class ACCManagementService
             $acc->approved_at = now();
             $acc->approved_by = $approvedBy;
             $acc->commission_percentage = $commissionPercentage;
+            $acc->subscription_price = $subscriptionPrice;
             $acc->save();
 
             // Refresh to get updated values from database
@@ -53,7 +56,7 @@ class ACCManagementService
             Log::info('ACC updated successfully', [
                 'acc_id' => $acc->id,
                 'commission_percentage' => $acc->commission_percentage,
-                'commission_percentage_type' => gettype($acc->commission_percentage),
+                'subscription_price' => $acc->subscription_price,
             ]);
 
             // Activate the user account associated with this ACC
@@ -78,6 +81,7 @@ class ACCManagementService
             Log::error('Failed to approve ACC application', [
                 'acc_id' => $acc->id,
                 'commission_percentage' => $commissionPercentage,
+                'subscription_price' => $subscriptionPrice,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

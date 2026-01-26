@@ -117,7 +117,7 @@ class ACCController extends Controller
     #[OA\Put(
         path: "/admin/accs/applications/{id}/approve",
         summary: "Approve ACC application",
-        description: "Approve an ACC application and activate the associated user account. Commission percentage is required.",
+        description: "Approve an ACC application and activate the associated user account. Commission percentage and subscription price are required.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
@@ -126,9 +126,10 @@ class ACCController extends Controller
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
-                required: ["commission_percentage"],
+                required: ["commission_percentage", "subscription_price"],
                 properties: [
-                    new OA\Property(property: "commission_percentage", type: "number", format: "float", example: 10.0, minimum: 0, maximum: 100, description: "Commission percentage for this ACC (required, 0-100)")
+                    new OA\Property(property: "commission_percentage", type: "number", format: "float", example: 10.0, minimum: 0, maximum: 100, description: "Commission percentage for this ACC (required, 0-100)"),
+                    new OA\Property(property: "subscription_price", type: "number", format: "float", example: 1000.00, minimum: 0, description: "Subscription price that the ACC should pay for subscription (required)")
                 ]
             )
         ),
@@ -152,30 +153,36 @@ class ACCController extends Controller
     {
         $acc = ACC::findOrFail($id);
 
-        // Validate commission_percentage is required
+        // Validate commission_percentage and subscription_price are required
         $request->validate([
             'commission_percentage' => 'required|numeric|min:0|max:100',
+            'subscription_price' => 'required|numeric|min:0',
         ], [
             'commission_percentage.required' => 'Commission percentage is required when approving ACC application.',
             'commission_percentage.numeric' => 'Commission percentage must be a number.',
             'commission_percentage.min' => 'Commission percentage must be at least 0.',
             'commission_percentage.max' => 'Commission percentage cannot exceed 100.',
+            'subscription_price.required' => 'Subscription price is required when approving ACC application.',
+            'subscription_price.numeric' => 'Subscription price must be a number.',
+            'subscription_price.min' => 'Subscription price must be at least 0.',
         ]);
 
         // Convert to float to ensure proper type
         $commissionPercentage = (float) $request->commission_percentage;
+        $subscriptionPrice = (float) $request->subscription_price;
 
-        Log::info('Approving ACC application with commission', [
+        Log::info('Approving ACC application with commission and subscription price', [
             'acc_id' => $acc->id,
             'commission_percentage' => $commissionPercentage,
-            'request_value' => $request->commission_percentage,
+            'subscription_price' => $subscriptionPrice,
         ]);
 
         try {
             $result = $this->accService->approveApplication(
                 $acc, 
                 $request->user()->id,
-                $commissionPercentage
+                $commissionPercentage,
+                $subscriptionPrice
             );
             return response()->json([
                 'message' => $result['message'],

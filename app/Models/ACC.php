@@ -39,6 +39,7 @@ class ACC extends Model
         'approved_at',
         'approved_by',
         'commission_percentage',
+        'subscription_price',
         'stripe_account_id',
         'rejection_reason',
         // Company Information
@@ -88,6 +89,7 @@ class ACC extends Model
             'registration_paid_at' => 'datetime',
             'approved_at' => 'datetime',
             'commission_percentage' => 'decimal:2',
+            'subscription_price' => 'decimal:2',
             'mailing_same_as_physical' => 'boolean',
             'agreed_to_receive_communications' => 'boolean',
             'agreed_to_terms_and_conditions' => 'boolean',
