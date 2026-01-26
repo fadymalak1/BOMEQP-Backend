@@ -52,7 +52,8 @@ class ACCController extends Controller
     )]
     public function applications(Request $request)
     {
-        $query = ACC::where('status', 'pending')->with('documents');
+        // Get both pending and approved applications (approved need activation)
+        $query = ACC::whereIn('status', ['pending', 'approved'])->with('documents');
 
         // Search functionality
         if ($request->has('search') && !empty($request->search)) {
@@ -69,10 +70,11 @@ class ACCController extends Controller
         $perPage = $request->get('per_page', 15);
         $applications = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        // Get statistics (total count of pending applications regardless of filters)
+        // Get statistics (total count of pending and approved applications regardless of filters)
         $statistics = [
-            'total' => ACC::where('status', 'pending')->count(),
+            'total' => ACC::whereIn('status', ['pending', 'approved'])->count(),
             'pending' => ACC::where('status', 'pending')->count(),
+            'approved' => ACC::where('status', 'approved')->count(),
         ];
 
         return response()->json([
@@ -117,7 +119,7 @@ class ACCController extends Controller
     #[OA\Put(
         path: "/admin/accs/applications/{id}/approve",
         summary: "Approve ACC application",
-        description: "Approve an ACC application and activate the associated user account. Commission percentage and subscription price are required.",
+        description: "Approve an ACC application (first step). Commission percentage and subscription price are required. ACC will be set to 'approved' status and needs activation before they can start working.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
@@ -814,6 +816,63 @@ class ACCController extends Controller
             'message' => 'ACC updated successfully',
             'acc' => $acc->fresh()
         ], 200);
+    }
+
+    #[OA\Put(
+        path: "/admin/accs/applications/{id}/activate",
+        summary: "Activate ACC",
+        description: "Activate an approved ACC (second step). This allows the ACC to start working. ACC must be in 'approved' status.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "ACC activated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "ACC activated successfully. ACC can now start working."),
+                        new OA\Property(property: "acc", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "ACC must be approved before activation"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
+    public function activate(Request $request, $id)
+    {
+        $acc = ACC::findOrFail($id);
+
+        try {
+            $result = $this->accService->activateACC(
+                $acc,
+                $request->user()->id
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'message' => $result['message']
+                ], $result['code'] ?? 400);
+            }
+
+            return response()->json([
+                'message' => $result['message'],
+                'acc' => $result['acc']
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to activate ACC', [
+                'acc_id' => $acc->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to activate ACC',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
     }
 }
 

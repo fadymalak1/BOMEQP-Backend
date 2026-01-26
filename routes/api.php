@@ -85,6 +85,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/accs/applications', [App\Http\Controllers\API\Admin\ACCController::class, 'applications']);
         Route::get('/accs/applications/{id}', [App\Http\Controllers\API\Admin\ACCController::class, 'showApplication']);
         Route::put('/accs/applications/{id}/approve', [App\Http\Controllers\API\Admin\ACCController::class, 'approve']);
+        Route::put('/accs/applications/{id}/activate', [App\Http\Controllers\API\Admin\ACCController::class, 'activate']);
         Route::put('/accs/applications/{id}/reject', [App\Http\Controllers\API\Admin\ACCController::class, 'reject']);
         Route::post('/accs/{id}/create-space', [App\Http\Controllers\API\Admin\ACCController::class, 'createSpace']);
         Route::post('/accs/{id}/generate-credentials', [App\Http\Controllers\API\Admin\ACCController::class, 'generateCredentials']);
@@ -177,7 +178,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
     });
 
     // ACC routes
-    Route::prefix('acc')->middleware(['role:acc_admin'])->group(function () {
+    Route::prefix('acc')->middleware(['role:acc_admin', 'acc.active'])->group(function () {
         // Profile Management
         Route::get('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'show']);
         Route::post('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'update']); // POST for file uploads

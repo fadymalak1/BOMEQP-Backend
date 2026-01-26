@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
+            'acc.active' => \App\Http\Middleware\EnsureACCIsActive::class,
         ]);
         
         // Set user locale for API routes - prepend to run early

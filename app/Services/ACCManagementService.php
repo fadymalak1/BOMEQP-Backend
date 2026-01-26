@@ -43,7 +43,8 @@ class ACCManagementService
             ]);
 
             // Update using save() to ensure all attributes are saved
-            $acc->status = 'active';
+            // Set status to 'approved' (not 'active') - ACC needs activation before they can work
+            $acc->status = 'approved';
             $acc->approved_at = now();
             $acc->approved_by = $approvedBy;
             $acc->commission_percentage = $commissionPercentage;
@@ -53,20 +54,15 @@ class ACCManagementService
             // Refresh to get updated values from database
             $acc->refresh();
 
-            Log::info('ACC updated successfully', [
+            Log::info('ACC approved (pending activation)', [
                 'acc_id' => $acc->id,
                 'commission_percentage' => $acc->commission_percentage,
                 'subscription_price' => $acc->subscription_price,
+                'status' => $acc->status,
             ]);
 
-            // Activate the user account associated with this ACC
-            $user = User::where('email', $acc->email)->first();
-            if ($user && $user->role === 'acc_admin') {
-                $user->update(['status' => 'active']);
-                
-                // Send notification to ACC admin
-                $this->notificationService->notifyAccApproved($user->id, $acc->id, $acc->name);
-            }
+            // Don't activate user account yet - wait for activation step
+            // Don't send approval notification yet - will be sent on activation
 
             DB::commit();
 
@@ -246,6 +242,65 @@ class ACCManagementService
             Log::error('Failed to remove category from ACC', [
                 'acc_id' => $acc->id,
                 'category_id' => $category->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Activate ACC (second step after approval)
+     * This allows the ACC to start working
+     *
+     * @param ACC $acc
+     * @param int $activatedBy
+     * @return array
+     */
+    public function activateACC(ACC $acc, int $activatedBy): array
+    {
+        try {
+            DB::beginTransaction();
+
+            // Check if ACC is in 'approved' status
+            if ($acc->status !== 'approved') {
+                return [
+                    'success' => false,
+                    'message' => 'ACC must be approved before activation. Current status: ' . $acc->status,
+                    'code' => 400
+                ];
+            }
+
+            // Activate the ACC
+            $acc->status = 'active';
+            $acc->save();
+
+            // Activate the user account associated with this ACC
+            $user = User::where('email', $acc->email)->first();
+            if ($user && $user->role === 'acc_admin') {
+                $user->update(['status' => 'active']);
+                
+                // Send notification to ACC admin
+                $this->notificationService->notifyAccApproved($user->id, $acc->id, $acc->name);
+            }
+
+            DB::commit();
+
+            Log::info('ACC activated successfully', [
+                'acc_id' => $acc->id,
+                'activated_by' => $activatedBy,
+            ]);
+
+            return [
+                'success' => true,
+                'acc' => $acc->fresh(),
+                'message' => 'ACC activated successfully. ACC can now start working.'
+            ];
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to activate ACC', [
+                'acc_id' => $acc->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
