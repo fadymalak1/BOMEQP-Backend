@@ -11,7 +11,7 @@ class NotificationService
     /**
      * Get translated notification text
      */
-    private function getTranslatedNotification(string $key, string $language, array $replace = []): array
+    public function getTranslatedNotification(string $key, string $language, array $replace = []): array
     {
         // Validate language, fallback to 'en' if invalid
         $validLanguages = ['en', 'hi', 'zh-CN'];
@@ -28,9 +28,22 @@ class NotificationService
             
             // Convert snake_case to camelCase for translation placeholders
             $camelKey = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $k))));
-            $formattedReplace[$camelKey] = is_numeric($v) ? number_format((float)$v, 2) : (string)$v;
-            // Also keep original key for backward compatibility
-            $formattedReplace[$k] = is_numeric($v) ? number_format((float)$v, 2) : (string)$v;
+            
+            // Handle different value types
+            if (is_string($v)) {
+                // Already a string - use as-is (could be a formatted string like " Authorization price: $100.00.")
+                $formattedReplace[$camelKey] = $v;
+                $formattedReplace[$k] = $v;
+            } elseif (is_numeric($v)) {
+                // Format numeric values
+                $formattedValue = number_format((float)$v, 2);
+                $formattedReplace[$camelKey] = $formattedValue;
+                $formattedReplace[$k] = $formattedValue;
+            } else {
+                // Convert to string for other types
+                $formattedReplace[$camelKey] = (string)$v;
+                $formattedReplace[$k] = (string)$v;
+            }
         }
         
         // Set locale for translation

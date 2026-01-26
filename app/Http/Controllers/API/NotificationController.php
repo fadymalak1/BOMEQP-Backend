@@ -4,12 +4,19 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use OpenApi\Attributes as OA;
 
 class NotificationController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
     #[OA\Get(
         path: "/notifications",
         summary: "Get all notifications",
@@ -58,9 +65,12 @@ class NotificationController extends Controller
         $perPage = $request->get('per_page', 15);
         $notifications = $query->paginate($perPage);
 
+        // Translate notifications based on user's current language preference
+        $translatedNotifications = $this->translateNotifications($notifications->items(), $user);
+
         return response()->json([
             'success' => true,
-            'notifications' => $notifications->items(),
+            'notifications' => $translatedNotifications,
             'pagination' => [
                 'current_page' => $notifications->currentPage(),
                 'last_page' => $notifications->lastPage(),
@@ -131,9 +141,12 @@ class NotificationController extends Controller
         $user = $request->user();
         $notification = $user->notifications()->findOrFail($id);
 
+        // Translate notification based on user's current language preference
+        $translatedNotification = $this->translateNotifications([$notification], $user)[0];
+
         return response()->json([
             'success' => true,
-            'notification' => $notification,
+            'notification' => $translatedNotification,
         ]);
     }
 
@@ -169,10 +182,13 @@ class NotificationController extends Controller
 
         $notification->markAsRead();
 
+        // Translate notification based on user's current language preference
+        $translatedNotification = $this->translateNotifications([$notification->fresh()], $user)[0];
+
         return response()->json([
             'success' => true,
             'message' => 'Notification marked as read',
-            'notification' => $notification->fresh(),
+            'notification' => $translatedNotification,
         ]);
     }
 
@@ -208,10 +224,13 @@ class NotificationController extends Controller
 
         $notification->markAsUnread();
 
+        // Translate notification based on user's current language preference
+        $translatedNotification = $this->translateNotifications([$notification->fresh()], $user)[0];
+
         return response()->json([
             'success' => true,
             'message' => 'Notification marked as unread',
-            'notification' => $notification->fresh(),
+            'notification' => $translatedNotification,
         ]);
     }
 
@@ -319,6 +338,30 @@ class NotificationController extends Controller
             'message' => "{$deleted} notification(s) deleted",
             'deleted_count' => $deleted,
         ]);
+    }
+
+    /**
+     * Translate notifications based on user's language preference
+     */
+    private function translateNotifications(array $notifications, $user): array
+    {
+        $language = $user && $user->language ? $user->language : 'en';
+        
+        return array_map(function ($notification) use ($language) {
+            // Get translation using the notification type and data
+            $translated = $this->notificationService->getTranslatedNotification(
+                $notification->type,
+                $language,
+                $notification->data ?? []
+            );
+            
+            // Create a copy of the notification with translated title and message
+            $notificationArray = $notification->toArray();
+            $notificationArray['title'] = $translated['title'];
+            $notificationArray['message'] = $translated['message'];
+            
+            return $notificationArray;
+        }, $notifications);
     }
 }
 
