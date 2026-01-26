@@ -15,8 +15,21 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
         ]);
+        
+        // Set user locale for API routes - prepend to run early
+        $middleware->prepend(\App\Http\Middleware\SetUserLocale::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Handle validation exceptions for API routes - return localized validation errors
+        $exceptions->render(function (\Illuminate\Validation\ValidationException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'message' => trans('messages.validation_failed'),
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+        });
+
         // Handle authentication exceptions for API routes - return JSON instead of redirecting
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
