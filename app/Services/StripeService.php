@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 
 class StripeService
 {
-    protected ?StripeSetting $settings;
+    protected StripeSetting|\stdClass|null $settings;
 
     public function __construct()
     {
