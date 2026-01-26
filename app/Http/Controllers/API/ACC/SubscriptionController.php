@@ -226,7 +226,8 @@ class SubscriptionController extends Controller
                 description: "Subscription retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "subscription", type: "object", nullable: true)
+                        new OA\Property(property: "subscription", type: "object", nullable: true),
+                        new OA\Property(property: "subscription_price", type: "number", format: "float", nullable: true, example: 1000.00, description: "Subscription price set for this ACC")
                     ]
                 )
             ),
@@ -245,7 +246,10 @@ class SubscriptionController extends Controller
 
         $subscription = $acc->subscriptions()->latest()->first();
 
-        return response()->json(['subscription' => $subscription]);
+        return response()->json([
+            'subscription' => $subscription,
+            'subscription_price' => $acc->subscription_price,
+        ]);
     }
 
     #[OA\Post(
