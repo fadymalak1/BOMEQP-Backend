@@ -14,6 +14,7 @@ class CertificateTemplate extends Model
     protected $fillable = [
         'acc_id',
         'category_id',
+        'course_id',
         'name',
         'template_html',
         'background_image_url',
@@ -40,6 +41,11 @@ class CertificateTemplate extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class, 'category_id');
+    }
+
+    public function course(): BelongsTo
+    {
+        return $this->belongsTo(Course::class, 'course_id');
     }
 
     public function certificates(): HasMany
