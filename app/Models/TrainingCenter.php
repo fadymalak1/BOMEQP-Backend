@@ -56,6 +56,9 @@ class TrainingCenter extends Model
         'facility_floorplan_url',
         'interested_fields',
         'how_did_you_hear_about_us',
+        // Agreement Checkboxes
+        'agreed_to_receive_communications',
+        'agreed_to_terms_and_conditions',
         // Stripe Connect
         'stripe_account_id',
         'stripe_connect_status',
@@ -76,6 +79,8 @@ class TrainingCenter extends Model
             'mailing_same_as_physical' => 'boolean',
             'has_secondary_contact' => 'boolean',
             'interested_fields' => 'array',
+            'agreed_to_receive_communications' => 'boolean',
+            'agreed_to_terms_and_conditions' => 'boolean',
             'stripe_requirements' => 'array',
             'stripe_onboarding_completed' => 'boolean',
             'stripe_onboarding_completed_at' => 'datetime',

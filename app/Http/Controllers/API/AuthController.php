@@ -23,23 +23,72 @@ class AuthController extends Controller
     #[OA\Post(
         path: "/auth/register",
         summary: "Register a new user",
-        description: "Register a new user (Training Center or ACC Admin). Both require group admin approval.",
+        description: "Register a new user (Training Center or ACC Admin). Training Center registration requires comprehensive company and contact information. Both require group admin approval.",
         tags: ["Authentication"],
         requestBody: new OA\RequestBody(
             required: true,
-            content: new OA\JsonContent(
-                required: ["name", "email", "password", "password_confirmation", "role"],
-                properties: [
-                    new OA\Property(property: "name", type: "string", example: "John Doe"),
-                    new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com"),
-                    new OA\Property(property: "password", type: "string", format: "password", example: "password123"),
-                    new OA\Property(property: "password_confirmation", type: "string", format: "password", example: "password123"),
-                    new OA\Property(property: "role", type: "string", enum: ["training_center_admin", "acc_admin"], example: "training_center_admin"),
-                    new OA\Property(property: "country", type: "string", example: "USA"),
-                    new OA\Property(property: "city", type: "string", example: "New York"),
-                    new OA\Property(property: "address", type: "string", example: "123 Main St"),
-                    new OA\Property(property: "phone", type: "string", example: "+1234567890")
-                ]
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["name", "email", "password", "password_confirmation", "role"],
+                    properties: [
+                        // Basic User Information
+                        new OA\Property(property: "name", type: "string", example: "John Doe", description: "User's full name"),
+                        new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com", description: "User's email address (must be unique)"),
+                        new OA\Property(property: "password", type: "string", format: "password", example: "password123", description: "Password (minimum 8 characters)"),
+                        new OA\Property(property: "password_confirmation", type: "string", format: "password", example: "password123", description: "Password confirmation"),
+                        new OA\Property(property: "role", type: "string", enum: ["training_center_admin", "acc_admin"], example: "training_center_admin", description: "User role"),
+                        
+                        // Training Center Specific Fields (required when role is training_center_admin)
+                        new OA\Property(property: "company_name", type: "string", example: "ABC Training Center", description: "Company name (required for training_center_admin)"),
+                        new OA\Property(property: "company_email", type: "string", format: "email", example: "info@abctraining.com", description: "Company email address (required for training_center_admin)"),
+                        new OA\Property(property: "telephone_number", type: "string", example: "+1234567890", description: "Company telephone number (required for training_center_admin)"),
+                        new OA\Property(property: "website", type: "string", example: "https://www.abctraining.com", description: "Company website (optional)"),
+                        new OA\Property(property: "fax", type: "string", example: "+1234567891", description: "Company fax number (optional)"),
+                        new OA\Property(property: "training_provider_type", type: "string", enum: ["Training Center", "Institute", "University"], example: "Training Center", description: "Type of training provider (required for training_center_admin)"),
+                        
+                        // Physical Address (required for training_center_admin)
+                        new OA\Property(property: "address", type: "string", example: "123 Main Street", description: "Physical address (required for training_center_admin)"),
+                        new OA\Property(property: "city", type: "string", example: "New York", description: "City (required for training_center_admin)"),
+                        new OA\Property(property: "country", type: "string", example: "USA", description: "Country (required for training_center_admin)"),
+                        new OA\Property(property: "postal_code", type: "string", example: "10001", description: "Postal code (required for training_center_admin)"),
+                        
+                        // Mailing Address (conditional for training_center_admin)
+                        new OA\Property(property: "mailing_same_as_physical", type: "boolean", example: true, description: "Whether mailing address is same as physical address"),
+                        new OA\Property(property: "mailing_address", type: "string", example: "123 Main Street", description: "Mailing address (required if mailing_same_as_physical is false)"),
+                        new OA\Property(property: "mailing_city", type: "string", example: "New York", description: "Mailing city (required if mailing_same_as_physical is false)"),
+                        new OA\Property(property: "mailing_country", type: "string", example: "USA", description: "Mailing country (required if mailing_same_as_physical is false)"),
+                        new OA\Property(property: "mailing_postal_code", type: "string", example: "10001", description: "Mailing postal code (required if mailing_same_as_physical is false)"),
+                        
+                        // Primary Contact (required for training_center_admin)
+                        new OA\Property(property: "primary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mr.", description: "Primary contact title (required for training_center_admin)"),
+                        new OA\Property(property: "primary_contact_first_name", type: "string", example: "John", description: "Primary contact first name (required for training_center_admin)"),
+                        new OA\Property(property: "primary_contact_last_name", type: "string", example: "Doe", description: "Primary contact last name (required for training_center_admin)"),
+                        new OA\Property(property: "primary_contact_email", type: "string", format: "email", example: "john.doe@abctraining.com", description: "Primary contact email (required for training_center_admin)"),
+                        new OA\Property(property: "primary_contact_country", type: "string", example: "USA", description: "Primary contact country (required for training_center_admin)"),
+                        new OA\Property(property: "primary_contact_mobile", type: "string", example: "+1234567890", description: "Primary contact mobile number (required for training_center_admin)"),
+                        
+                        // Secondary Contact (optional for training_center_admin)
+                        new OA\Property(property: "has_secondary_contact", type: "boolean", example: false, description: "Whether to add secondary contact"),
+                        new OA\Property(property: "secondary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mrs.", description: "Secondary contact title (required if has_secondary_contact is true)"),
+                        new OA\Property(property: "secondary_contact_first_name", type: "string", example: "Jane", description: "Secondary contact first name (required if has_secondary_contact is true)"),
+                        new OA\Property(property: "secondary_contact_last_name", type: "string", example: "Smith", description: "Secondary contact last name (required if has_secondary_contact is true)"),
+                        new OA\Property(property: "secondary_contact_email", type: "string", format: "email", example: "jane.smith@abctraining.com", description: "Secondary contact email (required if has_secondary_contact is true)"),
+                        new OA\Property(property: "secondary_contact_country", type: "string", example: "USA", description: "Secondary contact country (required if has_secondary_contact is true)"),
+                        new OA\Property(property: "secondary_contact_mobile", type: "string", example: "+1234567891", description: "Secondary contact mobile number (required if has_secondary_contact is true)"),
+                        
+                        // Additional Information (required for training_center_admin)
+                        new OA\Property(property: "company_gov_registry_number", type: "string", example: "REG123456", description: "Company government registry number (required for training_center_admin)"),
+                        new OA\Property(property: "company_registration_certificate", type: "string", format: "binary", description: "Company registration certificate file (PDF, JPG, PNG, max 10MB, required for training_center_admin)"),
+                        new OA\Property(property: "facility_floorplan", type: "string", format: "binary", description: "Facility floorplan file (PDF, JPG, PNG, max 10MB, optional)"),
+                        new OA\Property(property: "interested_fields", type: "array", items: new OA\Items(type: "string", enum: ["QHSE", "Food Safety", "Management"]), example: ["QHSE", "Food Safety"], description: "Interested fields (optional)"),
+                        new OA\Property(property: "how_did_you_hear_about_us", type: "string", example: "Google Search", description: "How did you hear about us (optional)"),
+                        
+                        // Agreements (required for training_center_admin)
+                        new OA\Property(property: "agreed_to_receive_communications", type: "boolean", example: true, description: "Agreement to receive communications (required, must be true)"),
+                        new OA\Property(property: "agreed_to_terms_and_conditions", type: "boolean", example: true, description: "Agreement to terms and conditions (required, must be true)"),
+                    ]
+                )
             )
         ),
         responses: [
@@ -59,12 +108,69 @@ class AuthController extends Controller
     )]
     public function register(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        // Base validation rules for all users
+        $rules = [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
             'role' => 'required|in:training_center_admin,acc_admin',
-        ]);
+        ];
+
+        // Additional validation rules for training center registration
+        if ($request->role === 'training_center_admin') {
+            $rules = array_merge($rules, [
+                // Company Information
+                'company_name' => 'required|string|max:255',
+                'company_email' => 'required|email|max:255',
+                'telephone_number' => 'required|string|max:255',
+                'fax' => 'nullable|string|max:255',
+                'training_provider_type' => 'required|in:Training Center,Institute,University',
+                
+                // Physical Address
+                'address' => 'required|string|max:500',
+                'city' => 'required|string|max:255',
+                'country' => 'required|string|max:255',
+                'postal_code' => 'required|string|max:50',
+                
+                // Mailing Address (conditional)
+                'mailing_same_as_physical' => 'nullable|boolean',
+                'mailing_address' => 'required_if:mailing_same_as_physical,false|nullable|string|max:500',
+                'mailing_city' => 'required_if:mailing_same_as_physical,false|nullable|string|max:255',
+                'mailing_country' => 'required_if:mailing_same_as_physical,false|nullable|string|max:255',
+                'mailing_postal_code' => 'required_if:mailing_same_as_physical,false|nullable|string|max:50',
+                
+                // Primary Contact
+                'primary_contact_title' => 'required|in:Mr.,Mrs.,Eng.,Prof.',
+                'primary_contact_first_name' => 'required|string|max:255',
+                'primary_contact_last_name' => 'required|string|max:255',
+                'primary_contact_email' => 'required|email|max:255',
+                'primary_contact_country' => 'required|string|max:255',
+                'primary_contact_mobile' => 'required|string|max:255',
+                
+                // Secondary Contact (conditional)
+                'has_secondary_contact' => 'nullable|boolean',
+                'secondary_contact_title' => 'required_if:has_secondary_contact,true|nullable|in:Mr.,Mrs.,Eng.,Prof.',
+                'secondary_contact_first_name' => 'required_if:has_secondary_contact,true|nullable|string|max:255',
+                'secondary_contact_last_name' => 'required_if:has_secondary_contact,true|nullable|string|max:255',
+                'secondary_contact_email' => 'required_if:has_secondary_contact,true|nullable|email|max:255',
+                'secondary_contact_country' => 'required_if:has_secondary_contact,true|nullable|string|max:255',
+                'secondary_contact_mobile' => 'required_if:has_secondary_contact,true|nullable|string|max:255',
+                
+                // Additional Information
+                'company_gov_registry_number' => 'required|string|max:255',
+                'company_registration_certificate' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                'facility_floorplan' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                'interested_fields' => 'nullable|array',
+                'interested_fields.*' => 'in:QHSE,Food Safety,Management',
+                'how_did_you_hear_about_us' => 'nullable|string|max:500',
+                
+                // Agreements
+                'agreed_to_receive_communications' => 'required|accepted',
+                'agreed_to_terms_and_conditions' => 'required|accepted',
+            ]);
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);

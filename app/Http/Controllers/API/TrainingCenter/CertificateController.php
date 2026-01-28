@@ -452,24 +452,36 @@ class CertificateController extends Controller
             return response()->json(['message' => 'Course does not belong to the selected ACC'], 403);
         }
 
-        // Find template: must belong to ACC and match course's category
+        // Find template: first check for course-specific template, then fall back to category template
         $categoryId = $course->subCategory->category_id ?? null;
         
         if (!$categoryId) {
             return response()->json(['message' => 'Course category not found'], 422);
         }
 
+        // First, try to find a course-specific template
         $template = CertificateTemplate::where('acc_id', $request->acc_id)
-            ->where('category_id', $categoryId)
+            ->where('course_id', $request->course_id)
             ->where('status', 'active')
             ->whereNotNull('background_image_url')
             ->whereNotNull('config_json')
             ->first();
 
+        // If no course-specific template found, fall back to category template
+        if (!$template) {
+            $template = CertificateTemplate::where('acc_id', $request->acc_id)
+                ->where('category_id', $categoryId)
+                ->whereNull('course_id') // Ensure it's a category template, not a course template
+                ->where('status', 'active')
+                ->whereNotNull('background_image_url')
+                ->whereNotNull('config_json')
+                ->first();
+        }
+
         if (!$template) {
             return response()->json([
-                'message' => 'No certificate template found for this ACC and course category',
-                'hint' => 'Please ensure the ACC has created a certificate template for this course category'
+                'message' => 'No certificate template found for this ACC and course. Please ensure the ACC has created a certificate template for this course or its category.',
+                'hint' => 'The system checks for course-specific templates first, then falls back to category templates'
             ], 404);
         }
 
