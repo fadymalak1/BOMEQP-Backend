@@ -14,7 +14,7 @@ class NotificationService
     public function getTranslatedNotification(string $key, string $language, array $replace = []): array
     {
         // Validate language, fallback to 'en' if invalid
-        $validLanguages = ['en', 'hi', 'zh-CN'];
+        $validLanguages = ['en', 'hi', 'zh-CN', 'ar', 'es'];
         $language = in_array($language, $validLanguages) ? $language : 'en';
         
         // Convert snake_case keys to camelCase to match translation placeholders

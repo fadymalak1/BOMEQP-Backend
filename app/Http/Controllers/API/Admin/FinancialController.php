@@ -70,6 +70,7 @@ class FinancialController extends Controller
                     properties: [
                         new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
                         new OA\Property(property: "summary", type: "object"),
+                        new OA\Property(property: "statistics", type: "object", description: "Detailed statistics by status and transaction type"),
                         new OA\Property(property: "current_page", type: "integer", example: 1),
                         new OA\Property(property: "per_page", type: "integer", example: 15),
                         new OA\Property(property: "total", type: "integer", example: 100)

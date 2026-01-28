@@ -259,7 +259,7 @@ class AuthController extends Controller
         $request->validate([
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . $request->user()->id,
-            'language' => 'sometimes|string|in:en,hi,zh-CN',
+            'language' => 'sometimes|string|in:en,hi,zh-CN,ar,es',
         ]);
 
         $user = $request->user();

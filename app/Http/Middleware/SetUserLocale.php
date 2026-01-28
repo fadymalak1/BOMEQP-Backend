@@ -21,7 +21,7 @@ class SetUserLocale
             $language = $request->user()->language ?? 'en';
             
             // Validate language, fallback to 'en' if invalid
-            $validLanguages = ['en', 'hi', 'zh-CN'];
+            $validLanguages = ['en', 'hi', 'zh-CN', 'ar', 'es'];
             if (in_array($language, $validLanguages)) {
                 App::setLocale($language);
             } else {

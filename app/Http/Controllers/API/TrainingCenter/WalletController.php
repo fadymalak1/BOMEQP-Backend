@@ -33,6 +33,7 @@ class WalletController extends Controller
                     properties: [
                         new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
                         new OA\Property(property: "summary", type: "object"),
+                        new OA\Property(property: "statistics", type: "object", description: "Detailed statistics by status and transaction type"),
                         new OA\Property(property: "current_page", type: "integer", example: 1),
                         new OA\Property(property: "per_page", type: "integer", example: 15),
                         new OA\Property(property: "total", type: "integer", example: 50)
@@ -168,12 +169,70 @@ class WalletController extends Controller
         
         // Get summary statistics
         $summaryQuery = clone $summaryBaseQuery;
+        $allTransactions = $summaryQuery->get();
+        $completedTransactions = $allTransactions->where('status', 'completed');
+        $pendingTransactions = $allTransactions->where('status', 'pending');
+        $failedTransactions = $allTransactions->where('status', 'failed');
+        $refundedTransactions = $allTransactions->where('status', 'refunded');
+        
         $summary = [
-            'total_transactions' => $summaryQuery->count(),
-            'total_spent' => round($summaryQuery->where('payer_type', 'training_center')->where('payer_id', $trainingCenter->id)->sum('amount'), 2),
-            'total_received' => round($summaryQuery->where('payee_type', 'training_center')->where('payee_id', $trainingCenter->id)->sum('amount'), 2),
-            'completed_amount' => round($summaryQuery->where('status', 'completed')->sum('amount'), 2),
-            'pending_amount' => round($summaryQuery->where('status', 'pending')->sum('amount'), 2),
+            'total_transactions' => $allTransactions->count(),
+            'total_spent' => round($allTransactions->where('payer_type', 'training_center')->where('payer_id', $trainingCenter->id)->sum('amount'), 2),
+            'total_received' => round($allTransactions->where('payee_type', 'training_center')->where('payee_id', $trainingCenter->id)->sum('amount'), 2),
+            'completed_amount' => round($completedTransactions->sum('amount'), 2),
+            'pending_amount' => round($pendingTransactions->sum('amount'), 2),
+        ];
+
+        // Get detailed statistics
+        $statistics = [
+            'by_status' => [
+                'pending' => [
+                    'count' => $pendingTransactions->count(),
+                    'amount' => round($pendingTransactions->sum('amount'), 2),
+                ],
+                'completed' => [
+                    'count' => $completedTransactions->count(),
+                    'amount' => round($completedTransactions->sum('amount'), 2),
+                ],
+                'failed' => [
+                    'count' => $failedTransactions->count(),
+                    'amount' => round($failedTransactions->sum('amount'), 2),
+                ],
+                'refunded' => [
+                    'count' => $refundedTransactions->count(),
+                    'amount' => round($refundedTransactions->sum('amount'), 2),
+                ],
+            ],
+            'by_type' => [
+                'subscription' => [
+                    'count' => $allTransactions->where('transaction_type', 'subscription')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'subscription')->sum('amount'), 2),
+                ],
+                'code_purchase' => [
+                    'count' => $allTransactions->where('transaction_type', 'code_purchase')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'code_purchase')->sum('amount'), 2),
+                ],
+                'material_purchase' => [
+                    'count' => $allTransactions->where('transaction_type', 'material_purchase')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'material_purchase')->sum('amount'), 2),
+                ],
+                'course_purchase' => [
+                    'count' => $allTransactions->where('transaction_type', 'course_purchase')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'course_purchase')->sum('amount'), 2),
+                ],
+                'commission' => [
+                    'count' => $allTransactions->where('transaction_type', 'commission')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'commission')->sum('amount'), 2),
+                ],
+                'settlement' => [
+                    'count' => $allTransactions->where('transaction_type', 'settlement')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'settlement')->sum('amount'), 2),
+                ],
+                'instructor_authorization' => [
+                    'count' => $allTransactions->where('transaction_type', 'instructor_authorization')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'instructor_authorization')->sum('amount'), 2),
+                ],
+            ],
         ];
 
         $perPage = $request->get('per_page', 15);
@@ -203,6 +262,7 @@ class WalletController extends Controller
         return response()->json([
             'data' => $formattedTransactions,
             'summary' => $summary,
+            'statistics' => $statistics,
             'current_page' => $transactions->currentPage(),
             'per_page' => $transactions->perPage(),
             'total' => $transactions->total(),

@@ -34,6 +34,7 @@ class FinancialController extends Controller
                     properties: [
                         new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
                         new OA\Property(property: "summary", type: "object"),
+                        new OA\Property(property: "statistics", type: "object", description: "Detailed statistics by status and transaction type"),
                         new OA\Property(property: "current_page", type: "integer", example: 1),
                         new OA\Property(property: "per_page", type: "integer", example: 15),
                         new OA\Property(property: "total", type: "integer", example: 50)
@@ -169,13 +170,16 @@ class FinancialController extends Controller
         
         // Get summary statistics
         $summaryQuery = clone $summaryBaseQuery;
+        $allTransactions = $summaryQuery->get();
         $receivedTransactions = (clone $summaryBaseQuery)->where('payee_type', 'acc')->where('payee_id', $acc->id)->get();
         $paidTransactions = (clone $summaryBaseQuery)->where('payer_type', 'acc')->where('payer_id', $acc->id)->get();
         $completedTransactions = (clone $summaryBaseQuery)->where('status', 'completed')->get();
         $pendingTransactions = (clone $summaryBaseQuery)->where('status', 'pending')->get();
+        $failedTransactions = (clone $summaryBaseQuery)->where('status', 'failed')->get();
+        $refundedTransactions = (clone $summaryBaseQuery)->where('status', 'refunded')->get();
         
         $summary = [
-            'total_transactions' => $summaryQuery->count(),
+            'total_transactions' => $allTransactions->count(),
             'total_received' => round($receivedTransactions->sum(function ($t) {
                 return $t->provider_amount ?? $t->amount;
             }), 2),
@@ -185,6 +189,54 @@ class FinancialController extends Controller
                 return $t->provider_amount ?? $t->amount;
             }), 2),
             'pending_amount' => round($pendingTransactions->sum('amount'), 2),
+        ];
+
+        // Get detailed statistics
+        $statistics = [
+            'by_status' => [
+                'pending' => [
+                    'count' => $pendingTransactions->count(),
+                    'amount' => round($pendingTransactions->sum('amount'), 2),
+                ],
+                'completed' => [
+                    'count' => $completedTransactions->count(),
+                    'amount' => round($completedTransactions->sum('amount'), 2),
+                ],
+                'failed' => [
+                    'count' => $failedTransactions->count(),
+                    'amount' => round($failedTransactions->sum('amount'), 2),
+                ],
+                'refunded' => [
+                    'count' => $refundedTransactions->count(),
+                    'amount' => round($refundedTransactions->sum('amount'), 2),
+                ],
+            ],
+            'by_type' => [
+                'subscription' => [
+                    'count' => $allTransactions->where('transaction_type', 'subscription')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'subscription')->sum('amount'), 2),
+                ],
+                'code_purchase' => [
+                    'count' => $allTransactions->where('transaction_type', 'code_purchase')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'code_purchase')->sum('amount'), 2),
+                ],
+                'material_purchase' => [
+                    'count' => $allTransactions->where('transaction_type', 'material_purchase')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'material_purchase')->sum('amount'), 2),
+                ],
+                'course_purchase' => [
+                    'count' => $allTransactions->where('transaction_type', 'course_purchase')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'course_purchase')->sum('amount'), 2),
+                ],
+                'commission' => [
+                    'count' => $allTransactions->where('transaction_type', 'commission')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'commission')->sum('amount'), 2),
+                ],
+                'settlement' => [
+                    'count' => $allTransactions->where('transaction_type', 'settlement')->count(),
+                    'amount' => round($allTransactions->where('transaction_type', 'settlement')->sum('amount'), 2),
+                ],
+            ],
         ];
 
         $perPage = $request->get('per_page', 15);
@@ -214,6 +266,7 @@ class FinancialController extends Controller
         return response()->json([
             'data' => $formattedTransactions,
             'summary' => $summary,
+            'statistics' => $statistics,
             'current_page' => $transactions->currentPage(),
             'per_page' => $transactions->perPage(),
             'total' => $transactions->total(),
