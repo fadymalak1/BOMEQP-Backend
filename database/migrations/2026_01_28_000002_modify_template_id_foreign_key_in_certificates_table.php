@@ -9,26 +9,49 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // First, set any invalid template_id values to NULL (orphaned records)
-        DB::table('certificates')
-            ->whereNotIn('template_id', function ($query) {
-                $query->select('id')->from('certificate_templates');
-            })
-            ->whereNotNull('template_id')
-            ->update(['template_id' => null]);
+        // Step 1: Drop the existing foreign key constraint first
+        // This allows us to clean up invalid data without constraint violations
+        try {
+            Schema::table('certificates', function (Blueprint $table) {
+                $table->dropForeign(['template_id']);
+            });
+        } catch (\Exception $e) {
+            // Try alternative method if Laravel's method fails
+            try {
+                DB::statement('ALTER TABLE certificates DROP FOREIGN KEY certificates_template_id_foreign');
+            } catch (\Exception $e2) {
+                // Query for the actual constraint name
+                $constraint = DB::selectOne("
+                    SELECT CONSTRAINT_NAME 
+                    FROM information_schema.KEY_COLUMN_USAGE 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'certificates' 
+                    AND COLUMN_NAME = 'template_id' 
+                    AND REFERENCED_TABLE_NAME IS NOT NULL
+                    LIMIT 1
+                ");
+                
+                if ($constraint && isset($constraint->CONSTRAINT_NAME)) {
+                    DB::statement("ALTER TABLE certificates DROP FOREIGN KEY `{$constraint->CONSTRAINT_NAME}`");
+                }
+            }
+        }
 
-        Schema::table('certificates', function (Blueprint $table) {
-            // Drop the existing foreign key constraint
-            $table->dropForeign(['template_id']);
-        });
+        // Step 2: Clean up any invalid template_id values (orphaned records)
+        // Use LEFT JOIN approach to avoid MySQL subquery limitations
+        DB::statement('UPDATE certificates c
+                       LEFT JOIN certificate_templates ct ON c.template_id = ct.id
+                       SET c.template_id = NULL
+                       WHERE c.template_id IS NOT NULL 
+                       AND ct.id IS NULL');
 
+        // Step 3: Make template_id nullable
         Schema::table('certificates', function (Blueprint $table) {
-            // Make template_id nullable to allow null when template is deleted
             $table->unsignedBigInteger('template_id')->nullable()->change();
         });
 
+        // Step 4: Recreate the foreign key with nullOnDelete
         Schema::table('certificates', function (Blueprint $table) {
-            // Recreate the foreign key with nullOnDelete to preserve certificates when template is deleted
             $table->foreign('template_id')
                   ->references('id')
                   ->on('certificate_templates')
