@@ -23,7 +23,7 @@ class AuthController extends Controller
     #[OA\Post(
         path: "/auth/register",
         summary: "Register a new user",
-        description: "Register a new user (Training Center or ACC Admin). Training Center registration requires comprehensive company and contact information. Both require group admin approval.",
+        description: "Register a new user (Training Center or ACC Admin). Both Training Center and ACC registration require comprehensive company and contact information. Both require group admin approval.",
         tags: ["Authentication"],
         requestBody: new OA\RequestBody(
             required: true,
@@ -87,6 +87,53 @@ class AuthController extends Controller
                         // Agreements (required for training_center_admin)
                         new OA\Property(property: "agreed_to_receive_communications", type: "boolean", example: true, description: "Agreement to receive communications (required, must be true)"),
                         new OA\Property(property: "agreed_to_terms_and_conditions", type: "boolean", example: true, description: "Agreement to terms and conditions (required, must be true)"),
+                        
+                        // ACC Specific Fields (required when role is acc_admin)
+                        new OA\Property(property: "legal_name", type: "string", example: "ABC Accreditation Body", description: "Accreditation legal name (required for acc_admin)"),
+                        new OA\Property(property: "acc_email", type: "string", format: "email", example: "info@abcaccreditation.com", description: "Accreditation body email address (required for acc_admin)"),
+                        new OA\Property(property: "telephone_number", type: "string", example: "+1234567890", description: "Telephone number (required for acc_admin)"),
+                        new OA\Property(property: "website", type: "string", example: "https://www.abcaccreditation.com", description: "Website (optional for acc_admin)"),
+                        new OA\Property(property: "fax", type: "string", example: "+1234567891", description: "Fax number (optional for acc_admin)"),
+                        
+                        // Physical Address (required for acc_admin)
+                        new OA\Property(property: "address", type: "string", example: "123 Main Street", description: "Physical address (required for acc_admin)"),
+                        new OA\Property(property: "city", type: "string", example: "New York", description: "City (required for acc_admin)"),
+                        new OA\Property(property: "country", type: "string", example: "USA", description: "Country (required for acc_admin)"),
+                        new OA\Property(property: "postal_code", type: "string", example: "10001", description: "Postal code (required for acc_admin)"),
+                        
+                        // Mailing Address (conditional for acc_admin)
+                        new OA\Property(property: "mailing_same_as_physical", type: "boolean", example: true, description: "Whether mailing address is same as physical address (for acc_admin)"),
+                        new OA\Property(property: "mailing_address", type: "string", example: "123 Main Street", description: "Mailing address (required if mailing_same_as_physical is false for acc_admin)"),
+                        new OA\Property(property: "mailing_city", type: "string", example: "New York", description: "Mailing city (required if mailing_same_as_physical is false for acc_admin)"),
+                        new OA\Property(property: "mailing_country", type: "string", example: "USA", description: "Mailing country (required if mailing_same_as_physical is false for acc_admin)"),
+                        new OA\Property(property: "mailing_postal_code", type: "string", example: "10001", description: "Mailing postal code (required if mailing_same_as_physical is false for acc_admin)"),
+                        
+                        // Primary Contact (required for acc_admin)
+                        new OA\Property(property: "primary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mr.", description: "Primary contact title (required for acc_admin)"),
+                        new OA\Property(property: "primary_contact_first_name", type: "string", example: "John", description: "Primary contact first name (required for acc_admin)"),
+                        new OA\Property(property: "primary_contact_last_name", type: "string", example: "Doe", description: "Primary contact last name (required for acc_admin)"),
+                        new OA\Property(property: "primary_contact_email", type: "string", format: "email", example: "john.doe@abcaccreditation.com", description: "Primary contact email (required for acc_admin)"),
+                        new OA\Property(property: "primary_contact_country", type: "string", example: "USA", description: "Primary contact country (required for acc_admin)"),
+                        new OA\Property(property: "primary_contact_mobile", type: "string", example: "+1234567890", description: "Primary contact mobile number (required for acc_admin)"),
+                        new OA\Property(property: "primary_contact_passport", type: "string", format: "binary", description: "Primary contact passport copy (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
+                        
+                        // Secondary Contact (required for acc_admin)
+                        new OA\Property(property: "secondary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mrs.", description: "Secondary contact title (required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_first_name", type: "string", example: "Jane", description: "Secondary contact first name (required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_last_name", type: "string", example: "Smith", description: "Secondary contact last name (required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_email", type: "string", format: "email", example: "jane.smith@abcaccreditation.com", description: "Secondary contact email (required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_country", type: "string", example: "USA", description: "Secondary contact country (required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_mobile", type: "string", example: "+1234567891", description: "Secondary contact mobile number (required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_passport", type: "string", format: "binary", description: "Secondary contact passport copy (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
+                        
+                        // Additional Information (required for acc_admin)
+                        new OA\Property(property: "company_gov_registry_number", type: "string", example: "REG123456", description: "Company government registry number (required for acc_admin)"),
+                        new OA\Property(property: "company_registration_certificate", type: "string", format: "binary", description: "Company registration certificate file (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
+                        new OA\Property(property: "how_did_you_hear_about_us", type: "string", example: "Google Search", description: "How did you hear about us (optional for acc_admin)"),
+                        
+                        // Agreements (required for acc_admin)
+                        new OA\Property(property: "agreed_to_receive_communications", type: "boolean", example: true, description: "Agreement to receive communications (required for acc_admin, must be true)"),
+                        new OA\Property(property: "agreed_to_terms_and_conditions", type: "boolean", example: true, description: "Agreement to terms and conditions (required for acc_admin, must be true)"),
                     ]
                 )
             )
@@ -162,6 +209,58 @@ class AuthController extends Controller
                 'facility_floorplan' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
                 'interested_fields' => 'nullable|array',
                 'interested_fields.*' => 'in:QHSE,Food Safety,Management',
+                'how_did_you_hear_about_us' => 'nullable|string|max:500',
+                
+                // Agreements
+                'agreed_to_receive_communications' => 'required|accepted',
+                'agreed_to_terms_and_conditions' => 'required|accepted',
+            ]);
+        }
+
+        // Additional validation rules for ACC registration
+        if ($request->role === 'acc_admin') {
+            $rules = array_merge($rules, [
+                // Accreditation Body Information
+                'legal_name' => 'required|string|max:255',
+                'acc_email' => 'required|email|max:255',
+                'telephone_number' => 'required|string|max:255',
+                'website' => 'nullable|string|max:500',
+                'fax' => 'nullable|string|max:255',
+                
+                // Physical Address
+                'address' => 'required|string|max:500',
+                'city' => 'required|string|max:255',
+                'country' => 'required|string|max:255',
+                'postal_code' => 'required|string|max:50',
+                
+                // Mailing Address (conditional)
+                'mailing_same_as_physical' => 'nullable|boolean',
+                'mailing_address' => 'required_if:mailing_same_as_physical,false|nullable|string|max:500',
+                'mailing_city' => 'required_if:mailing_same_as_physical,false|nullable|string|max:255',
+                'mailing_country' => 'required_if:mailing_same_as_physical,false|nullable|string|max:255',
+                'mailing_postal_code' => 'required_if:mailing_same_as_physical,false|nullable|string|max:50',
+                
+                // Primary Contact
+                'primary_contact_title' => 'required|in:Mr.,Mrs.,Eng.,Prof.',
+                'primary_contact_first_name' => 'required|string|max:255',
+                'primary_contact_last_name' => 'required|string|max:255',
+                'primary_contact_email' => 'required|email|max:255',
+                'primary_contact_country' => 'required|string|max:255',
+                'primary_contact_mobile' => 'required|string|max:255',
+                'primary_contact_passport' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                
+                // Secondary Contact (required for ACC)
+                'secondary_contact_title' => 'required|in:Mr.,Mrs.,Eng.,Prof.',
+                'secondary_contact_first_name' => 'required|string|max:255',
+                'secondary_contact_last_name' => 'required|string|max:255',
+                'secondary_contact_email' => 'required|email|max:255',
+                'secondary_contact_country' => 'required|string|max:255',
+                'secondary_contact_mobile' => 'required|string|max:255',
+                'secondary_contact_passport' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                
+                // Additional Information
+                'company_gov_registry_number' => 'required|string|max:255',
+                'company_registration_certificate' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
                 'how_did_you_hear_about_us' => 'nullable|string|max:500',
                 
                 // Agreements

@@ -153,16 +153,118 @@ class AuthService
 
             // Create ACC record if role is acc_admin
             if ($request->role === 'acc_admin') {
+                // Handle mailing address - if same as physical, copy physical address fields
+                $mailingAddress = $request->mailing_address;
+                $mailingCity = $request->mailing_city;
+                $mailingCountry = $request->mailing_country;
+                $mailingPostalCode = $request->mailing_postal_code;
+                
+                if ($request->mailing_same_as_physical) {
+                    $mailingAddress = $request->address;
+                    $mailingCity = $request->city;
+                    $mailingCountry = $request->country;
+                    $mailingPostalCode = $request->postal_code;
+                }
+                
+                // Create ACC first to get the ID
                 $acc = \App\Models\ACC::create([
-                    'name' => $request->name,
-                    'legal_name' => $request->name,
+                    'name' => $request->legal_name,
+                    'legal_name' => $request->legal_name,
                     'registration_number' => 'ACC-' . strtoupper(Str::random(8)),
-                    'country' => $request->country ?? 'Unknown',
-                    'address' => $request->address ?? '',
-                    'phone' => $request->phone ?? '',
-                    'email' => $request->email,
+                    'email' => $request->acc_email,
+                    'phone' => $request->telephone_number,
+                    'website' => $request->website ?? null,
                     'status' => 'pending',
+                    
+                    // Company Information
+                    'fax' => $request->fax ?? null,
+                    
+                    // Physical Address
+                    'address' => $request->address, // Legacy field for backward compatibility
+                    'country' => $request->country, // Legacy field for backward compatibility
+                    'physical_street' => $request->address,
+                    'physical_city' => $request->city,
+                    'physical_country' => $request->country,
+                    'physical_postal_code' => $request->postal_code,
+                    
+                    // Mailing Address
+                    'mailing_same_as_physical' => $request->mailing_same_as_physical ?? false,
+                    'mailing_street' => $mailingAddress,
+                    'mailing_city' => $mailingCity,
+                    'mailing_country' => $mailingCountry,
+                    'mailing_postal_code' => $mailingPostalCode,
+                    
+                    // Primary Contact
+                    'primary_contact_title' => $request->primary_contact_title,
+                    'primary_contact_first_name' => $request->primary_contact_first_name,
+                    'primary_contact_last_name' => $request->primary_contact_last_name,
+                    'primary_contact_email' => $request->primary_contact_email,
+                    'primary_contact_country' => $request->primary_contact_country,
+                    'primary_contact_mobile' => $request->primary_contact_mobile,
+                    
+                    // Secondary Contact (required for ACC)
+                    'secondary_contact_title' => $request->secondary_contact_title,
+                    'secondary_contact_first_name' => $request->secondary_contact_first_name,
+                    'secondary_contact_last_name' => $request->secondary_contact_last_name,
+                    'secondary_contact_email' => $request->secondary_contact_email,
+                    'secondary_contact_country' => $request->secondary_contact_country,
+                    'secondary_contact_mobile' => $request->secondary_contact_mobile,
+                    
+                    // Additional Information
+                    'company_gov_registry_number' => $request->company_gov_registry_number,
+                    'how_did_you_hear_about_us' => $request->how_did_you_hear_about_us ?? null,
+                    
+                    // Agreement Checkboxes
+                    'agreed_to_receive_communications' => $request->agreed_to_receive_communications ?? false,
+                    'agreed_to_terms_and_conditions' => $request->agreed_to_terms_and_conditions ?? false,
                 ]);
+                
+                // Handle file uploads after ACC is created
+                $updateData = [];
+                
+                // Primary contact passport
+                if ($request->hasFile('primary_contact_passport')) {
+                    $passportResult = $this->fileUploadService->uploadDocument(
+                        $request->file('primary_contact_passport'),
+                        $acc->id,
+                        'acc',
+                        'passport'
+                    );
+                    if ($passportResult['success']) {
+                        $updateData['primary_contact_passport_url'] = $passportResult['url'];
+                    }
+                }
+                
+                // Secondary contact passport
+                if ($request->hasFile('secondary_contact_passport')) {
+                    $passportResult = $this->fileUploadService->uploadDocument(
+                        $request->file('secondary_contact_passport'),
+                        $acc->id,
+                        'acc',
+                        'passport'
+                    );
+                    if ($passportResult['success']) {
+                        $updateData['secondary_contact_passport_url'] = $passportResult['url'];
+                    }
+                }
+                
+                // Company registration certificate
+                if ($request->hasFile('company_registration_certificate')) {
+                    $certResult = $this->fileUploadService->uploadDocument(
+                        $request->file('company_registration_certificate'),
+                        $acc->id,
+                        'acc',
+                        'registration_certificate'
+                    );
+                    if ($certResult['success']) {
+                        $updateData['company_registration_certificate_url'] = $certResult['url'];
+                    }
+                }
+                
+                // Update ACC with file URLs if any files were uploaded
+                if (!empty($updateData)) {
+                    $acc->update($updateData);
+                }
 
                 // Notify admin about new ACC application
                 $this->notificationService->notifyAdminNewAccApplication($acc->id, $acc->name);
