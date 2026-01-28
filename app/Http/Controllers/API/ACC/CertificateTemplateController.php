@@ -220,7 +220,27 @@ class CertificateTemplateController extends Controller
                     new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
                     new OA\Property(property: "template_html", type: "string", nullable: true),
                     new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active"),
-                    new OA\Property(property: "config_json", type: "array", nullable: true, items: new OA\Items(type: "object"))
+                    
+new OA\Property(
+    property: "config_json",
+    type: "array",
+    nullable: true,
+    items: new OA\Items(
+        type: "object",
+        properties: [
+            new OA\Property(property: "variable", type: "string"),
+            new OA\Property(property: "x", type: "number", format: "float"),
+            new OA\Property(property: "y", type: "number", format: "float"),
+            new OA\Property(property: "font_family", type: "string", nullable: true),
+            new OA\Property(property: "fontFamily", type: "string", nullable: true),
+            new OA\Property(property: "font_size", type: "integer", nullable: true),
+            new OA\Property(property: "fontSize", type: "integer", nullable: true),
+            new OA\Property(property: "color", type: "string", nullable: true),
+            new OA\Property(property: "text_align", type: "string", nullable: true),
+            new OA\Property(property: "textAlign", type: "string", nullable: true),
+        ]
+    )
+)
                 ]
             )
         ),
