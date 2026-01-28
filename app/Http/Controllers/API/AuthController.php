@@ -42,98 +42,59 @@ class AuthController extends Controller
                         // Training Center Specific Fields (required when role is training_center_admin)
                         new OA\Property(property: "company_name", type: "string", example: "ABC Training Center", description: "Company name (required for training_center_admin)"),
                         new OA\Property(property: "company_email", type: "string", format: "email", example: "info@abctraining.com", description: "Company email address (required for training_center_admin)"),
-                        new OA\Property(property: "telephone_number", type: "string", example: "+1234567890", description: "Company telephone number (required for training_center_admin)"),
-                        new OA\Property(property: "website", type: "string", example: "https://www.abctraining.com", description: "Company website (optional)"),
-                        new OA\Property(property: "fax", type: "string", example: "+1234567891", description: "Company fax number (optional)"),
                         new OA\Property(property: "training_provider_type", type: "string", enum: ["Training Center", "Institute", "University"], example: "Training Center", description: "Type of training provider (required for training_center_admin)"),
+                        new OA\Property(property: "facility_floorplan", type: "string", format: "binary", description: "Facility floorplan file (PDF, JPG, PNG, max 10MB, optional, only for training_center_admin)"),
+                        new OA\Property(property: "interested_fields", type: "array", items: new OA\Items(type: "string", enum: ["QHSE", "Food Safety", "Management"]), example: ["QHSE", "Food Safety"], description: "Interested fields (optional, only for training_center_admin)"),
+                        new OA\Property(property: "has_secondary_contact", type: "boolean", example: false, description: "Whether to add secondary contact (optional for training_center_admin, always required for acc_admin)"),
                         
-                        // Physical Address (required for training_center_admin)
-                        new OA\Property(property: "address", type: "string", example: "123 Main Street", description: "Physical address (required for training_center_admin)"),
-                        new OA\Property(property: "city", type: "string", example: "New York", description: "City (required for training_center_admin)"),
-                        new OA\Property(property: "country", type: "string", example: "USA", description: "Country (required for training_center_admin)"),
-                        new OA\Property(property: "postal_code", type: "string", example: "10001", description: "Postal code (required for training_center_admin)"),
+                        // ACC Specific Fields (required when role is acc_admin)
+                        new OA\Property(property: "legal_name", type: "string", example: "ABC Accreditation Body", description: "Accreditation legal name (required for acc_admin)"),
+                        new OA\Property(property: "acc_email", type: "string", format: "email", example: "info@abcaccreditation.com", description: "Accreditation body email address (required for acc_admin)"),
+                        new OA\Property(property: "primary_contact_passport", type: "string", format: "binary", description: "Primary contact passport copy (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_passport", type: "string", format: "binary", description: "Secondary contact passport copy (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
                         
-                        // Mailing Address (conditional for training_center_admin)
-                        new OA\Property(property: "mailing_same_as_physical", type: "boolean", example: true, description: "Whether mailing address is same as physical address"),
+                        // Shared Fields (used by both training_center_admin and acc_admin)
+                        new OA\Property(property: "telephone_number", type: "string", example: "+1234567890", description: "Telephone number (required for both roles)"),
+                        new OA\Property(property: "website", type: "string", example: "https://www.example.com", description: "Website (optional for both roles)"),
+                        new OA\Property(property: "fax", type: "string", example: "+1234567891", description: "Fax number (optional for both roles)"),
+                        
+                        // Physical Address (required for both roles)
+                        new OA\Property(property: "address", type: "string", example: "123 Main Street", description: "Physical address (required for both roles)"),
+                        new OA\Property(property: "city", type: "string", example: "New York", description: "City (required for both roles)"),
+                        new OA\Property(property: "country", type: "string", example: "USA", description: "Country (required for both roles)"),
+                        new OA\Property(property: "postal_code", type: "string", example: "10001", description: "Postal code (required for both roles)"),
+                        
+                        // Mailing Address (conditional for both roles)
+                        new OA\Property(property: "mailing_same_as_physical", type: "boolean", example: true, description: "Whether mailing address is same as physical address (for both roles)"),
                         new OA\Property(property: "mailing_address", type: "string", example: "123 Main Street", description: "Mailing address (required if mailing_same_as_physical is false)"),
                         new OA\Property(property: "mailing_city", type: "string", example: "New York", description: "Mailing city (required if mailing_same_as_physical is false)"),
                         new OA\Property(property: "mailing_country", type: "string", example: "USA", description: "Mailing country (required if mailing_same_as_physical is false)"),
                         new OA\Property(property: "mailing_postal_code", type: "string", example: "10001", description: "Mailing postal code (required if mailing_same_as_physical is false)"),
                         
-                        // Primary Contact (required for training_center_admin)
-                        new OA\Property(property: "primary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mr.", description: "Primary contact title (required for training_center_admin)"),
-                        new OA\Property(property: "primary_contact_first_name", type: "string", example: "John", description: "Primary contact first name (required for training_center_admin)"),
-                        new OA\Property(property: "primary_contact_last_name", type: "string", example: "Doe", description: "Primary contact last name (required for training_center_admin)"),
-                        new OA\Property(property: "primary_contact_email", type: "string", format: "email", example: "john.doe@abctraining.com", description: "Primary contact email (required for training_center_admin)"),
-                        new OA\Property(property: "primary_contact_country", type: "string", example: "USA", description: "Primary contact country (required for training_center_admin)"),
-                        new OA\Property(property: "primary_contact_mobile", type: "string", example: "+1234567890", description: "Primary contact mobile number (required for training_center_admin)"),
+                        // Primary Contact (required for both roles)
+                        new OA\Property(property: "primary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mr.", description: "Primary contact title (required for both roles)"),
+                        new OA\Property(property: "primary_contact_first_name", type: "string", example: "John", description: "Primary contact first name (required for both roles)"),
+                        new OA\Property(property: "primary_contact_last_name", type: "string", example: "Doe", description: "Primary contact last name (required for both roles)"),
+                        new OA\Property(property: "primary_contact_email", type: "string", format: "email", example: "john.doe@example.com", description: "Primary contact email (required for both roles)"),
+                        new OA\Property(property: "primary_contact_country", type: "string", example: "USA", description: "Primary contact country (required for both roles)"),
+                        new OA\Property(property: "primary_contact_mobile", type: "string", example: "+1234567890", description: "Primary contact mobile number (required for both roles)"),
                         
-                        // Secondary Contact (optional for training_center_admin)
-                        new OA\Property(property: "has_secondary_contact", type: "boolean", example: false, description: "Whether to add secondary contact"),
-                        new OA\Property(property: "secondary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mrs.", description: "Secondary contact title (required if has_secondary_contact is true)"),
-                        new OA\Property(property: "secondary_contact_first_name", type: "string", example: "Jane", description: "Secondary contact first name (required if has_secondary_contact is true)"),
-                        new OA\Property(property: "secondary_contact_last_name", type: "string", example: "Smith", description: "Secondary contact last name (required if has_secondary_contact is true)"),
-                        new OA\Property(property: "secondary_contact_email", type: "string", format: "email", example: "jane.smith@abctraining.com", description: "Secondary contact email (required if has_secondary_contact is true)"),
-                        new OA\Property(property: "secondary_contact_country", type: "string", example: "USA", description: "Secondary contact country (required if has_secondary_contact is true)"),
-                        new OA\Property(property: "secondary_contact_mobile", type: "string", example: "+1234567891", description: "Secondary contact mobile number (required if has_secondary_contact is true)"),
+                        // Secondary Contact (conditional for training_center_admin, required for acc_admin)
+                        new OA\Property(property: "secondary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mrs.", description: "Secondary contact title (required if has_secondary_contact is true for training_center_admin, always required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_first_name", type: "string", example: "Jane", description: "Secondary contact first name (required if has_secondary_contact is true for training_center_admin, always required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_last_name", type: "string", example: "Smith", description: "Secondary contact last name (required if has_secondary_contact is true for training_center_admin, always required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_email", type: "string", format: "email", example: "jane.smith@example.com", description: "Secondary contact email (required if has_secondary_contact is true for training_center_admin, always required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_country", type: "string", example: "USA", description: "Secondary contact country (required if has_secondary_contact is true for training_center_admin, always required for acc_admin)"),
+                        new OA\Property(property: "secondary_contact_mobile", type: "string", example: "+1234567891", description: "Secondary contact mobile number (required if has_secondary_contact is true for training_center_admin, always required for acc_admin)"),
                         
-                        // Additional Information (required for training_center_admin)
-                        new OA\Property(property: "company_gov_registry_number", type: "string", example: "REG123456", description: "Company government registry number (required for training_center_admin)"),
-                        new OA\Property(property: "company_registration_certificate", type: "string", format: "binary", description: "Company registration certificate file (PDF, JPG, PNG, max 10MB, required for training_center_admin)"),
-                        new OA\Property(property: "facility_floorplan", type: "string", format: "binary", description: "Facility floorplan file (PDF, JPG, PNG, max 10MB, optional)"),
-                        new OA\Property(property: "interested_fields", type: "array", items: new OA\Items(type: "string", enum: ["QHSE", "Food Safety", "Management"]), example: ["QHSE", "Food Safety"], description: "Interested fields (optional)"),
-                        new OA\Property(property: "how_did_you_hear_about_us", type: "string", example: "Google Search", description: "How did you hear about us (optional)"),
+                        // Additional Information (required for both roles)
+                        new OA\Property(property: "company_gov_registry_number", type: "string", example: "REG123456", description: "Company government registry number (required for both roles)"),
+                        new OA\Property(property: "company_registration_certificate", type: "string", format: "binary", description: "Company registration certificate file (PDF, JPG, PNG, max 10MB, required for both roles)"),
+                        new OA\Property(property: "how_did_you_hear_about_us", type: "string", example: "Google Search", description: "How did you hear about us (optional for both roles)"),
                         
-                        // Agreements (required for training_center_admin)
-                        new OA\Property(property: "agreed_to_receive_communications", type: "boolean", example: true, description: "Agreement to receive communications (required, must be true)"),
-                        new OA\Property(property: "agreed_to_terms_and_conditions", type: "boolean", example: true, description: "Agreement to terms and conditions (required, must be true)"),
-                        
-                        // ACC Specific Fields (required when role is acc_admin)
-                        new OA\Property(property: "legal_name", type: "string", example: "ABC Accreditation Body", description: "Accreditation legal name (required for acc_admin)"),
-                        new OA\Property(property: "acc_email", type: "string", format: "email", example: "info@abcaccreditation.com", description: "Accreditation body email address (required for acc_admin)"),
-                        new OA\Property(property: "telephone_number", type: "string", example: "+1234567890", description: "Telephone number (required for acc_admin)"),
-                        new OA\Property(property: "website", type: "string", example: "https://www.abcaccreditation.com", description: "Website (optional for acc_admin)"),
-                        new OA\Property(property: "fax", type: "string", example: "+1234567891", description: "Fax number (optional for acc_admin)"),
-                        
-                        // Physical Address (required for acc_admin)
-                        new OA\Property(property: "address", type: "string", example: "123 Main Street", description: "Physical address (required for acc_admin)"),
-                        new OA\Property(property: "city", type: "string", example: "New York", description: "City (required for acc_admin)"),
-                        new OA\Property(property: "country", type: "string", example: "USA", description: "Country (required for acc_admin)"),
-                        new OA\Property(property: "postal_code", type: "string", example: "10001", description: "Postal code (required for acc_admin)"),
-                        
-                        // Mailing Address (conditional for acc_admin)
-                        new OA\Property(property: "mailing_same_as_physical", type: "boolean", example: true, description: "Whether mailing address is same as physical address (for acc_admin)"),
-                        new OA\Property(property: "mailing_address", type: "string", example: "123 Main Street", description: "Mailing address (required if mailing_same_as_physical is false for acc_admin)"),
-                        new OA\Property(property: "mailing_city", type: "string", example: "New York", description: "Mailing city (required if mailing_same_as_physical is false for acc_admin)"),
-                        new OA\Property(property: "mailing_country", type: "string", example: "USA", description: "Mailing country (required if mailing_same_as_physical is false for acc_admin)"),
-                        new OA\Property(property: "mailing_postal_code", type: "string", example: "10001", description: "Mailing postal code (required if mailing_same_as_physical is false for acc_admin)"),
-                        
-                        // Primary Contact (required for acc_admin)
-                        new OA\Property(property: "primary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mr.", description: "Primary contact title (required for acc_admin)"),
-                        new OA\Property(property: "primary_contact_first_name", type: "string", example: "John", description: "Primary contact first name (required for acc_admin)"),
-                        new OA\Property(property: "primary_contact_last_name", type: "string", example: "Doe", description: "Primary contact last name (required for acc_admin)"),
-                        new OA\Property(property: "primary_contact_email", type: "string", format: "email", example: "john.doe@abcaccreditation.com", description: "Primary contact email (required for acc_admin)"),
-                        new OA\Property(property: "primary_contact_country", type: "string", example: "USA", description: "Primary contact country (required for acc_admin)"),
-                        new OA\Property(property: "primary_contact_mobile", type: "string", example: "+1234567890", description: "Primary contact mobile number (required for acc_admin)"),
-                        new OA\Property(property: "primary_contact_passport", type: "string", format: "binary", description: "Primary contact passport copy (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
-                        
-                        // Secondary Contact (required for acc_admin)
-                        new OA\Property(property: "secondary_contact_title", type: "string", enum: ["Mr.", "Mrs.", "Eng.", "Prof."], example: "Mrs.", description: "Secondary contact title (required for acc_admin)"),
-                        new OA\Property(property: "secondary_contact_first_name", type: "string", example: "Jane", description: "Secondary contact first name (required for acc_admin)"),
-                        new OA\Property(property: "secondary_contact_last_name", type: "string", example: "Smith", description: "Secondary contact last name (required for acc_admin)"),
-                        new OA\Property(property: "secondary_contact_email", type: "string", format: "email", example: "jane.smith@abcaccreditation.com", description: "Secondary contact email (required for acc_admin)"),
-                        new OA\Property(property: "secondary_contact_country", type: "string", example: "USA", description: "Secondary contact country (required for acc_admin)"),
-                        new OA\Property(property: "secondary_contact_mobile", type: "string", example: "+1234567891", description: "Secondary contact mobile number (required for acc_admin)"),
-                        new OA\Property(property: "secondary_contact_passport", type: "string", format: "binary", description: "Secondary contact passport copy (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
-                        
-                        // Additional Information (required for acc_admin)
-                        new OA\Property(property: "company_gov_registry_number", type: "string", example: "REG123456", description: "Company government registry number (required for acc_admin)"),
-                        new OA\Property(property: "company_registration_certificate", type: "string", format: "binary", description: "Company registration certificate file (PDF, JPG, PNG, max 10MB, required for acc_admin)"),
-                        new OA\Property(property: "how_did_you_hear_about_us", type: "string", example: "Google Search", description: "How did you hear about us (optional for acc_admin)"),
-                        
-                        // Agreements (required for acc_admin)
-                        new OA\Property(property: "agreed_to_receive_communications", type: "boolean", example: true, description: "Agreement to receive communications (required for acc_admin, must be true)"),
-                        new OA\Property(property: "agreed_to_terms_and_conditions", type: "boolean", example: true, description: "Agreement to terms and conditions (required for acc_admin, must be true)"),
+                        // Agreements (required for both roles)
+                        new OA\Property(property: "agreed_to_receive_communications", type: "boolean", example: true, description: "Agreement to receive communications (required for both roles, must be true)"),
+                        new OA\Property(property: "agreed_to_terms_and_conditions", type: "boolean", example: true, description: "Agreement to terms and conditions (required for both roles, must be true)"),
                     ]
                 )
             )
