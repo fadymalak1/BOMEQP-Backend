@@ -459,12 +459,11 @@ class CertificateController extends Controller
             return response()->json(['message' => 'Course category not found'], 422);
         }
 
-        // First, try to find a course-specific template
+        // First, try to find a course-specific template (prioritize course templates)
+        // Course templates should be used if they exist, even if they don't have all fields
         $template = CertificateTemplate::where('acc_id', $request->acc_id)
             ->where('course_id', $request->course_id)
             ->where('status', 'active')
-            ->whereNotNull('background_image_url')
-            ->whereNotNull('config_json')
             ->first();
 
         // If no course-specific template found, fall back to category template
