@@ -78,4 +78,4 @@ class InstructorAccAuthorization extends Model
         return $this->hasMany(InstructorCourseAuthorization::class, 'instructor_id', 'instructor_id')
             ->where('acc_id', $this->acc_id);
     }
-
+}
