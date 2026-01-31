@@ -11,39 +11,69 @@ return new class extends Migration
     {
         // Step 1: Drop the existing foreign key constraint first
         // This allows us to clean up invalid data without constraint violations
-        try {
-            Schema::table('certificates', function (Blueprint $table) {
-                $table->dropForeign(['template_id']);
-            });
-        } catch (\Exception $e) {
-            // Try alternative method if Laravel's method fails
+        // Database-specific handling
+        $driver = DB::connection()->getDriverName();
+        
+        if ($driver === 'sqlite') {
+            // SQLite doesn't support DROP FOREIGN KEY directly
+            // Laravel's Schema facade will handle this, but we need to catch errors
             try {
-                DB::statement('ALTER TABLE certificates DROP FOREIGN KEY certificates_template_id_foreign');
-            } catch (\Exception $e2) {
-                // Query for the actual constraint name
-                $constraint = DB::selectOne("
-                    SELECT CONSTRAINT_NAME 
-                    FROM information_schema.KEY_COLUMN_USAGE 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'certificates' 
-                    AND COLUMN_NAME = 'template_id' 
-                    AND REFERENCED_TABLE_NAME IS NOT NULL
-                    LIMIT 1
-                ");
-                
-                if ($constraint && isset($constraint->CONSTRAINT_NAME)) {
-                    DB::statement("ALTER TABLE certificates DROP FOREIGN KEY `{$constraint->CONSTRAINT_NAME}`");
+                Schema::table('certificates', function (Blueprint $table) {
+                    $table->dropForeign(['template_id']);
+                });
+            } catch (\Exception $e) {
+                // SQLite may not have foreign key constraints enforced
+                // Continue with the migration
+            }
+        } else {
+            // MySQL/MariaDB/PostgreSQL: Try Laravel's method first
+            try {
+                Schema::table('certificates', function (Blueprint $table) {
+                    $table->dropForeign(['template_id']);
+                });
+            } catch (\Exception $e) {
+                // Try alternative method if Laravel's method fails (MySQL/MariaDB only)
+                if ($driver === 'mysql' || $driver === 'mariadb') {
+                    try {
+                        DB::statement('ALTER TABLE certificates DROP FOREIGN KEY certificates_template_id_foreign');
+                    } catch (\Exception $e2) {
+                        // Query for the actual constraint name
+                        $constraint = DB::selectOne("
+                            SELECT CONSTRAINT_NAME 
+                            FROM information_schema.KEY_COLUMN_USAGE 
+                            WHERE TABLE_SCHEMA = DATABASE() 
+                            AND TABLE_NAME = 'certificates' 
+                            AND COLUMN_NAME = 'template_id' 
+                            AND REFERENCED_TABLE_NAME IS NOT NULL
+                            LIMIT 1
+                        ");
+                        
+                        if ($constraint && isset($constraint->CONSTRAINT_NAME)) {
+                            DB::statement("ALTER TABLE certificates DROP FOREIGN KEY `{$constraint->CONSTRAINT_NAME}`");
+                        }
+                    }
                 }
             }
         }
 
         // Step 2: Clean up any invalid template_id values (orphaned records)
-        // Use LEFT JOIN approach to avoid MySQL subquery limitations
-        DB::statement('UPDATE certificates c
-                       LEFT JOIN certificate_templates ct ON c.template_id = ct.id
-                       SET c.template_id = NULL
-                       WHERE c.template_id IS NOT NULL 
-                       AND ct.id IS NULL');
+        // Database-specific handling for UPDATE with JOIN
+        $driver = DB::connection()->getDriverName();
+        
+        if ($driver === 'mysql' || $driver === 'mariadb') {
+            // MySQL/MariaDB: Use LEFT JOIN syntax
+            DB::statement('UPDATE certificates c
+                           LEFT JOIN certificate_templates ct ON c.template_id = ct.id
+                           SET c.template_id = NULL
+                           WHERE c.template_id IS NOT NULL 
+                           AND ct.id IS NULL');
+        } else {
+            // SQLite/PostgreSQL: Use subquery approach
+            DB::statement('UPDATE certificates 
+                           SET template_id = NULL 
+                           WHERE template_id IS NOT NULL 
+                           AND template_id NOT IN (SELECT id FROM certificate_templates)');
+        }
 
         // Step 3: Make template_id nullable
         Schema::table('certificates', function (Blueprint $table) {
