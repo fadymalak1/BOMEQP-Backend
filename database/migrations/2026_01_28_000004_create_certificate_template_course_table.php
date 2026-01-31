@@ -14,8 +14,8 @@ return new class extends Migration
             $table->foreignId('course_id')->constrained('courses')->cascadeOnDelete();
             $table->timestamps();
             
-            // Ensure unique combination
-            $table->unique(['certificate_template_id', 'course_id']);
+            // Ensure unique combination with custom shorter name (MySQL limit is 64 characters)
+            $table->unique(['certificate_template_id', 'course_id'], 'cert_template_course_unique');
         });
     }
 
