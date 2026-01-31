@@ -452,25 +452,35 @@ class CertificateController extends Controller
             return response()->json(['message' => 'Course does not belong to the selected ACC'], 403);
         }
 
-        // Find template: first check for course-specific template, then fall back to category template
+        // Find template: first check for course-specific template (via pivot table), then fall back to category template
         $categoryId = $course->subCategory->category_id ?? null;
         
         if (!$categoryId) {
             return response()->json(['message' => 'Course category not found'], 422);
         }
 
-        // First, try to find a course-specific template (prioritize course templates)
-        // Course templates should be used if they exist, even if they don't have all fields
+        // First, try to find a template that has this course in its courses array (many-to-many)
         $template = CertificateTemplate::where('acc_id', $request->acc_id)
-            ->where('course_id', $request->course_id)
             ->where('status', 'active')
+            ->whereHas('courses', function ($query) use ($request) {
+                $query->where('courses.id', $request->course_id);
+            })
             ->first();
+
+        // If no template found via courses relationship, check legacy course_id field
+        if (!$template) {
+            $template = CertificateTemplate::where('acc_id', $request->acc_id)
+                ->where('course_id', $request->course_id)
+                ->where('status', 'active')
+                ->first();
+        }
 
         // If no course-specific template found, fall back to category template
         if (!$template) {
             $template = CertificateTemplate::where('acc_id', $request->acc_id)
                 ->where('category_id', $categoryId)
                 ->whereNull('course_id') // Ensure it's a category template, not a course template
+                ->whereDoesntHave('courses') // Also ensure it doesn't have courses via pivot
                 ->where('status', 'active')
                 ->whereNotNull('background_image_url')
                 ->whereNotNull('config_json')

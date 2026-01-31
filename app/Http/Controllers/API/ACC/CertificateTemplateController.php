@@ -50,7 +50,7 @@ class CertificateTemplateController extends Controller
         }
 
         $templates = CertificateTemplate::where('acc_id', $acc->id)
-            ->with(['category', 'course'])
+            ->with(['category', 'course', 'courses'])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -66,10 +66,9 @@ class CertificateTemplateController extends Controller
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
-                required: ["name", "status"],
+                required: ["name", "status", "course_ids"],
                 properties: [
-                    new OA\Property(property: "category_id", type: "integer", nullable: true, example: 1, description: "Category ID - applies template to all courses in this category. Either category_id OR course_id must be provided."),
-                    new OA\Property(property: "course_id", type: "integer", nullable: true, example: 5, description: "Course ID - applies template to this specific course only. Either category_id OR course_id must be provided."),
+                    new OA\Property(property: "course_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], description: "Array of course IDs - applies template to these specific courses. At least one course_id must be provided."),
                     new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
                     new OA\Property(property: "template_html", type: "string", nullable: true),
                     new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
@@ -86,33 +85,12 @@ class CertificateTemplateController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'category_id' => 'nullable|exists:categories,id',
-            'course_id' => 'nullable|exists:courses,id',
+            'course_ids' => 'required|array|min:1',
+            'course_ids.*' => 'required|exists:courses,id',
             'name' => 'required|string|max:255',
             'template_html' => 'nullable|string',
             'status' => 'required|in:active,inactive',
         ]);
-
-        // Validate that either category_id or course_id is provided, but not both
-        if (!$request->has('category_id') && !$request->has('course_id')) {
-            return response()->json([
-                'message' => 'Either category_id or course_id must be provided',
-                'errors' => [
-                    'category_id' => ['Either category_id or course_id must be provided'],
-                    'course_id' => ['Either category_id or course_id must be provided'],
-                ]
-            ], 422);
-        }
-
-        if ($request->has('category_id') && $request->has('course_id')) {
-            return response()->json([
-                'message' => 'Cannot specify both category_id and course_id. Please provide either category_id OR course_id',
-                'errors' => [
-                    'category_id' => ['Cannot specify both category_id and course_id'],
-                    'course_id' => ['Cannot specify both category_id and course_id'],
-                ]
-            ], 422);
-        }
 
         $user = $request->user();
         $acc = ACC::where('email', $user->email)->first();
@@ -121,65 +99,125 @@ class CertificateTemplateController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // If course_id is provided, verify the course belongs to this ACC
-        if ($request->has('course_id')) {
-            $course = \App\Models\Course::findOrFail($request->course_id);
+        // Verify all courses belong to this ACC
+        $courses = \App\Models\Course::whereIn('id', $request->course_ids)->get();
+        
+        if ($courses->count() !== count($request->course_ids)) {
+            $foundIds = $courses->pluck('id')->toArray();
+            $missingIds = array_diff($request->course_ids, $foundIds);
+            return response()->json([
+                'message' => 'One or more courses were not found',
+                'errors' => [
+                    'course_ids' => ['The following course IDs do not exist: ' . implode(', ', $missingIds)]
+                ],
+                'missing_course_ids' => array_values($missingIds)
+            ], 422);
+        }
+
+        $unauthorizedCourses = [];
+        foreach ($courses as $course) {
             if ($course->acc_id !== $acc->id) {
-                return response()->json([
-                    'message' => 'Course does not belong to this ACC'
-                ], 403);
-            }
-
-            // Check if a template already exists for this course
-            $existingTemplate = CertificateTemplate::where('acc_id', $acc->id)
-                ->where('course_id', $request->course_id)
-                ->first();
-
-            if ($existingTemplate) {
-                return response()->json([
-                    'message' => 'A certificate template already exists for this course',
-                    'errors' => [
-                        'course_id' => ['A certificate template already exists for this course. Please update the existing template or delete it first.']
-                    ],
-                    'existing_template' => [
-                        'id' => $existingTemplate->id,
-                        'name' => $existingTemplate->name,
-                    ]
-                ], 422);
+                $unauthorizedCourses[] = [
+                    'course_id' => $course->id,
+                    'course_name' => $course->name,
+                ];
             }
         }
 
-        // If category_id is provided, check if a template already exists for this category
-        if ($request->has('category_id')) {
-            $existingTemplate = CertificateTemplate::where('acc_id', $acc->id)
-                ->where('category_id', $request->category_id)
-                ->whereNull('course_id') // Only check category-level templates
+        if (!empty($unauthorizedCourses)) {
+            $courseNames = array_map(function ($c) {
+                return "'{$c['course_name']}' (ID: {$c['course_id']})";
+            }, $unauthorizedCourses);
+            
+            $errorMessage = count($unauthorizedCourses) === 1
+                ? "The course {$courseNames[0]} does not belong to your ACC. You can only create templates for your own courses."
+                : "The following courses do not belong to your ACC. You can only create templates for your own courses: " . implode(', ', $courseNames);
+
+            return response()->json([
+                'message' => $errorMessage,
+                'errors' => [
+                    'course_ids' => array_map(function ($c) {
+                        return "Course '{$c['course_name']}' (ID: {$c['course_id']}) does not belong to your ACC";
+                    }, $unauthorizedCourses)
+                ],
+                'unauthorized_courses' => $unauthorizedCourses
+            ], 403);
+        }
+
+        // Check if any of the courses already have a template (check both new many-to-many and legacy course_id)
+        $conflictingCourses = [];
+        $conflictingDetails = [];
+
+        foreach ($request->course_ids as $courseId) {
+            // Check if course is in any template via many-to-many relationship
+            $templateViaPivot = CertificateTemplate::where('acc_id', $acc->id)
+                ->whereHas('courses', function ($query) use ($courseId) {
+                    $query->where('courses.id', $courseId);
+                })
+                ->with('courses')
                 ->first();
 
-            if ($existingTemplate) {
-                return response()->json([
-                    'message' => 'A certificate template already exists for this category',
-                    'errors' => [
-                        'category_id' => ['A certificate template already exists for this category. Please update the existing template or delete it first.']
-                    ],
-                    'existing_template' => [
-                        'id' => $existingTemplate->id,
-                        'name' => $existingTemplate->name,
-                    ]
-                ], 422);
+            // Check if course has a template via legacy course_id field
+            $templateViaLegacy = CertificateTemplate::where('acc_id', $acc->id)
+                ->where('course_id', $courseId)
+                ->first();
+
+            if ($templateViaPivot) {
+                $course = \App\Models\Course::find($courseId);
+                $conflictingCourses[] = $courseId;
+                $conflictingDetails[] = [
+                    'course_id' => $courseId,
+                    'course_name' => $course ? $course->name : "Course #{$courseId}",
+                    'existing_template_id' => $templateViaPivot->id,
+                    'existing_template_name' => $templateViaPivot->name,
+                ];
+            } elseif ($templateViaLegacy) {
+                $course = \App\Models\Course::find($courseId);
+                $conflictingCourses[] = $courseId;
+                $conflictingDetails[] = [
+                    'course_id' => $courseId,
+                    'course_name' => $course ? $course->name : "Course #{$courseId}",
+                    'existing_template_id' => $templateViaLegacy->id,
+                    'existing_template_name' => $templateViaLegacy->name,
+                ];
             }
         }
 
+        if (!empty($conflictingCourses)) {
+            $courseNames = array_map(function ($detail) {
+                return $detail['course_name'];
+            }, $conflictingDetails);
+            
+            $errorMessage = count($conflictingCourses) === 1 
+                ? "The course '{$courseNames[0]}' already has a certificate template. Each course can only have one template."
+                : "The following courses already have certificate templates. Each course can only have one template: " . implode(', ', $courseNames);
+
+            return response()->json([
+                'message' => $errorMessage,
+                'errors' => [
+                    'course_ids' => array_map(function ($courseId) use ($conflictingDetails) {
+                        $detail = collect($conflictingDetails)->firstWhere('course_id', $courseId);
+                        return "Course '{$detail['course_name']}' (ID: {$courseId}) already has a template: '{$detail['existing_template_name']}' (Template ID: {$detail['existing_template_id']})";
+                    }, $conflictingCourses)
+                ],
+                'conflicting_courses' => $conflictingDetails
+            ], 422);
+        }
+
+        // Create template without course_id or category_id
         $template = CertificateTemplate::create([
             'acc_id' => $acc->id,
-            'category_id' => $request->category_id,
-            'course_id' => $request->course_id,
+            'category_id' => null,
+            'course_id' => null,
             'name' => $request->name,
             'template_html' => $request->template_html,
             'status' => $request->status,
         ]);
 
-        return response()->json(['template' => $template->load(['category', 'course'])], 201);
+        // Attach courses to template
+        $template->courses()->attach($request->course_ids);
+
+        return response()->json(['template' => $template->load(['category', 'courses'])], 201);
     }
 
     #[OA\Get(
@@ -198,14 +236,14 @@ class CertificateTemplateController extends Controller
     )]
     public function show($id)
     {
-        $template = CertificateTemplate::with(['category', 'course'])->findOrFail($id);
+        $template = CertificateTemplate::with(['category', 'course', 'courses'])->findOrFail($id);
         return response()->json(['template' => $template]);
     }
 
     #[OA\Put(
         path: "/acc/certificate-templates/{id}",
         summary: "Update certificate template",
-        description: "Update a certificate template. Either category_id OR course_id can be provided, but not both.",
+        description: "Update a certificate template. Provide course_ids array to update the courses associated with this template.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
@@ -215,8 +253,7 @@ class CertificateTemplateController extends Controller
             required: false,
             content: new OA\JsonContent(
                 properties: [
-                    new OA\Property(property: "category_id", type: "integer", nullable: true, example: 1, description: "Category ID - applies template to all courses in this category. Either category_id OR course_id must be provided."),
-                    new OA\Property(property: "course_id", type: "integer", nullable: true, example: 5, description: "Course ID - applies template to this specific course only. Either category_id OR course_id must be provided."),
+                    new OA\Property(property: "course_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], description: "Array of course IDs - applies template to these specific courses. At least one course_id must be provided."),
                     new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
                     new OA\Property(property: "template_html", type: "string", nullable: true),
                     new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active"),
@@ -264,104 +301,136 @@ new OA\Property(
         $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
 
         $request->validate([
-            'category_id' => 'nullable|exists:categories,id',
-            'course_id' => 'nullable|exists:courses,id',
+            'course_ids' => 'sometimes|array|min:1',
+            'course_ids.*' => 'required|exists:courses,id',
             'name' => 'sometimes|string|max:255',
             'template_html' => 'nullable|string',
             'status' => 'sometimes|in:active,inactive',
             'config_json' => 'nullable|array',
         ]);
 
-        // Determine what the final values will be after update
-        $finalCategoryId = $request->has('category_id') ? $request->category_id : $template->category_id;
-        $finalCourseId = $request->has('course_id') ? $request->course_id : $template->course_id;
-
-        // Validate that either category_id or course_id is provided, but not both
-        if ($request->has('category_id') && $request->has('course_id')) {
-            return response()->json([
-                'message' => 'Cannot specify both category_id and course_id. Please provide either category_id OR course_id',
-                'errors' => [
-                    'category_id' => ['Cannot specify both category_id and course_id'],
-                    'course_id' => ['Cannot specify both category_id and course_id'],
-                ]
-            ], 422);
-        }
-
-        // Ensure at least one of category_id or course_id is set after update
-        if (!$finalCategoryId && !$finalCourseId) {
-            return response()->json([
-                'message' => 'Either category_id or course_id must be set. Cannot clear both fields.',
-                'errors' => [
-                    'category_id' => ['Either category_id or course_id must be set'],
-                    'course_id' => ['Either category_id or course_id must be set'],
-                ]
-            ], 422);
-        }
-
-        // If course_id is provided, verify the course belongs to this ACC
-        if ($request->has('course_id') && $request->course_id) {
-            $course = \App\Models\Course::findOrFail($request->course_id);
-            if ($course->acc_id !== $acc->id) {
+        // If course_ids is provided, validate and update
+        if ($request->has('course_ids')) {
+            // Verify all courses belong to this ACC
+            $courses = \App\Models\Course::whereIn('id', $request->course_ids)->get();
+            
+            if ($courses->count() !== count($request->course_ids)) {
+                $foundIds = $courses->pluck('id')->toArray();
+                $missingIds = array_diff($request->course_ids, $foundIds);
                 return response()->json([
-                    'message' => 'Course does not belong to this ACC'
+                    'message' => 'One or more courses were not found',
+                    'errors' => [
+                        'course_ids' => ['The following course IDs do not exist: ' . implode(', ', $missingIds)]
+                    ],
+                    'missing_course_ids' => array_values($missingIds)
+                ], 422);
+            }
+
+            $unauthorizedCourses = [];
+            foreach ($courses as $course) {
+                if ($course->acc_id !== $acc->id) {
+                    $unauthorizedCourses[] = [
+                        'course_id' => $course->id,
+                        'course_name' => $course->name,
+                    ];
+                }
+            }
+
+            if (!empty($unauthorizedCourses)) {
+                $courseNames = array_map(function ($c) {
+                    return "'{$c['course_name']}' (ID: {$c['course_id']})";
+                }, $unauthorizedCourses);
+                
+                $errorMessage = count($unauthorizedCourses) === 1
+                    ? "The course {$courseNames[0]} does not belong to your ACC. You can only update templates with your own courses."
+                    : "The following courses do not belong to your ACC. You can only update templates with your own courses: " . implode(', ', $courseNames);
+
+                return response()->json([
+                    'message' => $errorMessage,
+                    'errors' => [
+                        'course_ids' => array_map(function ($c) {
+                            return "Course '{$c['course_name']}' (ID: {$c['course_id']}) does not belong to your ACC";
+                        }, $unauthorizedCourses)
+                    ],
+                    'unauthorized_courses' => $unauthorizedCourses
                 ], 403);
             }
-        }
 
-        // Check for duplicate templates based on final values (after update)
-        // Only check if the values are actually changing
-        $categoryChanged = $request->has('category_id') && $request->category_id != $template->category_id;
-        $courseChanged = $request->has('course_id') && $request->course_id != $template->course_id;
+            // Check if any of the courses already have a different template (check both new many-to-many and legacy course_id)
+            $conflictingCourses = [];
+            $conflictingDetails = [];
 
-        // If final course_id is set, check for duplicate course template
-        if ($finalCourseId && ($courseChanged || ($request->has('course_id') && $template->category_id))) {
-            $existingTemplate = CertificateTemplate::where('acc_id', $acc->id)
-                ->where('course_id', $finalCourseId)
-                ->where('id', '!=', $template->id)
-                ->first();
+            foreach ($request->course_ids as $courseId) {
+                // Check if course is in any other template via many-to-many relationship
+                $templateViaPivot = CertificateTemplate::where('acc_id', $acc->id)
+                    ->where('id', '!=', $template->id)
+                    ->whereHas('courses', function ($query) use ($courseId) {
+                        $query->where('courses.id', $courseId);
+                    })
+                    ->with('courses')
+                    ->first();
 
-            if ($existingTemplate) {
+                // Check if course has a different template via legacy course_id field
+                $templateViaLegacy = CertificateTemplate::where('acc_id', $acc->id)
+                    ->where('id', '!=', $template->id)
+                    ->where('course_id', $courseId)
+                    ->first();
+
+                if ($templateViaPivot) {
+                    $course = \App\Models\Course::find($courseId);
+                    $conflictingCourses[] = $courseId;
+                    $conflictingDetails[] = [
+                        'course_id' => $courseId,
+                        'course_name' => $course ? $course->name : "Course #{$courseId}",
+                        'existing_template_id' => $templateViaPivot->id,
+                        'existing_template_name' => $templateViaPivot->name,
+                    ];
+                } elseif ($templateViaLegacy) {
+                    $course = \App\Models\Course::find($courseId);
+                    $conflictingCourses[] = $courseId;
+                    $conflictingDetails[] = [
+                        'course_id' => $courseId,
+                        'course_name' => $course ? $course->name : "Course #{$courseId}",
+                        'existing_template_id' => $templateViaLegacy->id,
+                        'existing_template_name' => $templateViaLegacy->name,
+                    ];
+                }
+            }
+
+            if (!empty($conflictingCourses)) {
+                $courseNames = array_map(function ($detail) {
+                    return $detail['course_name'];
+                }, $conflictingDetails);
+                
+                $errorMessage = count($conflictingCourses) === 1 
+                    ? "The course '{$courseNames[0]}' already has a different certificate template. Each course can only have one template."
+                    : "The following courses already have different certificate templates. Each course can only have one template: " . implode(', ', $courseNames);
+
                 return response()->json([
-                    'message' => 'A certificate template already exists for this course',
+                    'message' => $errorMessage,
                     'errors' => [
-                        'course_id' => ['A certificate template already exists for this course. Please update the existing template or delete it first.']
+                        'course_ids' => array_map(function ($courseId) use ($conflictingDetails) {
+                            $detail = collect($conflictingDetails)->firstWhere('course_id', $courseId);
+                            return "Course '{$detail['course_name']}' (ID: {$courseId}) already has a template: '{$detail['existing_template_name']}' (Template ID: {$detail['existing_template_id']})";
+                        }, $conflictingCourses)
                     ],
-                    'existing_template' => [
-                        'id' => $existingTemplate->id,
-                        'name' => $existingTemplate->name,
-                    ]
+                    'conflicting_courses' => $conflictingDetails
                 ], 422);
             }
+
+            // Sync courses (replace existing associations)
+            $template->courses()->sync($request->course_ids);
         }
 
-        // If final category_id is set (and no course_id), check for duplicate category template
-        if ($finalCategoryId && !$finalCourseId && ($categoryChanged || ($request->has('category_id') && $template->course_id))) {
-            $existingTemplate = CertificateTemplate::where('acc_id', $acc->id)
-                ->where('category_id', $finalCategoryId)
-                ->whereNull('course_id') // Only check category-level templates
-                ->where('id', '!=', $template->id)
-                ->first();
-
-            if ($existingTemplate) {
-                return response()->json([
-                    'message' => 'A certificate template already exists for this category',
-                    'errors' => [
-                        'category_id' => ['A certificate template already exists for this category. Please update the existing template or delete it first.']
-                    ],
-                    'existing_template' => [
-                        'id' => $existingTemplate->id,
-                        'name' => $existingTemplate->name,
-                    ]
-                ], 422);
-            }
+        // Update other fields
+        $updateData = $request->only(['name', 'template_html', 'status', 'config_json']);
+        if (!empty($updateData)) {
+            $template->update($updateData);
         }
-
-        $updateData = $request->only(['category_id', 'course_id', 'name', 'template_html', 'status', 'config_json']);
-        $template->update($updateData);
 
         return response()->json([
             'message' => 'Template updated successfully',
-            'template' => $template->fresh(),
+            'template' => $template->fresh(['category', 'course', 'courses']),
         ]);
     }
 

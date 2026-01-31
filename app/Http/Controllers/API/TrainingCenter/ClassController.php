@@ -170,7 +170,7 @@ class ClassController extends Controller
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 403, description: "Course not available - ACC authorization required, or Instructor not authorized to teach this course"),
+            new OA\Response(response: 403, description: "Course not available - ACC authorization required, Instructor not authorized to teach this course, or Training center has not paid instructor authorization payment to ACC"),
             new OA\Response(response: 404, description: "Training center not found"),
             new OA\Response(response: 422, description: "Validation error")
         ]
@@ -219,6 +219,27 @@ class ClassController extends Controller
         if (!$instructorAuthorization) {
             return response()->json([
                 'message' => 'Instructor is not authorized to teach this course from the ACC.'
+            ], 403);
+        }
+
+        // Check if training center has paid for instructor authorization to ACC
+        $instructorAccAuthorization = \App\Models\InstructorAccAuthorization::where('instructor_id', $request->instructor_id)
+            ->where('acc_id', $course->acc_id)
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('status', 'approved')
+            ->first();
+
+        if (!$instructorAccAuthorization) {
+            return response()->json([
+                'message' => 'Instructor authorization to ACC is not approved or does not exist.'
+            ], 403);
+        }
+
+        if ($instructorAccAuthorization->payment_status !== 'paid') {
+            return response()->json([
+                'message' => 'Instructor cannot be assigned to any class until the training center has paid the instructor authorization payment to the ACC.',
+                'payment_status' => $instructorAccAuthorization->payment_status,
+                'authorization_price' => $instructorAccAuthorization->authorization_price,
             ], 403);
         }
 
@@ -346,7 +367,7 @@ class ClassController extends Controller
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
-            new OA\Response(response: 403, description: "Instructor not authorized to teach this course from the ACC"),
+            new OA\Response(response: 403, description: "Instructor not authorized to teach this course from the ACC, or Training center has not paid instructor authorization payment to ACC"),
             new OA\Response(response: 404, description: "Class not found"),
             new OA\Response(response: 422, description: "Validation error")
         ]
@@ -396,6 +417,27 @@ class ClassController extends Controller
             if (!$instructorAuthorization) {
                 return response()->json([
                     'message' => 'Instructor is not authorized to teach this course from the ACC.'
+                ], 403);
+            }
+
+            // Check if training center has paid for instructor authorization to ACC
+            $instructorAccAuthorization = \App\Models\InstructorAccAuthorization::where('instructor_id', $instructorId)
+                ->where('acc_id', $course->acc_id)
+                ->where('training_center_id', $trainingCenter->id)
+                ->where('status', 'approved')
+                ->first();
+
+            if (!$instructorAccAuthorization) {
+                return response()->json([
+                    'message' => 'Instructor authorization to ACC is not approved or does not exist.'
+                ], 403);
+            }
+
+            if ($instructorAccAuthorization->payment_status !== 'paid') {
+                return response()->json([
+                    'message' => 'Instructor cannot be assigned to any class until the training center has paid the instructor authorization payment to the ACC.',
+                    'payment_status' => $instructorAccAuthorization->payment_status,
+                    'authorization_price' => $instructorAccAuthorization->authorization_price,
                 ], 403);
             }
         }
