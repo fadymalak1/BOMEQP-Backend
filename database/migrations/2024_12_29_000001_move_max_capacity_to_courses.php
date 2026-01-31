@@ -9,9 +9,12 @@ return new class extends Migration
     public function up(): void
     {
         // Add max_capacity to courses table (nullable first to allow data migration)
-        Schema::table('courses', function (Blueprint $table) {
-            $table->integer('max_capacity')->nullable()->after('duration_hours');
-        });
+        // Only add if it doesn't already exist
+        if (!Schema::hasColumn('courses', 'max_capacity')) {
+            Schema::table('courses', function (Blueprint $table) {
+                $table->integer('max_capacity')->nullable()->after('duration_hours');
+            });
+        }
 
         // Copy max_capacity from training_classes to courses (if any data exists)
         // This will set the max_capacity for each course based on the maximum max_capacity from training classes
@@ -33,12 +36,15 @@ return new class extends Migration
         }
 
         // Set default value for courses without max_capacity (if any)
-        \DB::table('courses')->whereNull('max_capacity')->update(['max_capacity' => 20]);
+        if (Schema::hasColumn('courses', 'max_capacity')) {
+            \DB::table('courses')->whereNull('max_capacity')->update(['max_capacity' => 20]);
 
-        // Make max_capacity required (not nullable) after data migration
-        Schema::table('courses', function (Blueprint $table) {
-            $table->integer('max_capacity')->nullable(false)->default(20)->change();
-        });
+            // Make max_capacity required (not nullable) after data migration
+            // Only change if column exists
+            Schema::table('courses', function (Blueprint $table) {
+                $table->integer('max_capacity')->nullable(false)->default(20)->change();
+            });
+        }
 
         // Remove max_capacity from training_classes table
         if (Schema::hasTable('training_classes') && Schema::hasColumn('training_classes', 'max_capacity')) {
