@@ -115,7 +115,13 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/training-centers', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'index']);
         Route::get('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'show']);
         Route::put('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'update']);
-        Route::apiResource('classes', App\Http\Controllers\API\Admin\ClassController::class);
+        Route::apiResource('classes', App\Http\Controllers\API\Admin\ClassController::class)->names([
+            'index' => 'admin.classes.index',
+            'show' => 'admin.classes.show',
+            'store' => 'admin.classes.store',
+            'update' => 'admin.classes.update',
+            'destroy' => 'admin.classes.destroy',
+        ]);
 
         // Financial & Reporting
         Route::get('/financial/dashboard', [App\Http\Controllers\API\Admin\FinancialController::class, 'dashboard']);
@@ -311,7 +317,13 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/accs/{id}/discount-codes', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'getByAccId']);
 
         // Classes
-        Route::apiResource('classes', App\Http\Controllers\API\TrainingCenter\ClassController::class);
+        Route::apiResource('classes', App\Http\Controllers\API\TrainingCenter\ClassController::class)->names([
+            'index' => 'training-center.classes.index',
+            'show' => 'training-center.classes.show',
+            'store' => 'training-center.classes.store',
+            'update' => 'training-center.classes.update',
+            'destroy' => 'training-center.classes.destroy',
+        ]);
         Route::put('/classes/{id}/complete', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'complete']);
 
         // Certificates

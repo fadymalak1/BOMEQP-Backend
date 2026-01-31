@@ -14,19 +14,22 @@ return new class extends Migration
         });
 
         // Copy max_capacity from training_classes to courses (if any data exists)
-        // This will set the max_capacity for each course based on the first training class
+        // This will set the max_capacity for each course based on the maximum max_capacity from training classes
         if (Schema::hasTable('training_classes') && Schema::hasColumn('training_classes', 'max_capacity')) {
-            \DB::statement('
-                UPDATE courses c
-                INNER JOIN (
-                    SELECT course_id, MAX(max_capacity) as max_capacity
-                    FROM training_classes
-                    WHERE max_capacity IS NOT NULL
-                    GROUP BY course_id
-                ) tc ON c.id = tc.course_id
-                SET c.max_capacity = tc.max_capacity
-                WHERE c.max_capacity IS NULL
-            ');
+            // Get max capacity per course from training_classes
+            $maxCapacities = \DB::table('training_classes')
+                ->select('course_id', \DB::raw('MAX(max_capacity) as max_capacity'))
+                ->whereNotNull('max_capacity')
+                ->groupBy('course_id')
+                ->get();
+
+            // Update courses with max_capacity from training_classes
+            foreach ($maxCapacities as $row) {
+                \DB::table('courses')
+                    ->where('id', $row->course_id)
+                    ->whereNull('max_capacity')
+                    ->update(['max_capacity' => $row->max_capacity]);
+            }
         }
 
         // Set default value for courses without max_capacity (if any)
@@ -53,11 +56,12 @@ return new class extends Migration
         });
 
         // Copy max_capacity from courses to training_classes
-        DB::statement('
-            UPDATE training_classes tc
-            INNER JOIN courses c ON tc.course_id = c.id
-            SET tc.max_capacity = c.max_capacity
-        ');
+        $courses = \DB::table('courses')->select('id', 'max_capacity')->get();
+        foreach ($courses as $course) {
+            \DB::table('training_classes')
+                ->where('course_id', $course->id)
+                ->update(['max_capacity' => $course->max_capacity]);
+        }
 
         // Remove max_capacity from courses
         Schema::table('courses', function (Blueprint $table) {
