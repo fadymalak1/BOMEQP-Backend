@@ -67,68 +67,96 @@ class TrainingCenterController extends Controller
         }
 
         $baseQuery = TrainingCenterAccAuthorization::where('acc_id', $acc->id);
-        $query = clone $baseQuery;
-        $query->with('trainingCenter');
+        
+        // Get all requests with training center
+        $allRequests = $baseQuery->with('trainingCenter')
+            ->orderBy('request_date', 'desc')
+            ->get();
 
-        // Filter by status if provided
+        // Group by training_center_id and get latest request for each
+        $grouped = $allRequests->groupBy('training_center_id');
+        $latestRequests = $grouped->map(function ($requests) {
+            // Get the latest request (first one since we ordered by request_date desc)
+            $latest = $requests->first();
+            
+            // Get all previous requests (excluding the latest)
+            $previous = $requests->slice(1)->values();
+            
+            // Add previous requests info to the latest request
+            $latest->previous_requests = $previous->map(function ($req) {
+                return [
+                    'id' => $req->id,
+                    'request_date' => $req->request_date,
+                    'status' => $req->status,
+                    'rejection_reason' => $req->rejection_reason,
+                    'return_comment' => $req->return_comment,
+                    'reviewed_by' => $req->reviewed_by,
+                    'reviewed_at' => $req->reviewed_at,
+                    'documents_count' => is_array($req->documents_json) ? count($req->documents_json) : 0,
+                ];
+            })->toArray();
+            
+            $latest->total_requests_count = $requests->count();
+            
+            return $latest;
+        })->values();
+
+        // Filter by status if provided (filter latest requests by their status)
         if ($request->has('status')) {
             $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
             if (in_array($request->status, $validStatuses)) {
-                $query->where('status', $request->status);
+                $latestRequests = $latestRequests->where('status', $request->status)->values();
             }
         }
 
-        // Search functionality
+        // Search functionality (search in latest requests)
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('id', 'like', "%{$searchTerm}%")
-                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
-                        $tcQuery->where('name', 'like', "%{$searchTerm}%")
-                            ->orWhere('email', 'like', "%{$searchTerm}%")
-                            ->orWhere('country', 'like', "%{$searchTerm}%")
-                            ->orWhere('city', 'like', "%{$searchTerm}%");
-                    });
-            });
+            $latestRequests = $latestRequests->filter(function ($req) use ($searchTerm) {
+                return stripos((string)$req->id, $searchTerm) !== false
+                    || stripos($req->trainingCenter->name ?? '', $searchTerm) !== false
+                    || stripos($req->trainingCenter->email ?? '', $searchTerm) !== false
+                    || stripos($req->trainingCenter->country ?? '', $searchTerm) !== false
+                    || stripos($req->trainingCenter->city ?? '', $searchTerm) !== false;
+            })->values();
         }
 
+        // Paginate the grouped results
         $perPage = $request->get('per_page', 15);
-        $requests = $query->orderBy('request_date', 'desc')->paginate($perPage);
+        $page = $request->get('page', 1);
+        $total = $latestRequests->count();
+        $offset = ($page - 1) * $perPage;
+        $paginated = $latestRequests->slice($offset, $perPage)->values();
 
-        // Calculate statistics using a single query with conditional aggregation
+        // Calculate statistics based on latest requests only
         $sevenDaysAgo = now()->subDays(7);
         $thirtyDaysAgo = now()->subDays(30);
         
-        $stats = $baseQuery->selectRaw('
-            COUNT(*) as total,
-            SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending,
-            SUM(CASE WHEN status = "approved" THEN 1 ELSE 0 END) as approved,
-            SUM(CASE WHEN status = "rejected" THEN 1 ELSE 0 END) as rejected,
-            SUM(CASE WHEN status = "returned" THEN 1 ELSE 0 END) as returned,
-            SUM(CASE WHEN request_date >= ? THEN 1 ELSE 0 END) as last_7_days,
-            SUM(CASE WHEN request_date >= ? THEN 1 ELSE 0 END) as last_30_days,
-            SUM(CASE WHEN status = "pending" AND request_date < ? THEN 1 ELSE 0 END) as pending_older_than_7_days
-        ', [$sevenDaysAgo, $thirtyDaysAgo, $sevenDaysAgo])->first();
-
         $statistics = [
-            'total' => (int) $stats->total,
-            'pending' => (int) $stats->pending,
-            'approved' => (int) $stats->approved,
-            'rejected' => (int) $stats->rejected,
-            'returned' => (int) $stats->returned,
-            'last_7_days' => (int) $stats->last_7_days,
-            'last_30_days' => (int) $stats->last_30_days,
-            'pending_older_than_7_days' => (int) $stats->pending_older_than_7_days,
+            'total' => $total,
+            'pending' => $latestRequests->where('status', 'pending')->count(),
+            'approved' => $latestRequests->where('status', 'approved')->count(),
+            'rejected' => $latestRequests->where('status', 'rejected')->count(),
+            'returned' => $latestRequests->where('status', 'returned')->count(),
+            'last_7_days' => $latestRequests->filter(function ($req) use ($sevenDaysAgo) {
+                return $req->request_date >= $sevenDaysAgo;
+            })->count(),
+            'last_30_days' => $latestRequests->filter(function ($req) use ($thirtyDaysAgo) {
+                return $req->request_date >= $thirtyDaysAgo;
+            })->count(),
+            'pending_older_than_7_days' => $latestRequests->filter(function ($req) use ($sevenDaysAgo) {
+                return $req->status === 'pending' && $req->request_date < $sevenDaysAgo;
+            })->count(),
         ];
 
         return response()->json([
-            'data' => $requests->items(),
-            'current_page' => $requests->currentPage(),
-            'per_page' => $requests->perPage(),
-            'total' => $requests->total(),
-            'last_page' => $requests->lastPage(),
-            'from' => $requests->firstItem(),
-            'to' => $requests->lastItem(),
+            'data' => $paginated,
+            'current_page' => (int) $page,
+            'per_page' => (int) $perPage,
+            'total' => $total,
+            'last_page' => (int) ceil($total / $perPage),
+            'from' => $total > 0 ? $offset + 1 : null,
+            'to' => $total > 0 ? min($offset + $perPage, $total) : null,
             'statistics' => $statistics,
         ]);
     }
