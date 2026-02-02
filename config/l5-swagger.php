@@ -251,7 +251,7 @@ return [
         |--------------------------------------------------------------------------
         */
         'constants' => [
-            'L5_SWAGGER_CONST_HOST' => env('L5_SWAGGER_CONST_HOST', 'https://aeroenix.com/v1'),
+            'L5_SWAGGER_CONST_HOST' => env('L5_SWAGGER_CONST_HOST', 'https://app.bomeqp.com'),
         ],
     ],
 

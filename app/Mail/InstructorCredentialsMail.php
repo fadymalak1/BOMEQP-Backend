@@ -36,7 +36,7 @@ class InstructorCredentialsMail extends Mailable
             // Parse URL to get base domain
             $parsedUrl = parse_url($appUrl);
             $scheme = $parsedUrl['scheme'] ?? 'https';
-            $host = $parsedUrl['host'] ?? 'aeroenix.com';
+            $host = $parsedUrl['host'] ?? 'app.bomeqp.com';
             // Use base domain with /login (without /v1 or /api)
             $this->loginUrl = $scheme . '://' . $host . '/login';
         }

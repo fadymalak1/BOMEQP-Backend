@@ -24,7 +24,7 @@ return [
     | Note: Do not include /api here as routes already have the api prefix.
     |
     */
-    'base_url' => 'https://aeroenix.com/v1',
+    'base_url' => 'https://app.bomeqp.com',
 
     /*
     |--------------------------------------------------------------------------

@@ -10,7 +10,7 @@ use OpenApi\Attributes as OA;
     title: "BOMEQP API"
 )]
 #[OA\Server(
-    url: "https://aeroenix.com/v1/api",
+    url: "https://app.bomeqp.com/api/api",
     description: "Production Server"
 )]
 #[OA\Server(

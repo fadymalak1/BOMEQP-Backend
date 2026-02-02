@@ -7,7 +7,7 @@
     },
     "servers": [
         {
-            "url": "https://aeroenix.com/v1/api",
+            "url": "https://app.bomeqp.com",
             "description": "Production Server"
         },
         {
