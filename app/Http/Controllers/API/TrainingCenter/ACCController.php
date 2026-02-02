@@ -158,7 +158,7 @@ class ACCController extends Controller
                     }
                     
                     if ($file && $file->isValid()) {
-                        // Validate file extension (workaround for missing php_fileinfo extension)
+                        // Validate file extension
                         $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
                         $extension = strtolower($file->getClientOriginalExtension());
                         
@@ -171,8 +171,11 @@ class ACCController extends Controller
                             ], 422);
                         }
                         
+                        // Get file size BEFORE moving the file
+                        $fileSize = $file->getSize();
+                        
                         // Validate file size (10MB = 10240 KB)
-                        if ($file->getSize() > 10240 * 1024) {
+                        if ($fileSize > 10240 * 1024) {
                             return response()->json([
                                 'message' => 'File validation failed',
                                 'errors' => [
@@ -188,11 +191,11 @@ class ACCController extends Controller
                             ], 422);
                         }
                         
-                        // Create directory path: authorization/{training_center_id}/{acc_id}/
+                        // Create directory path
                         $directory = 'authorization/' . $trainingCenter->id . '/' . $acc->id;
                         $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
                         
-                        // Store file directly without using Flysystem (workaround for missing php_fileinfo)
+                        // Store file
                         $storagePath = storage_path('app/public/' . $directory);
                         if (!file_exists($storagePath)) {
                             mkdir($storagePath, 0755, true);
@@ -200,15 +203,13 @@ class ACCController extends Controller
                         $fullPath = $storagePath . '/' . $fileName;
                         move_uploaded_file($file->getRealPath(), $fullPath);
                         
-                        // Generate URL manually (workaround to avoid initializing Flysystem disk)
+                        // Generate URL
                         $storageUrl = config('filesystems.disks.public.url', str_replace('/api', '', rtrim(config('app.url'), '/')) . '/storage/app/public');
                         $url = rtrim($storageUrl, '/') . '/' . $directory . '/' . $fileName;
                         
-                        // Get MIME type from client or extension (workaround for missing php_fileinfo)
+                        // Get MIME type
                         $mimeType = $file->getClientMimeType();
                         if (!$mimeType) {
-                            // Fallback MIME type mapping based on extension
-                            $extension = strtolower($file->getClientOriginalExtension());
                             $mimeTypes = [
                                 'pdf' => 'application/pdf',
                                 'doc' => 'application/msword',
@@ -225,7 +226,7 @@ class ACCController extends Controller
                             'url' => $url,
                             'original_name' => $file->getClientOriginalName(),
                             'mime_type' => $mimeType,
-                            'size' => $file->getSize(),
+                            'size' => $fileSize,  // Use the stored value
                         ];
                     }
                 }
@@ -473,7 +474,7 @@ class ACCController extends Controller
                     }
                     
                     if ($file && $file->isValid()) {
-                        // Validate file extension (workaround for missing php_fileinfo extension)
+                        // Validate file extension
                         $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
                         $extension = strtolower($file->getClientOriginalExtension());
                         
@@ -486,8 +487,11 @@ class ACCController extends Controller
                             ], 422);
                         }
                         
+                        // Get file size BEFORE moving the file
+                        $fileSize = $file->getSize();
+                        
                         // Validate file size (10MB = 10240 KB)
-                        if ($file->getSize() > 10240 * 1024) {
+                        if ($fileSize > 10240 * 1024) {
                             return response()->json([
                                 'message' => 'File validation failed',
                                 'errors' => [
@@ -503,11 +507,11 @@ class ACCController extends Controller
                             ], 422);
                         }
                         
-                        // Create directory path: authorization/{training_center_id}/{acc_id}/
+                        // Create directory path
                         $directory = 'authorization/' . $trainingCenter->id . '/' . $acc->id;
                         $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
                         
-                        // Store file directly without using Flysystem (workaround for missing php_fileinfo)
+                        // Store file
                         $storagePath = storage_path('app/public/' . $directory);
                         if (!file_exists($storagePath)) {
                             mkdir($storagePath, 0755, true);
@@ -515,15 +519,13 @@ class ACCController extends Controller
                         $fullPath = $storagePath . '/' . $fileName;
                         move_uploaded_file($file->getRealPath(), $fullPath);
                         
-                        // Generate URL manually (workaround to avoid initializing Flysystem disk)
+                        // Generate URL
                         $storageUrl = config('filesystems.disks.public.url', str_replace('/api', '', rtrim(config('app.url'), '/')) . '/storage/app/public');
                         $url = rtrim($storageUrl, '/') . '/' . $directory . '/' . $fileName;
                         
-                        // Get MIME type from client or extension (workaround for missing php_fileinfo)
+                        // Get MIME type
                         $mimeType = $file->getClientMimeType();
                         if (!$mimeType) {
-                            // Fallback MIME type mapping based on extension
-                            $extension = strtolower($file->getClientOriginalExtension());
                             $mimeTypes = [
                                 'pdf' => 'application/pdf',
                                 'doc' => 'application/msword',
@@ -540,7 +542,7 @@ class ACCController extends Controller
                             'url' => $url,
                             'original_name' => $file->getClientOriginalName(),
                             'mime_type' => $mimeType,
-                            'size' => $file->getSize(),
+                            'size' => $fileSize,  // Use the stored value
                         ];
                     }
                 }
