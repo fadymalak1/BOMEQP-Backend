@@ -162,7 +162,7 @@ class ACCController extends Controller
                         $validator = \Illuminate\Support\Facades\Validator::make(
                             ['file' => $file],
                             [
-                                'file' => 'required|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:10240',
+                                'file' => 'required|file|mimetypes:application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png|max:10240',
                             ]
                         );
                         
@@ -419,7 +419,7 @@ class ACCController extends Controller
                         $validator = \Illuminate\Support\Facades\Validator::make(
                             ['file' => $file],
                             [
-                                'file' => 'required|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:10240',
+                                'file' => 'required|file|mimetypes:application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png|max:10240',
                             ]
                         );
                         

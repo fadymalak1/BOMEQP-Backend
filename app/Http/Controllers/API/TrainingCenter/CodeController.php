@@ -241,12 +241,12 @@ class CodeController extends Controller
             'payment_method' => 'required|in:credit_card,manual_payment',
             'payment_intent_id' => 'required_if:payment_method,credit_card|nullable|string|max:255',
             'payment_method_id' => 'nullable|string|max:255',
-            'payment_receipt' => 'required_if:payment_method,manual_payment|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
+            'payment_receipt' => 'required_if:payment_method,manual_payment|nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240',
             'payment_amount' => 'required_if:payment_method,manual_payment|nullable|numeric|min:0',
         ], [
             'payment_receipt.required_if' => 'Payment receipt is required for manual payment. Please ensure you are sending the file as multipart/form-data. Do NOT manually set Content-Type header when using FormData.',
             'payment_receipt.file' => 'Payment receipt must be a valid file upload. Ensure you are using multipart/form-data and not manually setting Content-Type header.',
-            'payment_receipt.mimes' => 'Payment receipt must be a PDF, JPG, JPEG, or PNG file.',
+            'payment_receipt.mimetypes' => 'Payment receipt must be a PDF, JPG, JPEG, or PNG file.',
             'payment_receipt.max' => 'Payment receipt file size must not exceed 10MB.',
             'payment_amount.required_if' => 'Payment amount is required for manual payment.',
             'payment_amount.numeric' => 'Payment amount must be a valid number.',
@@ -378,15 +378,16 @@ class CodeController extends Controller
     #[OA\Get(
         path: "/training-center/codes/inventory",
         summary: "Get certificate codes inventory",
-        description: "Get all certificate codes owned by the training center with optional filtering.",
+        description: "Get all certificate codes owned by the training center with optional filtering, search, and pagination.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "acc_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
             new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["available", "used", "expired"]), example: "available"),
-            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
-            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), description: "Search by code, course name, or batch ID"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer", default: 10), example: 10),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer", default: 1), example: 1)
         ],
         responses: [
             new OA\Response(
@@ -394,8 +395,14 @@ class CodeController extends Controller
                 description: "Inventory retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "codes", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "pagination", type: "object")
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(property: "from", type: "integer", nullable: true),
+                        new OA\Property(property: "to", type: "integer", nullable: true),
+                        new OA\Property(property: "summary", type: "object")
                     ]
                 )
             ),
@@ -427,7 +434,22 @@ class CodeController extends Controller
             $query->where('status', $request->status);
         }
 
-        $codes = $query->orderBy('created_at', 'desc')->get();
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('code', 'like', "%{$searchTerm}%")
+                    ->orWhere('batch_id', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                        $courseQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('name_ar', 'like', "%{$searchTerm}%")
+                            ->orWhere('code', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $codes = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         $summary = [
             'total' => CertificateCode::where('training_center_id', $trainingCenter->id)->count(),
@@ -440,7 +462,13 @@ class CodeController extends Controller
         ];
 
         return response()->json([
-            'codes' => $codes,
+            'data' => $codes->items(),
+            'current_page' => $codes->currentPage(),
+            'per_page' => $codes->perPage(),
+            'total' => $codes->total(),
+            'last_page' => $codes->lastPage(),
+            'from' => $codes->firstItem(),
+            'to' => $codes->lastItem(),
             'summary' => $summary,
         ]);
     }
@@ -448,13 +476,15 @@ class CodeController extends Controller
     #[OA\Get(
         path: "/training-center/codes/batches",
         summary: "Get code purchase batches",
-        description: "Get all code purchase batches for the training center.",
+        description: "Get all code purchase batches for the training center with pagination and search.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "acc_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
-            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
-            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
+            new OA\Parameter(name: "payment_status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "completed"]), description: "Filter by payment status"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), description: "Search by batch ID, course name, or amount"),
+            new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer", default: 10), example: 10),
+            new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer", default: 1), example: 1)
         ],
         responses: [
             new OA\Response(
@@ -462,8 +492,13 @@ class CodeController extends Controller
                 description: "Batches retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "batches", type: "array", items: new OA\Items(type: "object")),
-                        new OA\Property(property: "pagination", type: "object")
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(property: "from", type: "integer", nullable: true),
+                        new OA\Property(property: "to", type: "integer", nullable: true)
                     ]
                 )
             ),
@@ -480,12 +515,44 @@ class CodeController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $batches = CodeBatch::where('training_center_id', $trainingCenter->id)
-            ->with('certificateCodes')
-            ->orderBy('purchase_date', 'desc')
-            ->get();
+        $query = CodeBatch::where('training_center_id', $trainingCenter->id)
+            ->with(['certificateCodes', 'course', 'acc']);
 
-        return response()->json(['batches' => $batches]);
+        if ($request->has('acc_id')) {
+            $query->where('acc_id', $request->acc_id);
+        }
+
+        if ($request->has('payment_status')) {
+            $query->where('payment_status', $request->payment_status);
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('id', 'like', "%{$searchTerm}%")
+                    ->orWhere('total_amount', 'like', "%{$searchTerm}%")
+                    ->orWhere('quantity', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                        $courseQuery->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('name_ar', 'like', "%{$searchTerm}%")
+                            ->orWhere('code', 'like', "%{$searchTerm}%");
+                    });
+            });
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $batches = $query->orderBy('purchase_date', 'desc')->paginate($perPage);
+
+        return response()->json([
+            'data' => $batches->items(),
+            'current_page' => $batches->currentPage(),
+            'per_page' => $batches->perPage(),
+            'total' => $batches->total(),
+            'last_page' => $batches->lastPage(),
+            'from' => $batches->firstItem(),
+            'to' => $batches->lastItem(),
+        ]);
     }
 }
 

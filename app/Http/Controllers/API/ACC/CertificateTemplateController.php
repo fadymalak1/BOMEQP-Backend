@@ -23,16 +23,28 @@ class CertificateTemplateController extends Controller
     #[OA\Get(
         path: "/acc/certificate-templates",
         summary: "List certificate templates",
-        description: "Get all certificate templates for the authenticated ACC.",
+        description: "Get all certificate templates for the authenticated ACC with pagination and search.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by template name"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["active", "inactive"]), description: "Filter by template status"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 10), example: 10),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 1), example: 1)
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "Templates retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "templates", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(property: "from", type: "integer", nullable: true),
+                        new OA\Property(property: "to", type: "integer", nullable: true)
                     ]
                 )
             ),
@@ -49,12 +61,24 @@ class CertificateTemplateController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $templates = CertificateTemplate::where('acc_id', $acc->id)
-            ->with(['category', 'course', 'courses'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $query = CertificateTemplate::where('acc_id', $acc->id)
+            ->with(['category', 'course', 'courses']);
 
-        return response()->json(['templates' => $templates]);
+        // Filter by status if provided
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where('name', 'like', "%{$searchTerm}%");
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $templates = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        return response()->json($templates);
     }
 
     #[OA\Post(
@@ -473,7 +497,7 @@ new OA\Property(
         $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
 
         $request->validate([
-            'background_image' => 'required|image|mimes:jpeg,jpg,png|max:10240', // 10MB max
+            'background_image' => 'required|image|mimetypes:image/jpeg,image/png|max:10240', // 10MB max
         ]);
 
         try {

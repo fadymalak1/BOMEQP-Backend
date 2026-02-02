@@ -151,16 +151,16 @@ class ProfileController extends Controller
             'date_of_birth' => 'sometimes|date|before:today',
             'country' => 'sometimes|string|max:255',
             'city' => 'sometimes|string|max:255',
-            'photo' => 'nullable|image|mimes:jpeg,jpg,png|max:5120', // Max 5MB
-            'cv' => 'nullable|file|mimes:pdf|max:10240',
-            'passport' => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:10240',
+            'photo' => 'nullable|image|mimetypes:image/jpeg,image/png|max:5120', // Max 5MB
+            'cv' => 'nullable|file|mimetypes:application/pdf|max:10240',
+            'passport' => 'nullable|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240',
             'certificates' => 'nullable|array',
             'certificates.*.name' => 'required_with:certificates|string|max:255',
             'certificates.*.issue_date' => 'required_with:certificates|date',
             'certificates.*.url' => 'nullable|url|max:500',
-            'certificates.*.certificate_file' => 'nullable|file|mimes:pdf|max:10240',
+            'certificates.*.certificate_file' => 'nullable|file|mimetypes:application/pdf|max:10240',
             'certificate_files' => 'nullable|array',
-            'certificate_files.*' => 'nullable|file|mimes:pdf|max:10240',
+            'certificate_files.*' => 'nullable|file|mimetypes:application/pdf|max:10240',
             'specializations' => 'nullable|array',
             'languages' => 'nullable|array',
         ]);

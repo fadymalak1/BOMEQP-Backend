@@ -304,7 +304,7 @@ class ProfileController extends Controller
                 'primary_contact_email' => 'sometimes|email|max:255',
                 'primary_contact_country' => 'sometimes|string|max:255',
                 'primary_contact_mobile' => 'sometimes|string|max:255',
-                'primary_contact_passport' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                'primary_contact_passport' => 'sometimes|nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240',
                 
                 // Secondary Contact (Required)
                 'secondary_contact_title' => 'sometimes|in:Mr.,Mrs.,Eng.,Prof.',
@@ -313,11 +313,11 @@ class ProfileController extends Controller
                 'secondary_contact_email' => 'sometimes|email|max:255',
                 'secondary_contact_country' => 'sometimes|string|max:255',
                 'secondary_contact_mobile' => 'sometimes|string|max:255',
-                'secondary_contact_passport' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                'secondary_contact_passport' => 'sometimes|nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240',
                 
                 // Additional Information
                 'company_gov_registry_number' => 'sometimes|string|max:255',
-                'company_registration_certificate' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                'company_registration_certificate' => 'sometimes|nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240',
                 'how_did_you_hear_about_us' => 'nullable|string',
                 'agreed_to_receive_communications' => 'sometimes|boolean',
                 'agreed_to_terms_and_conditions' => 'sometimes|boolean',
@@ -325,7 +325,7 @@ class ProfileController extends Controller
                 // Additional Information
                 'website' => 'sometimes|nullable|url|max:255',
                 'logo_url' => 'sometimes|nullable|url|max:255',
-                'logo' => 'sometimes|nullable|image|mimes:jpeg,jpg,png|max:5120', // Max 5MB
+                'logo' => 'sometimes|nullable|image|mimetypes:image/jpeg,image/png|max:5120', // Max 5MB
                 'stripe_account_id' => [
                     'sometimes',
                     'nullable',
@@ -342,7 +342,7 @@ class ProfileController extends Controller
                 'documents' => 'sometimes|nullable|array',
                 'documents.*.id' => 'sometimes|nullable|integer|exists:acc_documents,id',
                 'documents.*.document_type' => 'sometimes|nullable|in:license,registration,certificate,other',
-                'documents.*.file' => 'sometimes|nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // Max 10MB
+                'documents.*.file' => 'sometimes|nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240', // Max 10MB
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([

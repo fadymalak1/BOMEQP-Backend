@@ -166,8 +166,8 @@ class AuthController extends Controller
                 
                 // Additional Information
                 'company_gov_registry_number' => 'required|string|max:255',
-                'company_registration_certificate' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
-                'facility_floorplan' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                'company_registration_certificate' => 'required|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240', // 10MB max
+                'facility_floorplan' => 'nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240', // 10MB max
                 'interested_fields' => 'nullable|array',
                 'interested_fields.*' => 'in:QHSE,Food Safety,Management',
                 'how_did_you_hear_about_us' => 'nullable|string|max:500',
@@ -208,7 +208,7 @@ class AuthController extends Controller
                 'primary_contact_email' => 'required|email|max:255',
                 'primary_contact_country' => 'required|string|max:255',
                 'primary_contact_mobile' => 'required|string|max:255',
-                'primary_contact_passport' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                'primary_contact_passport' => 'required|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240', // 10MB max
                 
                 // Secondary Contact (required for ACC)
                 'secondary_contact_title' => 'required|in:Mr.,Mrs.,Eng.,Prof.',
@@ -217,11 +217,11 @@ class AuthController extends Controller
                 'secondary_contact_email' => 'required|email|max:255',
                 'secondary_contact_country' => 'required|string|max:255',
                 'secondary_contact_mobile' => 'required|string|max:255',
-                'secondary_contact_passport' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                'secondary_contact_passport' => 'required|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240', // 10MB max
                 
                 // Additional Information
                 'company_gov_registry_number' => 'required|string|max:255',
-                'company_registration_certificate' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240', // 10MB max
+                'company_registration_certificate' => 'required|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240', // 10MB max
                 'how_did_you_hear_about_us' => 'nullable|string|max:500',
                 
                 // Agreements

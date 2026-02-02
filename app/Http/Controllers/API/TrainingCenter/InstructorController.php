@@ -159,8 +159,8 @@ class InstructorController extends Controller
             'languages' => 'required|array|min:1',
             'languages.*' => 'string|max:255',
             'is_assessor' => 'required|boolean',
-            'cv' => 'required|file|mimes:pdf|max:10240',
-            'passport' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240',
+            'cv' => 'required|file|mimetypes:application/pdf|max:10240',
+            'passport' => 'required|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240',
         ]);
 
         $user = $request->user();
@@ -282,8 +282,8 @@ class InstructorController extends Controller
             'languages' => 'required|array|min:1',
             'languages.*' => 'string|max:255',
             'is_assessor' => 'required|boolean',
-            'cv' => 'sometimes|file|mimes:pdf|max:10240',
-            'passport' => 'sometimes|file|mimes:jpeg,jpg,png,pdf|max:10240',
+            'cv' => 'sometimes|file|mimetypes:application/pdf|max:10240',
+            'passport' => 'sometimes|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240',
         ]);
 
         try {

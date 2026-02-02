@@ -22,20 +22,32 @@ class CodeController extends Controller
     #[OA\Get(
         path: "/acc/code-batches/pending-payments",
         summary: "Get pending manual payment requests",
-        description: "Get all pending manual payment requests for code purchases from this ACC.",
+        description: "Get all pending manual payment requests for code purchases from this ACC with pagination and search.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by batch ID, training center name/email, course name, or amount"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 10), example: 10),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 1), example: 1)
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "Pending requests retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "batches", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(property: "from", type: "integer", nullable: true),
+                        new OA\Property(property: "to", type: "integer", nullable: true)
                     ]
                 )
             ),
-            new OA\Response(response: 401, description: "Unauthenticated")
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
         ]
     )]
     public function pendingPayments(Request $request)
@@ -48,15 +60,36 @@ class CodeController extends Controller
         }
 
         try {
-            $batches = CodeBatch::where('acc_id', $acc->id)
+            $query = CodeBatch::where('acc_id', $acc->id)
                 ->where('payment_method', 'manual_payment')
                 ->where('payment_status', 'pending')
-                ->with(['trainingCenter', 'certificateCodes', 'course'])
-                ->orderBy('created_at', 'desc')
-                ->get();
+                ->with(['trainingCenter', 'certificateCodes', 'course']);
+
+            // Search functionality
+            if ($request->has('search') && !empty($request->search)) {
+                $searchTerm = $request->search;
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('id', 'like', "%{$searchTerm}%")
+                        ->orWhere('total_amount', 'like', "%{$searchTerm}%")
+                        ->orWhere('payment_amount', 'like', "%{$searchTerm}%")
+                        ->orWhere('quantity', 'like', "%{$searchTerm}%")
+                        ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                            $tcQuery->where('name', 'like', "%{$searchTerm}%")
+                                ->orWhere('email', 'like', "%{$searchTerm}%");
+                        })
+                        ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
+                            $courseQuery->where('name', 'like', "%{$searchTerm}%")
+                                ->orWhere('name_ar', 'like', "%{$searchTerm}%")
+                                ->orWhere('code', 'like', "%{$searchTerm}%");
+                        });
+                });
+            }
+
+            $perPage = $request->get('per_page', 10);
+            $batches = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
             return response()->json([
-                'batches' => $batches->map(function ($batch) {
+                'data' => $batches->getCollection()->map(function ($batch) {
                     return [
                         'id' => $batch->id,
                         'training_center' => $batch->trainingCenter ? [
@@ -78,7 +111,13 @@ class CodeController extends Controller
                         'created_at' => $batch->created_at,
                         'updated_at' => $batch->updated_at,
                     ];
-                })
+                }),
+                'current_page' => $batches->currentPage(),
+                'per_page' => $batches->perPage(),
+                'total' => $batches->total(),
+                'last_page' => $batches->lastPage(),
+                'from' => $batches->firstItem(),
+                'to' => $batches->lastItem(),
             ]);
         } catch (\Exception $e) {
             \Log::error('Failed to get pending payments', [

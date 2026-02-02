@@ -217,8 +217,8 @@ class TraineeController extends Controller
             'phone' => 'required|string|max:255',
             'nationality' => 'required|string|max:255',
             'id_number' => 'required|string|unique:trainees,id_number',
-            'id_image' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240', // 10MB max
-            'card_image' => 'required|file|mimes:jpeg,jpg,png,pdf|max:10240', // 10MB max
+            'id_image' => 'required|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240', // 10MB max
+            'card_image' => 'required|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240', // 10MB max
             'enrolled_classes' => 'nullable|array',
             'enrolled_classes.*' => 'exists:training_classes,id',
             'status' => 'sometimes|in:active,inactive,suspended',
@@ -309,8 +309,8 @@ class TraineeController extends Controller
             'phone' => 'required|string|max:255',
             'nationality' => 'required|string|max:255',
             'id_number' => 'required|string|unique:trainees,id_number,' . $id,
-            'id_image' => 'sometimes|file|mimes:jpeg,jpg,png,pdf|max:10240',
-            'card_image' => 'sometimes|file|mimes:jpeg,jpg,png,pdf|max:10240',
+            'id_image' => 'sometimes|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240',
+            'card_image' => 'sometimes|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240',
             'enrolled_classes' => 'nullable|array',
             'enrolled_classes.*' => 'exists:training_classes,id',
             'status' => 'sometimes|in:active,inactive,suspended',

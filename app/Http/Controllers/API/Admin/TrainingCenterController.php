@@ -284,29 +284,54 @@ class TrainingCenterController extends Controller
     #[OA\Get(
         path: "/admin/training-centers/applications",
         summary: "Get training center applications",
-        description: "Get all pending training center applications for review.",
+        description: "Get all pending training center applications for review with pagination and search.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by training center name, legal name, email, registration number, country, or city"),
+            new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 10), example: 10),
+            new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer", default: 1), example: 1)
+        ],
         responses: [
             new OA\Response(
                 response: 200,
                 description: "Applications retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "applications", type: "array", items: new OA\Items(type: "object"))
+                        new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "current_page", type: "integer"),
+                        new OA\Property(property: "per_page", type: "integer"),
+                        new OA\Property(property: "total", type: "integer"),
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(property: "from", type: "integer", nullable: true),
+                        new OA\Property(property: "to", type: "integer", nullable: true)
                     ]
                 )
             ),
             new OA\Response(response: 401, description: "Unauthenticated")
         ]
     )]
-    public function applications()
+    public function applications(Request $request)
     {
-        $applications = TrainingCenter::where('status', 'pending')
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $query = TrainingCenter::where('status', 'pending');
 
-        return response()->json(['applications' => $applications]);
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                    ->orWhere('legal_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhere('registration_number', 'like', "%{$searchTerm}%")
+                    ->orWhere('country', 'like', "%{$searchTerm}%")
+                    ->orWhere('city', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 10);
+        $applications = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        return response()->json($applications);
     }
 
     #[OA\Put(

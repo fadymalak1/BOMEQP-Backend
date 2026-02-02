@@ -204,8 +204,8 @@ class ProfileController extends Controller
                 'secondary_contact_mobile' => 'nullable|string|max:255|required_if:has_secondary_contact,true',
                 // Additional Information
                 'company_gov_registry_number' => 'sometimes|string|max:255',
-                'company_registration_certificate' => 'sometimes|nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
-                'facility_floorplan' => 'nullable|file|mimes:pdf,jpeg,jpg,png|max:10240',
+                'company_registration_certificate' => 'sometimes|nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240',
+                'facility_floorplan' => 'nullable|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240',
                 'interested_fields' => 'nullable|array',
                 'interested_fields.*' => 'string|in:QHSE,Food Safety,Management',
                 'how_did_you_hear_about_us' => 'nullable|string',
@@ -213,7 +213,7 @@ class ProfileController extends Controller
                 'legal_name' => 'sometimes|string|max:255',
                 'registration_number' => 'sometimes|string|max:255|unique:training_centers,registration_number,' . $trainingCenter->id,
                 'logo_url' => 'nullable|string|url|max:500',
-                'logo' => 'sometimes|nullable|image|mimes:jpeg,jpg,png|max:5120', // Max 5MB
+                'logo' => 'sometimes|nullable|image|mimetypes:image/jpeg,image/png|max:5120', // Max 5MB
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
