@@ -158,18 +158,26 @@ class ACCController extends Controller
                     }
                     
                     if ($file && $file->isValid()) {
-                        // Validate file
-                        $validator = \Illuminate\Support\Facades\Validator::make(
-                            ['file' => $file],
-                            [
-                                'file' => 'required|file|mimetypes:application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png|max:10240',
-                            ]
-                        );
+                        // Validate file extension (workaround for missing php_fileinfo extension)
+                        $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+                        $extension = strtolower($file->getClientOriginalExtension());
                         
-                        if ($validator->fails()) {
+                        if (!in_array($extension, $allowedExtensions)) {
                             return response()->json([
                                 'message' => 'File validation failed',
-                                'errors' => $validator->errors()
+                                'errors' => [
+                                    'file' => ['The file must be a PDF, DOC, DOCX, JPG, JPEG, or PNG file.']
+                                ]
+                            ], 422);
+                        }
+                        
+                        // Validate file size (10MB = 10240 KB)
+                        if ($file->getSize() > 10240 * 1024) {
+                            return response()->json([
+                                'message' => 'File validation failed',
+                                'errors' => [
+                                    'file' => ['The file may not be greater than 10MB.']
+                                ]
                             ], 422);
                         }
                         
@@ -415,18 +423,26 @@ class ACCController extends Controller
                     }
                     
                     if ($file && $file->isValid()) {
-                        // Validate file
-                        $validator = \Illuminate\Support\Facades\Validator::make(
-                            ['file' => $file],
-                            [
-                                'file' => 'required|file|mimetypes:application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png|max:10240',
-                            ]
-                        );
+                        // Validate file extension (workaround for missing php_fileinfo extension)
+                        $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+                        $extension = strtolower($file->getClientOriginalExtension());
                         
-                        if ($validator->fails()) {
+                        if (!in_array($extension, $allowedExtensions)) {
                             return response()->json([
                                 'message' => 'File validation failed',
-                                'errors' => $validator->errors()
+                                'errors' => [
+                                    'file' => ['The file must be a PDF, DOC, DOCX, JPG, JPEG, or PNG file.']
+                                ]
+                            ], 422);
+                        }
+                        
+                        // Validate file size (10MB = 10240 KB)
+                        if ($file->getSize() > 10240 * 1024) {
+                            return response()->json([
+                                'message' => 'File validation failed',
+                                'errors' => [
+                                    'file' => ['The file may not be greater than 10MB.']
+                                ]
                             ], 422);
                         }
                         
