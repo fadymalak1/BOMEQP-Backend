@@ -123,15 +123,18 @@ class ACCController extends Controller
 
             $acc = ACC::findOrFail($id);
 
-            // Check if authorization already exists
+            // Check if authorization already exists with pending or approved status
+            // Allow new requests if previous one was rejected or returned
             $existing = TrainingCenterAccAuthorization::where('training_center_id', $trainingCenter->id)
                 ->where('acc_id', $acc->id)
+                ->whereIn('status', ['pending', 'approved'])
                 ->first();
 
             if ($existing) {
                 return response()->json([
                     'message' => 'Authorization request already exists',
-                    'authorization_id' => $existing->id
+                    'authorization_id' => $existing->id,
+                    'authorization' => $existing
                 ], 400);
             }
 
@@ -438,9 +441,11 @@ class ACCController extends Controller
             $accId = $request->input('acc_id');
             $acc = ACC::findOrFail($accId);
 
-            // Check if authorization already exists
+            // Check if authorization already exists with pending or approved status
+            // Allow new requests if previous one was rejected or returned
             $existing = TrainingCenterAccAuthorization::where('training_center_id', $trainingCenter->id)
                 ->where('acc_id', $acc->id)
+                ->whereIn('status', ['pending', 'approved'])
                 ->first();
 
             if ($existing) {
