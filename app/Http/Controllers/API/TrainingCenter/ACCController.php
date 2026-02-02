@@ -192,15 +192,39 @@ class ACCController extends Controller
                         $directory = 'authorization/' . $trainingCenter->id . '/' . $acc->id;
                         $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
                         
-                        // Store file in public storage
-                        $path = $file->storeAs($directory, $fileName, 'public');
-                        $url = Storage::disk('public')->url($path);
+                        // Store file directly without using Flysystem (workaround for missing php_fileinfo)
+                        $storagePath = storage_path('app/public/' . $directory);
+                        if (!file_exists($storagePath)) {
+                            mkdir($storagePath, 0755, true);
+                        }
+                        $fullPath = $storagePath . '/' . $fileName;
+                        move_uploaded_file($file->getRealPath(), $fullPath);
+                        
+                        // Generate URL manually (workaround to avoid initializing Flysystem disk)
+                        $storageUrl = config('filesystems.disks.public.url', str_replace('/api', '', rtrim(config('app.url'), '/')) . '/storage/app/public');
+                        $url = rtrim($storageUrl, '/') . '/' . $directory . '/' . $fileName;
+                        
+                        // Get MIME type from client or extension (workaround for missing php_fileinfo)
+                        $mimeType = $file->getClientMimeType();
+                        if (!$mimeType) {
+                            // Fallback MIME type mapping based on extension
+                            $extension = strtolower($file->getClientOriginalExtension());
+                            $mimeTypes = [
+                                'pdf' => 'application/pdf',
+                                'doc' => 'application/msword',
+                                'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                'jpg' => 'image/jpeg',
+                                'jpeg' => 'image/jpeg',
+                                'png' => 'image/png',
+                            ];
+                            $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
+                        }
                         
                         $documents[] = [
                             'type' => $documentType,
                             'url' => $url,
                             'original_name' => $file->getClientOriginalName(),
-                            'mime_type' => $file->getMimeType(),
+                            'mime_type' => $mimeType,
                             'size' => $file->getSize(),
                         ];
                     }
@@ -223,14 +247,40 @@ class ACCController extends Controller
                             
                             $directory = 'authorization/' . $trainingCenter->id . '/' . $acc->id;
                             $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
-                            $path = $file->storeAs($directory, $fileName, 'public');
-                            $url = Storage::disk('public')->url($path);
+                            
+                            // Store file directly without using Flysystem (workaround for missing php_fileinfo)
+                            $storagePath = storage_path('app/public/' . $directory);
+                            if (!file_exists($storagePath)) {
+                                mkdir($storagePath, 0755, true);
+                            }
+                            $fullPath = $storagePath . '/' . $fileName;
+                            move_uploaded_file($file->getRealPath(), $fullPath);
+                            
+                            // Generate URL
+                            $relativePath = $directory . '/' . $fileName;
+                            $url = Storage::disk('public')->url($relativePath);
+                            
+                            // Get MIME type from client or extension (workaround for missing php_fileinfo)
+                            $mimeType = $file->getClientMimeType();
+                            if (!$mimeType) {
+                                // Fallback MIME type mapping based on extension
+                                $extension = strtolower($file->getClientOriginalExtension());
+                                $mimeTypes = [
+                                    'pdf' => 'application/pdf',
+                                    'doc' => 'application/msword',
+                                    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                    'jpg' => 'image/jpeg',
+                                    'jpeg' => 'image/jpeg',
+                                    'png' => 'image/png',
+                                ];
+                                $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
+                            }
                             
                             $documents[] = [
                                 'type' => $documentType,
                                 'url' => $url,
                                 'original_name' => $file->getClientOriginalName(),
-                                'mime_type' => $file->getMimeType(),
+                                'mime_type' => $mimeType,
                                 'size' => $file->getSize(),
                             ];
                         }
@@ -457,15 +507,39 @@ class ACCController extends Controller
                         $directory = 'authorization/' . $trainingCenter->id . '/' . $acc->id;
                         $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
                         
-                        // Store file in public storage
-                        $path = $file->storeAs($directory, $fileName, 'public');
-                        $url = Storage::disk('public')->url($path);
+                        // Store file directly without using Flysystem (workaround for missing php_fileinfo)
+                        $storagePath = storage_path('app/public/' . $directory);
+                        if (!file_exists($storagePath)) {
+                            mkdir($storagePath, 0755, true);
+                        }
+                        $fullPath = $storagePath . '/' . $fileName;
+                        move_uploaded_file($file->getRealPath(), $fullPath);
+                        
+                        // Generate URL manually (workaround to avoid initializing Flysystem disk)
+                        $storageUrl = config('filesystems.disks.public.url', str_replace('/api', '', rtrim(config('app.url'), '/')) . '/storage/app/public');
+                        $url = rtrim($storageUrl, '/') . '/' . $directory . '/' . $fileName;
+                        
+                        // Get MIME type from client or extension (workaround for missing php_fileinfo)
+                        $mimeType = $file->getClientMimeType();
+                        if (!$mimeType) {
+                            // Fallback MIME type mapping based on extension
+                            $extension = strtolower($file->getClientOriginalExtension());
+                            $mimeTypes = [
+                                'pdf' => 'application/pdf',
+                                'doc' => 'application/msword',
+                                'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                'jpg' => 'image/jpeg',
+                                'jpeg' => 'image/jpeg',
+                                'png' => 'image/png',
+                            ];
+                            $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
+                        }
                         
                         $documents[] = [
                             'type' => $documentType,
                             'url' => $url,
                             'original_name' => $file->getClientOriginalName(),
-                            'mime_type' => $file->getMimeType(),
+                            'mime_type' => $mimeType,
                             'size' => $file->getSize(),
                         ];
                     }
@@ -488,14 +562,40 @@ class ACCController extends Controller
                             
                             $directory = 'authorization/' . $trainingCenter->id . '/' . $acc->id;
                             $fileName = Str::random(20) . '.' . $file->getClientOriginalExtension();
-                            $path = $file->storeAs($directory, $fileName, 'public');
-                            $url = Storage::disk('public')->url($path);
+                            
+                            // Store file directly without using Flysystem (workaround for missing php_fileinfo)
+                            $storagePath = storage_path('app/public/' . $directory);
+                            if (!file_exists($storagePath)) {
+                                mkdir($storagePath, 0755, true);
+                            }
+                            $fullPath = $storagePath . '/' . $fileName;
+                            move_uploaded_file($file->getRealPath(), $fullPath);
+                            
+                            // Generate URL
+                            $relativePath = $directory . '/' . $fileName;
+                            $url = Storage::disk('public')->url($relativePath);
+                            
+                            // Get MIME type from client or extension (workaround for missing php_fileinfo)
+                            $mimeType = $file->getClientMimeType();
+                            if (!$mimeType) {
+                                // Fallback MIME type mapping based on extension
+                                $extension = strtolower($file->getClientOriginalExtension());
+                                $mimeTypes = [
+                                    'pdf' => 'application/pdf',
+                                    'doc' => 'application/msword',
+                                    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                    'jpg' => 'image/jpeg',
+                                    'jpeg' => 'image/jpeg',
+                                    'png' => 'image/png',
+                                ];
+                                $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
+                            }
                             
                             $documents[] = [
                                 'type' => $documentType,
                                 'url' => $url,
                                 'original_name' => $file->getClientOriginalName(),
-                                'mime_type' => $file->getMimeType(),
+                                'mime_type' => $mimeType,
                                 'size' => $file->getSize(),
                             ];
                         }
