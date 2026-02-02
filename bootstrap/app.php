@@ -10,6 +10,7 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        // Removed apiPrefix: '' - let Laravel use default 'api' prefix
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
@@ -30,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], 422);
             }
         });
+
 
         // Handle authentication exceptions for API routes - return JSON instead of redirecting
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {

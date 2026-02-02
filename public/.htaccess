@@ -1,6 +1,26 @@
+<IfModule mod_headers.c>
+    # Allow from localhost for development
+    SetEnvIf Origin "http(s)?://(localhost|127\.0\.0\.1)(:[0-9]+)?$" AccessControlAllowOrigin=$0
+    Header set Access-Control-Allow-Origin %{AccessControlAllowOrigin}e env=AccessControlAllowOrigin
+    
+    # Alternative: Allow all origins (ONLY for testing, NOT recommended for production)
+    # Header set Access-Control-Allow-Origin "*"
+    
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept"
+    Header set Access-Control-Allow-Credentials "true"
+    Header set Access-Control-Max-Age "3600"
+    
+    # Handle preflight OPTIONS requests
+    RewriteEngine On
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ $1 [R=200,L]
+</IfModule>
+
+# Rest of your Laravel .htaccess...
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
-        Options -MultiViews -Indexes +FollowSymLinks
+        Options -MultiViews -Indexes
     </IfModule>
 
     RewriteEngine On
@@ -8,10 +28,6 @@
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-
-    # Handle X-XSRF-Token Header
-    RewriteCond %{HTTP:x-xsrf-token} .
-    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
 
     # Redirect Trailing Slashes If Not A Folder...
     RewriteCond %{REQUEST_FILENAME} !-d
@@ -22,29 +38,4 @@
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
-</IfModule>
-
-# Increase upload limits for file uploads
-<IfModule mod_php.c>
-    php_value upload_max_filesize 10M
-    php_value post_max_size 12M
-    php_value max_execution_time 300
-    php_value max_input_time 300
-    php_value memory_limit 256M
-</IfModule>
-
-# For PHP-FPM
-<IfModule mod_fastcgi.c>
-    <FilesMatch "\.php$">
-        SetHandler "proxy:unix:/var/run/php/php-fpm.sock|fcgi://localhost"
-    </FilesMatch>
-</IfModule>
-
-# Increase upload limits for file uploads
-<IfModule mod_php.c>
-    php_value upload_max_filesize 10M
-    php_value post_max_size 12M
-    php_value max_execution_time 300
-    php_value max_input_time 300
-    php_value memory_limit 256M
 </IfModule>
