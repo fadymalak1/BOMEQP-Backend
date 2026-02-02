@@ -16,7 +16,7 @@ class TrainingCenterController extends Controller
     #[OA\Get(
         path: "/acc/training-centers/requests",
         summary: "List training center authorization requests",
-        description: "Get all training center authorization requests for the authenticated ACC with pagination and search.",
+        description: "Get all training center authorization requests for the authenticated ACC with pagination, search, and statistics.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
@@ -35,7 +35,21 @@ class TrainingCenterController extends Controller
                         new OA\Property(property: "current_page", type: "integer"),
                         new OA\Property(property: "per_page", type: "integer"),
                         new OA\Property(property: "total", type: "integer"),
-                        new OA\Property(property: "last_page", type: "integer")
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(
+                            property: "statistics",
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "total", type: "integer", description: "Total number of requests"),
+                                new OA\Property(property: "pending", type: "integer", description: "Number of pending requests"),
+                                new OA\Property(property: "approved", type: "integer", description: "Number of approved requests"),
+                                new OA\Property(property: "rejected", type: "integer", description: "Number of rejected requests"),
+                                new OA\Property(property: "returned", type: "integer", description: "Number of returned requests"),
+                                new OA\Property(property: "last_7_days", type: "integer", description: "Number of requests in the last 7 days"),
+                                new OA\Property(property: "last_30_days", type: "integer", description: "Number of requests in the last 30 days"),
+                                new OA\Property(property: "pending_older_than_7_days", type: "integer", description: "Number of pending requests older than 7 days")
+                            ]
+                        )
                     ]
                 )
             ),
@@ -52,8 +66,9 @@ class TrainingCenterController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $query = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
-            ->with('trainingCenter');
+        $baseQuery = TrainingCenterAccAuthorization::where('acc_id', $acc->id);
+        $query = clone $baseQuery;
+        $query->with('trainingCenter');
 
         // Filter by status if provided
         if ($request->has('status')) {
@@ -80,7 +95,30 @@ class TrainingCenterController extends Controller
         $perPage = $request->get('per_page', 15);
         $requests = $query->orderBy('request_date', 'desc')->paginate($perPage);
 
-        return response()->json($requests);
+        // Calculate statistics
+        $statistics = [
+            'total' => $baseQuery->count(),
+            'pending' => $baseQuery->where('status', 'pending')->count(),
+            'approved' => $baseQuery->where('status', 'approved')->count(),
+            'rejected' => $baseQuery->where('status', 'rejected')->count(),
+            'returned' => $baseQuery->where('status', 'returned')->count(),
+            'last_7_days' => $baseQuery->where('request_date', '>=', now()->subDays(7))->count(),
+            'last_30_days' => $baseQuery->where('request_date', '>=', now()->subDays(30))->count(),
+            'pending_older_than_7_days' => $baseQuery->where('status', 'pending')
+                ->where('request_date', '<', now()->subDays(7))
+                ->count(),
+        ];
+
+        return response()->json([
+            'data' => $requests->items(),
+            'current_page' => $requests->currentPage(),
+            'per_page' => $requests->perPage(),
+            'total' => $requests->total(),
+            'last_page' => $requests->lastPage(),
+            'from' => $requests->firstItem(),
+            'to' => $requests->lastItem(),
+            'statistics' => $statistics,
+        ]);
     }
 
     public function approve(Request $request, $id)
