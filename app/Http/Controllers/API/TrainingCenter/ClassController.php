@@ -235,11 +235,13 @@ class ClassController extends Controller
             ], 403);
         }
 
-        if ($instructorAccAuthorization->payment_status !== 'paid') {
+        // Strictly check payment status - must be 'paid', not null, not 'pending', not 'failed'
+        if (!$instructorAccAuthorization->payment_status || $instructorAccAuthorization->payment_status !== 'paid') {
             return response()->json([
                 'message' => 'Instructor cannot be assigned to any class until the training center has paid the instructor authorization payment to the ACC.',
-                'payment_status' => $instructorAccAuthorization->payment_status,
+                'payment_status' => $instructorAccAuthorization->payment_status ?? 'not_set',
                 'authorization_price' => $instructorAccAuthorization->authorization_price,
+                'hint' => 'Please complete the payment for instructor authorization before assigning the instructor to a class.'
             ], 403);
         }
 
@@ -403,43 +405,44 @@ class ClassController extends Controller
         $courseId = $request->has('course_id') ? $request->course_id : $class->course_id;
         $instructorId = $request->has('instructor_id') ? $request->instructor_id : $class->instructor_id;
 
-        // If instructor or course is being updated, verify instructor authorization
-        if ($request->has('instructor_id') || $request->has('course_id')) {
-            $course = \App\Models\Course::findOrFail($courseId);
-            
-            // Verify the instructor is authorized to teach this course from the ACC
-            $instructorAuthorization = \App\Models\InstructorCourseAuthorization::where('instructor_id', $instructorId)
-                ->where('course_id', $courseId)
-                ->where('acc_id', $course->acc_id)
-                ->where('status', 'active')
-                ->first();
+        // Always verify instructor authorization and payment status when updating class
+        // This ensures payment is validated even if instructor/course hasn't changed
+        $course = \App\Models\Course::findOrFail($courseId);
+        
+        // Verify the instructor is authorized to teach this course from the ACC
+        $instructorAuthorization = \App\Models\InstructorCourseAuthorization::where('instructor_id', $instructorId)
+            ->where('course_id', $courseId)
+            ->where('acc_id', $course->acc_id)
+            ->where('status', 'active')
+            ->first();
 
-            if (!$instructorAuthorization) {
-                return response()->json([
-                    'message' => 'Instructor is not authorized to teach this course from the ACC.'
-                ], 403);
-            }
+        if (!$instructorAuthorization) {
+            return response()->json([
+                'message' => 'Instructor is not authorized to teach this course from the ACC.'
+            ], 403);
+        }
 
-            // Check if training center has paid for instructor authorization to ACC
-            $instructorAccAuthorization = \App\Models\InstructorAccAuthorization::where('instructor_id', $instructorId)
-                ->where('acc_id', $course->acc_id)
-                ->where('training_center_id', $trainingCenter->id)
-                ->where('status', 'approved')
-                ->first();
+        // Check if training center has paid for instructor authorization to ACC
+        $instructorAccAuthorization = \App\Models\InstructorAccAuthorization::where('instructor_id', $instructorId)
+            ->where('acc_id', $course->acc_id)
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('status', 'approved')
+            ->first();
 
-            if (!$instructorAccAuthorization) {
-                return response()->json([
-                    'message' => 'Instructor authorization to ACC is not approved or does not exist.'
-                ], 403);
-            }
+        if (!$instructorAccAuthorization) {
+            return response()->json([
+                'message' => 'Instructor authorization to ACC is not approved or does not exist.'
+            ], 403);
+        }
 
-            if ($instructorAccAuthorization->payment_status !== 'paid') {
-                return response()->json([
-                    'message' => 'Instructor cannot be assigned to any class until the training center has paid the instructor authorization payment to the ACC.',
-                    'payment_status' => $instructorAccAuthorization->payment_status,
-                    'authorization_price' => $instructorAccAuthorization->authorization_price,
-                ], 403);
-            }
+        // Strictly check payment status - must be 'paid', not null, not 'pending', not 'failed'
+        if (!$instructorAccAuthorization->payment_status || $instructorAccAuthorization->payment_status !== 'paid') {
+            return response()->json([
+                'message' => 'Instructor cannot be assigned to any class until the training center has paid the instructor authorization payment to the ACC.',
+                'payment_status' => $instructorAccAuthorization->payment_status ?? 'not_set',
+                'authorization_price' => $instructorAccAuthorization->authorization_price,
+                'hint' => 'Please complete the payment for instructor authorization before assigning the instructor to a class.'
+            ], 403);
         }
 
         $updateData = $request->only([

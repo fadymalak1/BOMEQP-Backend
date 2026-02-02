@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\TrainingCenter;
 
 use App\Http\Controllers\Controller;
 use App\Models\Certificate;
+use App\Models\CertificateCode;
 use App\Models\CertificateTemplate;
 use App\Models\TrainingClass;
 use App\Services\CertificateGenerationService;
@@ -387,13 +388,13 @@ class CertificateController extends Controller
     #[OA\Post(
         path: "/training-center/certificates",
         summary: "Issue a new certificate",
-        description: "Generate and issue a new certificate. Select ACC and Course, then enter student name. The system will automatically select the appropriate template and generate the certificate.",
+        description: "Generate and issue a new certificate. Requires a valid purchase code that was previously purchased. Select ACC and Course, enter student name, and provide the purchase code. The system will automatically select the appropriate template and generate the certificate. The purchase code will be marked as used.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
-                required: ["acc_id", "course_id", "trainee_name", "issue_date"],
+                required: ["acc_id", "course_id", "trainee_name", "issue_date", "purchase_code"],
                 properties: [
                     new OA\Property(property: "acc_id", type: "integer", example: 1, description: "ID of the authorized ACC"),
                     new OA\Property(property: "course_id", type: "integer", example: 1, description: "ID of the course from the selected ACC"),
@@ -402,7 +403,8 @@ class CertificateController extends Controller
                     new OA\Property(property: "trainee_name", type: "string", example: "John Doe", description: "Student name"),
                     new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
                     new OA\Property(property: "issue_date", type: "string", format: "date", example: "2024-01-15"),
-                    new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2026-01-15")
+                    new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2026-01-15"),
+                    new OA\Property(property: "purchase_code", type: "string", example: "ABC123XYZ", description: "Purchase code that was bought for this certificate. Must be available and belong to the training center for the selected ACC.")
                 ]
             )
         ),
@@ -432,6 +434,7 @@ class CertificateController extends Controller
             'trainee_id_number' => 'nullable|string|max:255',
             'issue_date' => 'required|date',
             'expiry_date' => 'nullable|date|after:issue_date',
+            'purchase_code' => 'required|string|exists:certificate_codes,code',
         ]);
 
         // Verify ACC is authorized
@@ -450,6 +453,41 @@ class CertificateController extends Controller
         
         if ($course->acc_id != $request->acc_id) {
             return response()->json(['message' => 'Course does not belong to the selected ACC'], 403);
+        }
+
+        // Validate and get the purchase code
+        $purchaseCode = CertificateCode::where('code', $request->purchase_code)
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('acc_id', $request->acc_id)
+            ->first();
+
+        if (!$purchaseCode) {
+            return response()->json([
+                'message' => 'Purchase code not found or does not belong to this training center for the selected ACC'
+            ], 404);
+        }
+
+        // Verify code is available
+        if ($purchaseCode->status !== 'available') {
+            return response()->json([
+                'message' => 'Purchase code is not available',
+                'code_status' => $purchaseCode->status,
+                'details' => match($purchaseCode->status) {
+                    'used' => 'This code has already been used for another certificate',
+                    'expired' => 'This code has expired',
+                    'revoked' => 'This code has been revoked',
+                    default => 'Code status: ' . $purchaseCode->status,
+                }
+            ], 422);
+        }
+
+        // Verify code matches the course (if code has a specific course assigned)
+        if ($purchaseCode->course_id && $purchaseCode->course_id != $request->course_id) {
+            return response()->json([
+                'message' => 'Purchase code is not valid for this course',
+                'code_course_id' => $purchaseCode->course_id,
+                'requested_course_id' => $request->course_id,
+            ], 422);
         }
 
         // Find template: first check for course-specific template (via pivot table), then fall back to category template
@@ -550,6 +588,14 @@ class CertificateController extends Controller
                 'certificate_pdf_url' => '', // Will be updated immediately
                 'verification_code' => $verificationCode,
                 'status' => 'valid',
+                'code_used_id' => $purchaseCode->id, // Link certificate to purchase code
+            ]);
+
+            // Mark the purchase code as used
+            $purchaseCode->update([
+                'status' => 'used',
+                'used_at' => now(),
+                'used_for_certificate_id' => $certificate->id,
             ]);
 
             // Generate certificate PDF immediately
@@ -559,6 +605,13 @@ class CertificateController extends Controller
                 // Update certificate status on failure
                 $certificate->update([
                     'status' => 'revoked',
+                ]);
+
+                // Revert purchase code status if certificate generation failed
+                $purchaseCode->update([
+                    'status' => 'available',
+                    'used_at' => null,
+                    'used_for_certificate_id' => null,
                 ]);
 
                 return response()->json([
