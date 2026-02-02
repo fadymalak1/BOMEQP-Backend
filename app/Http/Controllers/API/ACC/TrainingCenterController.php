@@ -95,18 +95,30 @@ class TrainingCenterController extends Controller
         $perPage = $request->get('per_page', 15);
         $requests = $query->orderBy('request_date', 'desc')->paginate($perPage);
 
-        // Calculate statistics
+        // Calculate statistics using a single query with conditional aggregation
+        $sevenDaysAgo = now()->subDays(7);
+        $thirtyDaysAgo = now()->subDays(30);
+        
+        $stats = $baseQuery->selectRaw('
+            COUNT(*) as total,
+            SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN status = "approved" THEN 1 ELSE 0 END) as approved,
+            SUM(CASE WHEN status = "rejected" THEN 1 ELSE 0 END) as rejected,
+            SUM(CASE WHEN status = "returned" THEN 1 ELSE 0 END) as returned,
+            SUM(CASE WHEN request_date >= ? THEN 1 ELSE 0 END) as last_7_days,
+            SUM(CASE WHEN request_date >= ? THEN 1 ELSE 0 END) as last_30_days,
+            SUM(CASE WHEN status = "pending" AND request_date < ? THEN 1 ELSE 0 END) as pending_older_than_7_days
+        ', [$sevenDaysAgo, $thirtyDaysAgo, $sevenDaysAgo])->first();
+
         $statistics = [
-            'total' => $baseQuery->count(),
-            'pending' => $baseQuery->where('status', 'pending')->count(),
-            'approved' => $baseQuery->where('status', 'approved')->count(),
-            'rejected' => $baseQuery->where('status', 'rejected')->count(),
-            'returned' => $baseQuery->where('status', 'returned')->count(),
-            'last_7_days' => $baseQuery->where('request_date', '>=', now()->subDays(7))->count(),
-            'last_30_days' => $baseQuery->where('request_date', '>=', now()->subDays(30))->count(),
-            'pending_older_than_7_days' => $baseQuery->where('status', 'pending')
-                ->where('request_date', '<', now()->subDays(7))
-                ->count(),
+            'total' => (int) $stats->total,
+            'pending' => (int) $stats->pending,
+            'approved' => (int) $stats->approved,
+            'rejected' => (int) $stats->rejected,
+            'returned' => (int) $stats->returned,
+            'last_7_days' => (int) $stats->last_7_days,
+            'last_30_days' => (int) $stats->last_30_days,
+            'pending_older_than_7_days' => (int) $stats->pending_older_than_7_days,
         ];
 
         return response()->json([
