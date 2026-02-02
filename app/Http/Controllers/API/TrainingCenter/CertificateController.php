@@ -388,13 +388,13 @@ class CertificateController extends Controller
     #[OA\Post(
         path: "/training-center/certificates",
         summary: "Issue a new certificate",
-        description: "Generate and issue a new certificate. Requires a valid purchase code that was previously purchased. Select ACC and Course, enter student name, and provide the purchase code. The system will automatically select the appropriate template and generate the certificate. The purchase code will be marked as used.",
+        description: "Generate and issue a new certificate. The system will automatically select an available purchase code if not provided. Select ACC and Course, enter student name. Optionally provide a specific purchase code. The system will automatically select the appropriate template and generate the certificate. The purchase code will be marked as used.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
-                required: ["acc_id", "course_id", "trainee_name", "issue_date", "purchase_code"],
+                required: ["acc_id", "course_id", "trainee_name", "issue_date"],
                 properties: [
                     new OA\Property(property: "acc_id", type: "integer", example: 1, description: "ID of the authorized ACC"),
                     new OA\Property(property: "course_id", type: "integer", example: 1, description: "ID of the course from the selected ACC"),
@@ -404,7 +404,7 @@ class CertificateController extends Controller
                     new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
                     new OA\Property(property: "issue_date", type: "string", format: "date", example: "2024-01-15"),
                     new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2026-01-15"),
-                    new OA\Property(property: "purchase_code", type: "string", example: "ABC123XYZ", description: "Purchase code that was bought for this certificate. Must be available and belong to the training center for the selected ACC.")
+                    new OA\Property(property: "purchase_code", type: "string", nullable: true, example: "ABC123XYZ", description: "Optional purchase code. If not provided, the system will automatically select an available code. If provided, it must be available and belong to the training center for the selected ACC.")
                 ]
             )
         ),
@@ -434,7 +434,7 @@ class CertificateController extends Controller
             'trainee_id_number' => 'nullable|string|max:255',
             'issue_date' => 'required|date',
             'expiry_date' => 'nullable|date|after:issue_date',
-            'purchase_code' => 'required|string|exists:certificate_codes,code',
+            'purchase_code' => 'nullable|string|exists:certificate_codes,code',
         ]);
 
         // Verify ACC is authorized
@@ -455,39 +455,73 @@ class CertificateController extends Controller
             return response()->json(['message' => 'Course does not belong to the selected ACC'], 403);
         }
 
-        // Validate and get the purchase code
-        $purchaseCode = CertificateCode::where('code', $request->purchase_code)
-            ->where('training_center_id', $trainingCenter->id)
-            ->where('acc_id', $request->acc_id)
-            ->first();
+        // Get or automatically select purchase code
+        $purchaseCode = null;
+        
+        if ($request->has('purchase_code') && !empty($request->purchase_code)) {
+            // If purchase code is provided, validate it
+            $purchaseCode = CertificateCode::where('code', $request->purchase_code)
+                ->where('training_center_id', $trainingCenter->id)
+                ->where('acc_id', $request->acc_id)
+                ->first();
 
-        if (!$purchaseCode) {
-            return response()->json([
-                'message' => 'Purchase code not found or does not belong to this training center for the selected ACC'
-            ], 404);
-        }
+            if (!$purchaseCode) {
+                return response()->json([
+                    'message' => 'Purchase code not found or does not belong to this training center for the selected ACC'
+                ], 404);
+            }
 
-        // Verify code is available
-        if ($purchaseCode->status !== 'available') {
-            return response()->json([
-                'message' => 'Purchase code is not available',
-                'code_status' => $purchaseCode->status,
-                'details' => match($purchaseCode->status) {
-                    'used' => 'This code has already been used for another certificate',
-                    'expired' => 'This code has expired',
-                    'revoked' => 'This code has been revoked',
-                    default => 'Code status: ' . $purchaseCode->status,
-                }
-            ], 422);
-        }
+            // Verify code is available
+            if ($purchaseCode->status !== 'available') {
+                return response()->json([
+                    'message' => 'Purchase code is not available',
+                    'code_status' => $purchaseCode->status,
+                    'details' => match($purchaseCode->status) {
+                        'used' => 'This code has already been used for another certificate',
+                        'expired' => 'This code has expired',
+                        'revoked' => 'This code has been revoked',
+                        default => 'Code status: ' . $purchaseCode->status,
+                    }
+                ], 422);
+            }
 
-        // Verify code matches the course (if code has a specific course assigned)
-        if ($purchaseCode->course_id && $purchaseCode->course_id != $request->course_id) {
-            return response()->json([
-                'message' => 'Purchase code is not valid for this course',
-                'code_course_id' => $purchaseCode->course_id,
-                'requested_course_id' => $request->course_id,
-            ], 422);
+            // Verify code matches the course (if code has a specific course assigned)
+            if ($purchaseCode->course_id && $purchaseCode->course_id != $request->course_id) {
+                return response()->json([
+                    'message' => 'Purchase code is not valid for this course',
+                    'code_course_id' => $purchaseCode->course_id,
+                    'requested_course_id' => $request->course_id,
+                ], 422);
+            }
+        } else {
+            // Automatically select an available purchase code
+            // First, try to find a course-specific code
+            $purchaseCode = CertificateCode::where('training_center_id', $trainingCenter->id)
+                ->where('acc_id', $request->acc_id)
+                ->where('course_id', $request->course_id)
+                ->where('status', 'available')
+                ->orderBy('purchased_at', 'asc') // FIFO - oldest first
+                ->first();
+
+            // If no course-specific code found, try to find a general code (no course_id)
+            if (!$purchaseCode) {
+                $purchaseCode = CertificateCode::where('training_center_id', $trainingCenter->id)
+                    ->where('acc_id', $request->acc_id)
+                    ->whereNull('course_id')
+                    ->where('status', 'available')
+                    ->orderBy('purchased_at', 'asc') // FIFO - oldest first
+                    ->first();
+            }
+
+            // If still no code found, return error
+            if (!$purchaseCode) {
+                return response()->json([
+                    'message' => 'No available purchase codes found for this course and ACC. Please purchase certificate codes first.',
+                    'hint' => 'You need to purchase certificate codes before generating certificates. Go to the Codes section to purchase codes.',
+                    'acc_id' => $request->acc_id,
+                    'course_id' => $request->course_id,
+                ], 422);
+            }
         }
 
         // Find template: first check for course-specific template (via pivot table), then fall back to category template
