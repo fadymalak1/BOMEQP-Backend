@@ -54,102 +54,148 @@ class InstructorController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $query = InstructorAccAuthorization::where('acc_id', $acc->id)
-            ->with(['instructor', 'trainingCenter', 'subCategory.category', 'subCategory.courses']);
+        // Get all requests with relationships
+        $allRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->with(['instructor', 'trainingCenter', 'subCategory.category', 'subCategory.courses'])
+            ->orderBy('request_date', 'desc')
+            ->get();
 
-        // Filter by status if provided
-        if ($request->has('status')) {
-            $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
-            if (in_array($request->status, $validStatuses)) {
-                $query->where('status', $request->status);
-            }
-        }
-
-        // Filter by payment_status if provided
-        if ($request->has('payment_status')) {
-            $validPaymentStatuses = ['pending', 'paid', 'failed'];
-            if (in_array($request->payment_status, $validPaymentStatuses)) {
-                $query->where('payment_status', $request->payment_status);
-            }
-        }
-
-        // Search functionality
-        if ($request->has('search') && !empty($request->search)) {
-            $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('id', 'like', "%{$searchTerm}%")
-                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
-                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
-                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
-                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
-                            ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
-                            ->orWhere('email', 'like', "%{$searchTerm}%");
-                    })
-                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
-                        $tcQuery->where('name', 'like', "%{$searchTerm}%");
-                    });
-            });
-        }
-
-        $perPage = $request->get('per_page', 15);
-        $requests = $query->orderBy('request_date', 'desc')
-            ->paginate($perPage)
-            ->through(function ($authorization) {
-                $data = $authorization->toArray();
+        // Group by instructor_id and get latest request for each
+        $grouped = $allRequests->groupBy('instructor_id');
+        $latestRequests = $grouped->map(function ($requests) {
+            // Get the latest request (first one since we ordered by request_date desc)
+            $latest = $requests->first();
+            
+            // Get all previous requests (excluding the latest)
+            $previous = $requests->slice(1)->values();
+            
+            // Process latest request data
+            $data = $latest->toArray();
+            
+            // Get requested course IDs from documents_json
+            $documentsData = $latest->documents_json ?? [];
+            $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+            
+            // If there is a sub_category, add sub_category name, category, and courses
+            if ($latest->sub_category_id && $latest->subCategory) {
+                $subCategory = $latest->subCategory;
+                $category = $subCategory->category;
                 
-                // Get requested course IDs from documents_json
-                $documentsData = $authorization->documents_json ?? [];
-                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+                $data['category'] = $category ? [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'name_ar' => $category->name_ar ?? null,
+                ] : null;
                 
-                // If there is a sub_category, add sub_category name, category, and courses
-                if ($authorization->sub_category_id && $authorization->subCategory) {
-                    $subCategory = $authorization->subCategory;
-                    $category = $subCategory->category;
-                    
-                    $data['category'] = $category ? [
-                        'id' => $category->id,
-                        'name' => $category->name,
-                        'name_ar' => $category->name_ar ?? null,
-                    ] : null;
-                    
-                    $data['sub_category'] = [
-                        'id' => $subCategory->id,
-                        'name' => $subCategory->name,
-                        'name_ar' => $subCategory->name_ar,
-                        'courses' => $subCategory->courses->map(function ($course) {
-                            return [
-                                'id' => $course->id,
-                                'name' => $course->name,
-                                'name_ar' => $course->name_ar,
-                                'code' => $course->code,
-                            ];
-                        })
-                    ];
-                } else {
-                    $data['category'] = null;
-                    $data['sub_category'] = null;
-                }
-                
-                // Get requested courses by IDs (even if sub_category is null)
-                $requestedCourses = [];
-                if (!empty($requestedCourseIds)) {
-                    $courses = \App\Models\Course::whereIn('id', $requestedCourseIds)->get();
-                    $requestedCourses = $courses->map(function ($course) {
+                $data['sub_category'] = [
+                    'id' => $subCategory->id,
+                    'name' => $subCategory->name,
+                    'name_ar' => $subCategory->name_ar,
+                    'courses' => $subCategory->courses->map(function ($course) {
                         return [
                             'id' => $course->id,
                             'name' => $course->name,
                             'name_ar' => $course->name_ar,
                             'code' => $course->code,
                         ];
-                    })->toArray();
-                }
+                    })
+                ];
+            } else {
+                $data['category'] = null;
+                $data['sub_category'] = null;
+            }
+            
+            // Get requested courses by IDs (even if sub_category is null)
+            $requestedCourses = [];
+            if (!empty($requestedCourseIds)) {
+                $courses = \App\Models\Course::whereIn('id', $requestedCourseIds)->get();
+                $requestedCourses = $courses->map(function ($course) {
+                    return [
+                        'id' => $course->id,
+                        'name' => $course->name,
+                        'name_ar' => $course->name_ar,
+                        'code' => $course->code,
+                    ];
+                })->toArray();
+            }
+            
+            $data['requested_courses'] = $requestedCourses;
+            
+            // Add previous requests info to the latest request
+            $data['previous_requests'] = $previous->map(function ($req) {
+                $documentsData = $req->documents_json ?? [];
+                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
                 
-                $data['requested_courses'] = $requestedCourses;
-                
-                return $data;
-            });
+                return [
+                    'id' => $req->id,
+                    'request_date' => $req->request_date,
+                    'status' => $req->status,
+                    'payment_status' => $req->payment_status,
+                    'authorization_price' => $req->authorization_price,
+                    'rejection_reason' => $req->rejection_reason,
+                    'return_comment' => $req->return_comment,
+                    'reviewed_by' => $req->reviewed_by,
+                    'reviewed_at' => $req->reviewed_at,
+                    'requested_courses_count' => count($requestedCourseIds),
+                    'documents_count' => is_array($req->documents_json) ? count($req->documents_json) : 0,
+                ];
+            })->toArray();
+            
+            $data['total_requests_count'] = $requests->count();
+            
+            return $data;
+        })->values();
 
-        return response()->json($requests);
+        // Filter by status if provided (filter latest requests by their status)
+        if ($request->has('status')) {
+            $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
+            if (in_array($request->status, $validStatuses)) {
+                $latestRequests = $latestRequests->where('status', $request->status)->values();
+            }
+        }
+
+        // Filter by payment_status if provided (filter latest requests by their payment_status)
+        if ($request->has('payment_status')) {
+            $validPaymentStatuses = ['pending', 'paid', 'failed'];
+            if (in_array($request->payment_status, $validPaymentStatuses)) {
+                $latestRequests = $latestRequests->where('payment_status', $request->payment_status)->values();
+            }
+        }
+
+        // Search functionality (search in latest requests)
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $latestRequests = $latestRequests->filter(function ($req) use ($searchTerm) {
+                // Access instructor and trainingCenter from the array
+                $instructor = $req['instructor'] ?? null;
+                $trainingCenter = $req['training_center'] ?? null;
+                
+                return stripos((string)$req['id'], $searchTerm) !== false
+                    || ($instructor && (
+                        stripos($instructor['first_name'] ?? '', $searchTerm) !== false
+                        || stripos($instructor['last_name'] ?? '', $searchTerm) !== false
+                        || stripos($instructor['email'] ?? '', $searchTerm) !== false
+                    ))
+                    || ($trainingCenter && stripos($trainingCenter['name'] ?? '', $searchTerm) !== false);
+            })->values();
+        }
+
+        // Paginate the grouped results
+        $perPage = $request->get('per_page', 15);
+        $page = $request->get('page', 1);
+        $total = $latestRequests->count();
+        $offset = ($page - 1) * $perPage;
+        $paginated = $latestRequests->slice($offset, $perPage)->values();
+
+        return response()->json([
+            'data' => $paginated,
+            'current_page' => (int) $page,
+            'per_page' => (int) $perPage,
+            'total' => $total,
+            'last_page' => (int) ceil($total / $perPage),
+            'from' => $total > 0 ? $offset + 1 : null,
+            'to' => $total > 0 ? min($offset + $perPage, $total) : null,
+        ]);
     }
 
     public function approve(Request $request, $id)
