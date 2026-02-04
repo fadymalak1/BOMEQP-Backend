@@ -669,5 +669,66 @@ class CertificateGenerationService
             return $result; // Return PNG as fallback
         }
     }
+
+    /**
+     * Generate training center authorization certificate
+     * 
+     * @param CertificateTemplate $template
+     * @param \App\Models\TrainingCenter $trainingCenter
+     * @param \App\Models\ACC $acc
+     * @return array
+     */
+    public function generateTrainingCenterCertificate(CertificateTemplate $template, $trainingCenter, $acc): array
+    {
+        $data = [
+            'training_center_name' => $trainingCenter->name ?? '',
+            'training_center_legal_name' => $trainingCenter->legal_name ?? '',
+            'training_center_email' => $trainingCenter->email ?? '',
+            'training_center_country' => $trainingCenter->country ?? '',
+            'training_center_city' => $trainingCenter->city ?? '',
+            'training_center_registration_number' => $trainingCenter->registration_number ?? '',
+            'acc_name' => $acc->name ?? '',
+            'acc_legal_name' => $acc->legal_name ?? '',
+            'acc_registration_number' => $acc->registration_number ?? '',
+            'acc_country' => $acc->country ?? '',
+            'issue_date' => now()->format('Y-m-d'),
+            'issue_date_formatted' => now()->format('F j, Y'),
+        ];
+
+        return $this->generate($template, $data, 'pdf');
+    }
+
+    /**
+     * Generate instructor authorization certificate for a specific course
+     * 
+     * @param CertificateTemplate $template
+     * @param \App\Models\Instructor $instructor
+     * @param \App\Models\Course $course
+     * @param \App\Models\ACC $acc
+     * @return array
+     */
+    public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc): array
+    {
+        $data = [
+            'instructor_name' => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
+            'instructor_first_name' => $instructor->first_name ?? '',
+            'instructor_last_name' => $instructor->last_name ?? '',
+            'instructor_email' => $instructor->email ?? '',
+            'instructor_id_number' => $instructor->id_number ?? '',
+            'instructor_country' => $instructor->country ?? '',
+            'instructor_city' => $instructor->city ?? '',
+            'course_name' => $course->name ?? '',
+            'course_name_ar' => $course->name_ar ?? '',
+            'course_code' => $course->code ?? '',
+            'acc_name' => $acc->name ?? '',
+            'acc_legal_name' => $acc->legal_name ?? '',
+            'acc_registration_number' => $acc->registration_number ?? '',
+            'acc_country' => $acc->country ?? '',
+            'issue_date' => now()->format('Y-m-d'),
+            'issue_date_formatted' => now()->format('F j, Y'),
+        ];
+
+        return $this->generate($template, $data, 'pdf');
+    }
 }
 

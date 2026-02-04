@@ -194,6 +194,41 @@ class TrainingCenterController extends Controller
                     $acc->name
                 );
             }
+
+            // Generate and send certificate if template exists
+            $certificateTemplate = \App\Models\CertificateTemplate::where('acc_id', $acc->id)
+                ->where('template_type', 'training_center')
+                ->where('status', 'active')
+                ->first();
+
+            if ($certificateTemplate) {
+                try {
+                    $certificateService = new \App\Services\CertificateGenerationService();
+                    $result = $certificateService->generateTrainingCenterCertificate(
+                        $certificateTemplate,
+                        $trainingCenter,
+                        $acc
+                    );
+
+                    if ($result['success'] && isset($result['file_path'])) {
+                        $pdfPath = \Illuminate\Support\Facades\Storage::disk('public')->path($result['file_path']);
+                        
+                        if (file_exists($pdfPath)) {
+                            \Illuminate\Support\Facades\Mail::to($trainingCenter->email)
+                                ->send(new \App\Mail\TrainingCenterCertificateMail(
+                                    $trainingCenter->name,
+                                    $acc->name,
+                                    $pdfPath
+                                ));
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error('Failed to generate/send training center certificate', [
+                        'authorization_id' => $authorization->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
         }
 
         return response()->json(['message' => 'Training center approved successfully']);

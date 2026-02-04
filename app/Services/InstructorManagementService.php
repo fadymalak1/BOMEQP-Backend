@@ -704,6 +704,9 @@ class InstructorManagementService
                 ]);
             }
 
+            // Generate and send certificates for each authorized course
+            $this->generateAndSendInstructorCertificates($authorization, $acc);
+
             DB::commit();
 
             // Send notifications
@@ -768,6 +771,114 @@ class InstructorManagementService
                 'error' => $e->getMessage()
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * Generate and send instructor certificates for each authorized course
+     * 
+     * @param InstructorAccAuthorization $authorization
+     * @param \App\Models\ACC $acc
+     * @return void
+     */
+    private function generateAndSendInstructorCertificates($authorization, $acc): void
+    {
+        try {
+            // Get instructor certificate template
+            $certificateTemplate = \App\Models\CertificateTemplate::where('acc_id', $acc->id)
+                ->where('template_type', 'instructor')
+                ->where('status', 'active')
+                ->first();
+
+            if (!$certificateTemplate) {
+                Log::info('No active instructor certificate template found for ACC', [
+                    'acc_id' => $acc->id,
+                    'authorization_id' => $authorization->id,
+                ]);
+                return;
+            }
+
+            // Get all authorized courses for this instructor and ACC
+            $authorizedCourses = \App\Models\InstructorCourseAuthorization::where('instructor_id', $authorization->instructor_id)
+                ->where('acc_id', $authorization->acc_id)
+                ->where('status', 'active')
+                ->with('course')
+                ->get();
+
+            if ($authorizedCourses->isEmpty()) {
+                Log::info('No authorized courses found for instructor certificate generation', [
+                    'instructor_id' => $authorization->instructor_id,
+                    'acc_id' => $authorization->acc_id,
+                ]);
+                return;
+            }
+
+            // Load instructor
+            $authorization->load('instructor');
+            $instructor = $authorization->instructor;
+
+            if (!$instructor) {
+                Log::warning('Instructor not found for certificate generation', [
+                    'instructor_id' => $authorization->instructor_id,
+                ]);
+                return;
+            }
+
+            // Generate certificate for each course
+            $certificateService = new \App\Services\CertificateGenerationService();
+            
+            foreach ($authorizedCourses as $courseAuth) {
+                if (!$courseAuth->course) {
+                    continue;
+                }
+
+                try {
+                    $result = $certificateService->generateInstructorCertificate(
+                        $certificateTemplate,
+                        $instructor,
+                        $courseAuth->course,
+                        $acc
+                    );
+
+                    if ($result['success'] && isset($result['file_path'])) {
+                        $pdfPath = Storage::disk('public')->path($result['file_path']);
+                        
+                        if (file_exists($pdfPath)) {
+                            // Send email with certificate
+                            Mail::to($instructor->email)->send(new \App\Mail\InstructorCertificateMail(
+                                trim($instructor->first_name . ' ' . $instructor->last_name),
+                                $courseAuth->course->name,
+                                $acc->name,
+                                $pdfPath
+                            ));
+
+                            Log::info('Instructor certificate generated and sent', [
+                                'instructor_id' => $instructor->id,
+                                'course_id' => $courseAuth->course->id,
+                                'course_name' => $courseAuth->course->name,
+                                'email' => $instructor->email,
+                            ]);
+                        }
+                    } else {
+                        Log::warning('Failed to generate instructor certificate', [
+                            'instructor_id' => $instructor->id,
+                            'course_id' => $courseAuth->course->id,
+                            'error' => $result['message'] ?? 'Unknown error',
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error generating/sending instructor certificate for course', [
+                        'instructor_id' => $instructor->id,
+                        'course_id' => $courseAuth->course->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to generate and send instructor certificates', [
+                'authorization_id' => $authorization->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }
