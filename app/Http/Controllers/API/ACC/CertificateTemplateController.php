@@ -254,9 +254,9 @@ class CertificateTemplateController extends Controller
             if ($existingTemplate) {
                 $typeName = $request->template_type === 'training_center' ? 'training center' : 'instructor';
                 return response()->json([
-                    'message' => "You already have an active {$typeName} certificate template. Please update the existing template or deactivate it first.",
+                    'message' => "You already have an active {$typeName} certificate template. Please update the existing template.",
                     'errors' => [
-                        'template_type' => ["An active {$typeName} template already exists (Template ID: {$existingTemplate->id})"]
+                        'template_type' => ["A {$typeName} template already exists (Template ID: {$existingTemplate->id})"]
                     ],
                     'existing_template_id' => $existingTemplate->id,
                     'existing_template_name' => $existingTemplate->name,
