@@ -241,6 +241,7 @@ class InstructorController extends Controller
         $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->where('instructor_id', $authorization->instructor_id)
             ->where('status', 'pending')
+            ->orderBy('request_date', 'desc')
             ->get();
 
         // Collect all course IDs from all pending requests
@@ -251,19 +252,33 @@ class InstructorController extends Controller
             $allCourseIds = array_unique(array_merge($allCourseIds, $requestedCourseIds));
         }
 
-        // Approve all pending requests for this instructor
-        $allPendingRequests->each(function ($pendingReq) use ($user, $request) {
-            $pendingReq->update([
-                'status' => 'approved',
-                'authorization_price' => $request->authorization_price,
-                'reviewed_by' => $user->id,
-                'reviewed_at' => now(),
-                'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
-            ]);
+        // Get the main authorization (the one being approved or the latest pending)
+        $mainAuthorization = $allPendingRequests->firstWhere('id', $authorization->id) 
+            ?? $allPendingRequests->first();
+
+        // Merge all course IDs into the main authorization's documents_json
+        $mainDocumentsJson = $mainAuthorization->documents_json ?? [];
+        $mainDocumentsJson['requested_course_ids'] = array_values($allCourseIds);
+        
+        // Approve only the main authorization request (this will be the one for commission)
+        $mainAuthorization->update([
+            'status' => 'approved',
+            'authorization_price' => $request->authorization_price,
+            'reviewed_by' => $user->id,
+            'reviewed_at' => now(),
+            'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
+            'documents_json' => $mainDocumentsJson, // Include all merged course IDs
+        ]);
+
+        // Delete other pending requests to prevent duplicate commission requests
+        // The main authorization contains all merged course IDs, so we don't need the others
+        $otherPendingRequests = $allPendingRequests->where('id', '!=', $mainAuthorization->id);
+        $otherPendingRequests->each(function ($pendingReq) {
+            $pendingReq->delete();
         });
 
         // Update instructor status from pending to active if authorized by ACC
-        $instructor = Instructor::find($authorization->instructor_id);
+        $instructor = Instructor::find($mainAuthorization->instructor_id);
         if ($instructor && $instructor->status === 'pending') {
             $instructor->update(['status' => 'active']);
         }
@@ -273,9 +288,9 @@ class InstructorController extends Controller
             foreach ($allCourseIds as $courseId) {
                 \App\Models\InstructorCourseAuthorization::updateOrCreate(
                     [
-                        'instructor_id' => $authorization->instructor_id,
+                        'instructor_id' => $mainAuthorization->instructor_id,
                         'course_id' => $courseId,
-                        'acc_id' => $authorization->acc_id,
+                        'acc_id' => $mainAuthorization->acc_id,
                     ],
                     [
                         'authorized_at' => now(),
@@ -287,14 +302,14 @@ class InstructorController extends Controller
         }
 
         // Send notification to Group Admin to set commission percentage (use the main authorization)
-        $authorization->refresh();
-        $authorization->load(['instructor', 'acc', 'subCategory']);
-        $instructor = $authorization->instructor;
+        $mainAuthorization->refresh();
+        $mainAuthorization->load(['instructor', 'acc', 'subCategory']);
+        $instructor = $mainAuthorization->instructor;
         $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
         
         $notificationService = new NotificationService();
         $notificationService->notifyAdminInstructorNeedsCommission(
-            $authorization->id,
+            $mainAuthorization->id,
             $instructorName,
             $acc->name,
             $request->authorization_price
@@ -302,16 +317,16 @@ class InstructorController extends Controller
         
         // Enhanced notification data includes course count (merged from all requests)
         $coursesCount = count($allCourseIds);
-        $subCategoryName = $authorization->subCategory?->name;
+        $subCategoryName = $mainAuthorization->subCategory?->name;
         
         // Also notify training center with enhanced details
-        $trainingCenter = $authorization->trainingCenter;
+        $trainingCenter = $mainAuthorization->trainingCenter;
         if ($trainingCenter) {
             $trainingCenterUser = User::where('email', $trainingCenter->email)->first();
             if ($trainingCenterUser) {
                 $notificationService->notifyInstructorAuthorized(
                     $trainingCenterUser->id,
-                    $authorization->id,
+                    $mainAuthorization->id,
                     $instructorName,
                     $acc->name,
                     $request->authorization_price,
@@ -323,7 +338,7 @@ class InstructorController extends Controller
 
         return response()->json([
             'message' => 'Instructor approved successfully. Waiting for Group Admin to set commission percentage.',
-            'authorization' => $authorization->fresh(),
+            'authorization' => $mainAuthorization->fresh(),
             'courses_authorized' => count($allCourseIds),
             'merged_requests_approved' => $allPendingRequests->count()
         ]);
