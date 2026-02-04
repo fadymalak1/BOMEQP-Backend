@@ -665,13 +665,24 @@ class InstructorManagementService
                 'reference_id' => $authorization->id,
             ]);
 
-            // Update authorization payment status
-            $authorization->update([
-                'payment_status' => 'paid',
-                'payment_date' => now(),
-                'payment_transaction_id' => $transaction->id,
-                'group_admin_status' => 'completed',
-            ]);
+            // Update authorization payment status for this request and all merged requests
+            // Get all approved authorizations for this instructor and ACC that are waiting for payment
+            $allApprovedAuthorizations = \App\Models\InstructorAccAuthorization::where('instructor_id', $authorization->instructor_id)
+                ->where('acc_id', $authorization->acc_id)
+                ->where('status', 'approved')
+                ->where('group_admin_status', 'commission_set')
+                ->where('payment_status', '!=', 'paid')
+                ->get();
+
+            // Update all merged authorization requests to paid
+            $allApprovedAuthorizations->each(function ($auth) use ($transaction) {
+                $auth->update([
+                    'payment_status' => 'paid',
+                    'payment_date' => now(),
+                    'payment_transaction_id' => $transaction->id,
+                    'group_admin_status' => 'completed',
+                ]);
+            });
 
             // Create commission ledger entry
             try {

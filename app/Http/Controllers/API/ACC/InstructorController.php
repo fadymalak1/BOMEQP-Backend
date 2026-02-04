@@ -598,13 +598,55 @@ class InstructorController extends Controller
                 ->unique('id')
                 ->values();
 
-            // Aggregate authorization information
-            $authorizationsList = $instructorAuthorizations->map(function ($authorization) {
+            // Merge multiple approved authorizations for the same instructor
+            // Collect all course IDs and merge payment status
+            $allRequestedCourseIds = [];
+            $totalAuthorizationPrice = 0;
+            $mergedPaymentStatus = 'pending';
+            $latestPaymentDate = null;
+            $requestIds = [];
+            $earliestRequestDate = null;
+            
+            foreach ($instructorAuthorizations as $authorization) {
+                $documentsData = $authorization->documents_json ?? [];
+                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+                
+                // Merge course IDs (avoid duplicates)
+                $allRequestedCourseIds = array_unique(array_merge($allRequestedCourseIds, $requestedCourseIds));
+                
+                // Sum authorization prices
+                $totalAuthorizationPrice += $authorization->authorization_price ?? 0;
+                
+                // Track payment status - if any is paid, the merged status is paid
+                if ($authorization->payment_status === 'paid') {
+                    $mergedPaymentStatus = 'paid';
+                    if (!$latestPaymentDate || $authorization->payment_date > $latestPaymentDate) {
+                        $latestPaymentDate = $authorization->payment_date;
+                    }
+                } elseif ($mergedPaymentStatus === 'pending' && $authorization->payment_status === 'failed') {
+                    $mergedPaymentStatus = 'failed';
+                }
+                
+                // Track earliest request date
+                if (!$earliestRequestDate || $authorization->request_date < $earliestRequestDate) {
+                    $earliestRequestDate = $authorization->request_date;
+                }
+                
+                // Track all request IDs
+                $requestIds[] = $authorization->id;
+            }
+
+            // Get the latest authorization for summary (use it as base for merged data)
+            $latestAuthorization = $instructorAuthorizations->sortByDesc('reviewed_at')->first();
+            
+            // Build merged authorization entry
+            $mergedAuthorization = null;
+            if ($latestAuthorization) {
                 $subCategoryData = null;
                 $categoryData = null;
                 
-                if ($authorization->sub_category_id && $authorization->subCategory) {
-                    $subCategory = $authorization->subCategory;
+                if ($latestAuthorization->sub_category_id && $latestAuthorization->subCategory) {
+                    $subCategory = $latestAuthorization->subCategory;
                     $category = $subCategory->category;
                     
                     $categoryData = $category ? [
@@ -620,23 +662,25 @@ class InstructorController extends Controller
                     ];
                 }
 
-                return [
-                    'id' => $authorization->id,
-                    'request_date' => $authorization->request_date?->toISOString(),
-                    'reviewed_at' => $authorization->reviewed_at?->toISOString(),
-                    'reviewed_by' => $authorization->reviewed_by,
-                    'commission_percentage' => $authorization->commission_percentage,
-                    'authorization_price' => $authorization->authorization_price,
-                    'payment_status' => $authorization->payment_status,
-                    'payment_date' => $authorization->payment_date?->toISOString(),
-                    'group_admin_status' => $authorization->group_admin_status,
+                $mergedAuthorization = [
+                    'id' => $latestAuthorization->id,
+                    'request_date' => $earliestRequestDate?->toISOString(),
+                    'reviewed_at' => $latestAuthorization->reviewed_at?->toISOString(),
+                    'reviewed_by' => $latestAuthorization->reviewed_by,
+                    'commission_percentage' => $latestAuthorization->commission_percentage,
+                    'authorization_price' => $totalAuthorizationPrice,
+                    'payment_status' => $mergedPaymentStatus,
+                    'payment_date' => $latestPaymentDate?->toISOString(),
+                    'group_admin_status' => $latestAuthorization->group_admin_status,
                     'category' => $categoryData,
                     'sub_category' => $subCategoryData,
+                    'merged_requests_count' => count($requestIds),
+                    'merged_request_ids' => $requestIds,
                 ];
-            })->values();
+            }
 
-            // Get the latest authorization for summary
-            $latestAuthorization = $instructorAuthorizations->sortByDesc('reviewed_at')->first();
+            // Return single merged authorization in the list
+            $authorizationsList = $mergedAuthorization ? collect([$mergedAuthorization])->values() : collect();
 
             return [
                 'id' => $instructor->id,
@@ -660,20 +704,20 @@ class InstructorController extends Controller
                     'name' => $instructor->trainingCenter->name,
                     'email' => $instructor->trainingCenter->email,
                 ] : null,
-                'latest_authorization' => $latestAuthorization ? [
-                    'id' => $latestAuthorization->id,
-                    'request_date' => $latestAuthorization->request_date?->toISOString(),
-                    'reviewed_at' => $latestAuthorization->reviewed_at?->toISOString(),
-                    'reviewed_by' => $latestAuthorization->reviewed_by,
-                    'commission_percentage' => $latestAuthorization->commission_percentage,
-                    'authorization_price' => $latestAuthorization->authorization_price,
-                    'payment_status' => $latestAuthorization->payment_status,
-                    'payment_date' => $latestAuthorization->payment_date?->toISOString(),
-                    'group_admin_status' => $latestAuthorization->group_admin_status,
+                'latest_authorization' => $mergedAuthorization ? [
+                    'id' => $mergedAuthorization['id'],
+                    'request_date' => $mergedAuthorization['request_date'],
+                    'reviewed_at' => $mergedAuthorization['reviewed_at'],
+                    'reviewed_by' => $mergedAuthorization['reviewed_by'],
+                    'commission_percentage' => $mergedAuthorization['commission_percentage'],
+                    'authorization_price' => $mergedAuthorization['authorization_price'],
+                    'payment_status' => $mergedAuthorization['payment_status'],
+                    'payment_date' => $mergedAuthorization['payment_date'],
+                    'group_admin_status' => $mergedAuthorization['group_admin_status'],
                 ] : null,
                 'authorizations' => $authorizationsList,
                 'authorized_courses' => $authorizedCourses,
-                'authorizations_count' => $instructorAuthorizations->count(),
+                'authorizations_count' => $mergedAuthorization ? 1 : 0,
             ];
         });
 
