@@ -161,6 +161,33 @@ class TrainingCenterController extends Controller
         ]);
     }
 
+    #[OA\Put(
+        path: "/acc/training-centers/requests/{id}/approve",
+        summary: "Approve training center authorization request",
+        description: "Approve a training center authorization request. Requires an active training center certificate template to be created first.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), description: "Authorization request ID")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Training center approved successfully"),
+            new OA\Response(
+                response: 422,
+                description: "Validation error - Certificate template required",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Cannot approve training center. Please create an active training center certificate template first."),
+                        new OA\Property(property: "errors", type: "object"),
+                        new OA\Property(property: "required_action", type: "string", example: "create_training_center_template"),
+                        new OA\Property(property: "template_type", type: "string", example: "training_center")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC or authorization not found")
+        ]
+    )]
     public function approve(Request $request, $id)
     {
         $user = $request->user();
@@ -172,6 +199,23 @@ class TrainingCenterController extends Controller
 
         $authorization = TrainingCenterAccAuthorization::where('acc_id', $acc->id)
             ->findOrFail($id);
+
+        // Validate that training center certificate template exists
+        $certificateTemplate = \App\Models\CertificateTemplate::where('acc_id', $acc->id)
+            ->where('template_type', 'training_center')
+            ->where('status', 'active')
+            ->first();
+
+        if (!$certificateTemplate) {
+            return response()->json([
+                'message' => 'Cannot approve training center. Please create an active training center certificate template first.',
+                'errors' => [
+                    'certificate_template' => ['An active training center certificate template is required before approving training centers. Please create one in the certificate templates section.']
+                ],
+                'required_action' => 'create_training_center_template',
+                'template_type' => 'training_center'
+            ], 422);
+        }
 
         $authorization->update([
             'status' => 'approved',
@@ -195,12 +239,7 @@ class TrainingCenterController extends Controller
                 );
             }
 
-            // Generate and send certificate if template exists
-            $certificateTemplate = \App\Models\CertificateTemplate::where('acc_id', $acc->id)
-                ->where('template_type', 'training_center')
-                ->where('status', 'active')
-                ->first();
-
+            // Generate and send certificate (template already validated above)
             if ($certificateTemplate) {
                 try {
                     $certificateService = new \App\Services\CertificateGenerationService();

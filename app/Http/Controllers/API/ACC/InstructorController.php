@@ -259,6 +259,53 @@ class InstructorController extends Controller
         ]);
     }
 
+    #[OA\Put(
+        path: "/acc/instructors/requests/{id}/approve",
+        summary: "Approve instructor authorization request",
+        description: "Approve an instructor authorization request. Requires an active instructor certificate template to be created first. Multiple pending requests for the same instructor are automatically merged.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), description: "Authorization request ID")
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["authorization_price"],
+                properties: [
+                    new OA\Property(property: "authorization_price", type: "number", format: "float", example: 100.00, description: "Authorization price to be paid by training center")
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Instructor approved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string"),
+                        new OA\Property(property: "authorization", type: "object"),
+                        new OA\Property(property: "courses_authorized", type: "integer"),
+                        new OA\Property(property: "merged_requests_approved", type: "integer")
+                    ]
+                )
+            ),
+            new OA\Response(
+                response: 422,
+                description: "Validation error - Certificate template required or invalid authorization price",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Cannot approve instructor. Please create an active instructor certificate template first."),
+                        new OA\Property(property: "errors", type: "object"),
+                        new OA\Property(property: "required_action", type: "string", example: "create_instructor_template"),
+                        new OA\Property(property: "template_type", type: "string", example: "instructor")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC or authorization not found")
+        ]
+    )]
     public function approve(Request $request, $id)
     {
         $request->validate([
@@ -274,6 +321,23 @@ class InstructorController extends Controller
 
         $authorization = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->findOrFail($id);
+
+        // Validate that instructor certificate template exists
+        $certificateTemplate = \App\Models\CertificateTemplate::where('acc_id', $acc->id)
+            ->where('template_type', 'instructor')
+            ->where('status', 'active')
+            ->first();
+
+        if (!$certificateTemplate) {
+            return response()->json([
+                'message' => 'Cannot approve instructor. Please create an active instructor certificate template first.',
+                'errors' => [
+                    'certificate_template' => ['An active instructor certificate template is required before approving instructors. Please create one in the certificate templates section.']
+                ],
+                'required_action' => 'create_instructor_template',
+                'template_type' => 'instructor'
+            ], 422);
+        }
 
         // Get all pending requests for this instructor and ACC (merged requests)
         $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
