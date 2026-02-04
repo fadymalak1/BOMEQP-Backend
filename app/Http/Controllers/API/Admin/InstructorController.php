@@ -18,9 +18,12 @@ class InstructorController extends Controller
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "active", "suspended", "inactive"]), example: "active"),
-            new OA\Parameter(name: "training_center_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
-            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John Doe"),
+            new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["pending", "active", "suspended", "inactive"]), example: "active", description: "Filter by instructor status"),
+            new OA\Parameter(name: "training_center_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1, description: "Filter by training center ID"),
+            new OA\Parameter(name: "country", in: "query", schema: new OA\Schema(type: "string"), example: "USA", description: "Filter by country"),
+            new OA\Parameter(name: "city", in: "query", schema: new OA\Schema(type: "string"), example: "New York", description: "Filter by city"),
+            new OA\Parameter(name: "is_assessor", in: "query", schema: new OA\Schema(type: "boolean"), example: false, description: "Filter by assessor status (true for Assessor, false for Instructor)"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John Doe", description: "Search by name, email, phone, ID number, country, city, or content in certificates/specializations"),
             new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
             new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
         ],
@@ -49,25 +52,48 @@ class InstructorController extends Controller
     {
         $query = Instructor::with(['trainingCenter', 'authorizations', 'courseAuthorizations']);
 
-        // Optional filters
+        // Filter by status
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
 
+        // Filter by training center
         if ($request->has('training_center_id')) {
             $query->where('training_center_id', $request->training_center_id);
         }
 
+        // Filter by country
+        if ($request->has('country') && !empty($request->country)) {
+            $query->where('country', 'like', "%{$request->country}%");
+        }
+
+        // Filter by city
+        if ($request->has('city') && !empty($request->city)) {
+            $query->where('city', 'like', "%{$request->city}%");
+        }
+
+        // Filter by assessor status
+        if ($request->has('is_assessor')) {
+            $query->where('is_assessor', $request->boolean('is_assessor'));
+        }
+
+        // Comprehensive search functionality
         if ($request->has('search') && !empty($request->search)) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
+                // Search in basic fields
                 $q->where('first_name', 'like', "%{$search}%")
                   ->orWhere('last_name', 'like', "%{$search}%")
                   ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$search}%"])
                   ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$search}%"])
                   ->orWhere('email', 'like', "%{$search}%")
                   ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('id_number', 'like', "%{$search}%");
+                  ->orWhere('id_number', 'like', "%{$search}%")
+                  ->orWhere('country', 'like', "%{$search}%")
+                  ->orWhere('city', 'like', "%{$search}%")
+                  // Search in JSON fields (certificates_json and specializations)
+                  ->orWhereRaw("JSON_SEARCH(certificates_json, 'one', ?, NULL, '$[*].*') IS NOT NULL", ["%{$search}%"])
+                  ->orWhereRaw("JSON_SEARCH(specializations, 'one', ?, NULL, '$[*]') IS NOT NULL", ["%{$search}%"]);
             });
         }
 

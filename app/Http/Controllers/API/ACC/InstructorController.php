@@ -37,7 +37,18 @@ class InstructorController extends Controller
                         new OA\Property(property: "current_page", type: "integer"),
                         new OA\Property(property: "per_page", type: "integer"),
                         new OA\Property(property: "total", type: "integer"),
-                        new OA\Property(property: "last_page", type: "integer")
+                        new OA\Property(property: "last_page", type: "integer"),
+                        new OA\Property(
+                            property: "statistics",
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "total", type: "integer", example: 50, description: "Total number of authorization requests for this ACC"),
+                                new OA\Property(property: "pending", type: "integer", example: 10, description: "Number of pending requests"),
+                                new OA\Property(property: "approved", type: "integer", example: 25, description: "Number of approved requests"),
+                                new OA\Property(property: "rejected", type: "integer", example: 10, description: "Number of rejected requests"),
+                                new OA\Property(property: "returned", type: "integer", example: 5, description: "Number of returned requests")
+                            ]
+                        )
                     ]
                 )
             ),
@@ -187,6 +198,15 @@ class InstructorController extends Controller
         $offset = ($page - 1) * $perPage;
         $paginated = $latestRequests->slice($offset, $perPage)->values();
 
+        // Calculate statistics for all requests for this ACC (not just paginated results)
+        $statistics = [
+            'total' => $allRequests->count(),
+            'pending' => $allRequests->where('status', 'pending')->count(),
+            'approved' => $allRequests->where('status', 'approved')->count(),
+            'rejected' => $allRequests->where('status', 'rejected')->count(),
+            'returned' => $allRequests->where('status', 'returned')->count(),
+        ];
+
         return response()->json([
             'data' => $paginated,
             'current_page' => (int) $page,
@@ -195,6 +215,7 @@ class InstructorController extends Controller
             'last_page' => (int) ceil($total / $perPage),
             'from' => $total > 0 ? $offset + 1 : null,
             'to' => $total > 0 ? min($offset + $perPage, $total) : null,
+            'statistics' => $statistics,
         ]);
     }
 
@@ -387,7 +408,10 @@ class InstructorController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor full name (first name, last name, or both), email, phone, or training center name"),
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, email, phone, ID number, country, city, or content in certificates/specializations"),
+            new OA\Parameter(name: "country", in: "query", required: false, schema: new OA\Schema(type: "string"), example: "USA", description: "Filter by country"),
+            new OA\Parameter(name: "city", in: "query", required: false, schema: new OA\Schema(type: "string"), example: "New York", description: "Filter by city"),
+            new OA\Parameter(name: "is_assessor", in: "query", required: false, schema: new OA\Schema(type: "boolean"), example: false, description: "Filter by assessor status (true for Assessor, false for Instructor)"),
             new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
             new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
         ],
@@ -430,18 +454,47 @@ class InstructorController extends Controller
             ->select('instructor_id')
             ->distinct();
 
-        // Apply search filter to instructor IDs if search is provided
+        // Apply filters and search to instructor IDs
+        $instructorIdsQuery->whereHas('instructor', function ($instructorQuery) use ($request) {
+            // Filter by country
+            if ($request->has('country') && !empty($request->country)) {
+                $instructorQuery->where('country', 'like', "%{$request->country}%");
+            }
+
+            // Filter by city
+            if ($request->has('city') && !empty($request->city)) {
+                $instructorQuery->where('city', 'like', "%{$request->city}%");
+            }
+
+            // Filter by assessor status
+            if ($request->has('is_assessor')) {
+                $instructorQuery->where('is_assessor', $request->boolean('is_assessor'));
+            }
+
+            // Comprehensive search
+            if ($request->has('search') && !empty($request->search)) {
+                $searchTerm = $request->search;
+                $instructorQuery->where(function($q) use ($searchTerm) {
+                    $q->where('first_name', 'like', "%{$searchTerm}%")
+                        ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                        ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                        ->orWhere('email', 'like', "%{$searchTerm}%")
+                        ->orWhere('phone', 'like', "%{$searchTerm}%")
+                        ->orWhere('id_number', 'like', "%{$searchTerm}%")
+                        ->orWhere('country', 'like', "%{$searchTerm}%")
+                        ->orWhere('city', 'like', "%{$searchTerm}%")
+                        // Search in JSON fields
+                        ->orWhereRaw("JSON_SEARCH(certificates_json, 'one', ?, NULL, '$[*].*') IS NOT NULL", ["%{$searchTerm}%"])
+                        ->orWhereRaw("JSON_SEARCH(specializations, 'one', ?, NULL, '$[*]') IS NOT NULL", ["%{$searchTerm}%"]);
+                });
+            }
+        });
+
+        // Also search in training center name
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $instructorIdsQuery->whereHas('instructor', function ($instructorQuery) use ($searchTerm) {
-                $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
-                    ->orWhere('last_name', 'like', "%{$searchTerm}%")
-                    ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
-                    ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
-                    ->orWhere('email', 'like', "%{$searchTerm}%")
-                    ->orWhere('phone', 'like', "%{$searchTerm}%");
-            })
-            ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+            $instructorIdsQuery->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
                 $tcQuery->where('name', 'like', "%{$searchTerm}%");
             });
         }

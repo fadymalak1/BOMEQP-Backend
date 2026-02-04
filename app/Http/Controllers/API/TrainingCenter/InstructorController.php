@@ -27,7 +27,11 @@ class InstructorController extends Controller
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, email, phone, or ID number"),
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, email, phone, ID number, country, city, or content in certificates/specializations"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "active", "suspended", "inactive"]), example: "active", description: "Filter by instructor status"),
+            new OA\Parameter(name: "country", in: "query", required: false, schema: new OA\Schema(type: "string"), example: "USA", description: "Filter by country"),
+            new OA\Parameter(name: "city", in: "query", required: false, schema: new OA\Schema(type: "string"), example: "New York", description: "Filter by city"),
+            new OA\Parameter(name: "is_assessor", in: "query", required: false, schema: new OA\Schema(type: "boolean"), example: false, description: "Filter by assessor status (true for Assessor, false for Instructor)"),
             new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
             new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
         ],
@@ -70,7 +74,27 @@ class InstructorController extends Controller
                 $query->with(['subCategory', 'acc']);
             }]);
 
-        // Search functionality
+        // Filter by status
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Filter by country
+        if ($request->has('country') && !empty($request->country)) {
+            $query->where('country', 'like', "%{$request->country}%");
+        }
+
+        // Filter by city
+        if ($request->has('city') && !empty($request->city)) {
+            $query->where('city', 'like', "%{$request->city}%");
+        }
+
+        // Filter by assessor status
+        if ($request->has('is_assessor')) {
+            $query->where('is_assessor', $request->boolean('is_assessor'));
+        }
+
+        // Comprehensive search functionality
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
             $query->where(function ($q) use ($searchTerm) {
@@ -80,7 +104,12 @@ class InstructorController extends Controller
                     ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
                     ->orWhere('email', 'like', "%{$searchTerm}%")
                     ->orWhere('phone', 'like', "%{$searchTerm}%")
-                    ->orWhere('id_number', 'like', "%{$searchTerm}%");
+                    ->orWhere('id_number', 'like', "%{$searchTerm}%")
+                    ->orWhere('country', 'like', "%{$searchTerm}%")
+                    ->orWhere('city', 'like', "%{$searchTerm}%")
+                    // Search in JSON fields (certificates_json and specializations)
+                    ->orWhereRaw("JSON_SEARCH(certificates_json, 'one', ?, NULL, '$[*].*') IS NOT NULL", ["%{$searchTerm}%"])
+                    ->orWhereRaw("JSON_SEARCH(specializations, 'one', ?, NULL, '$[*]') IS NOT NULL", ["%{$searchTerm}%"]);
             });
         }
 
@@ -701,8 +730,12 @@ class InstructorController extends Controller
 
         $query = InstructorAccAuthorization::where('training_center_id', $trainingCenter->id)
             ->with([
-                'instructor:id,first_name,last_name',
-                'acc:id,name'
+                // Return richer instructor data
+                'instructor:id,training_center_id,first_name,last_name,email,phone,country,city,status,is_assessor',
+                'acc:id,name',
+                // Optional relations for category / sub-category context
+                'subCategory.category',
+                'subCategory.courses',
             ]);
 
         // Filter by status if provided
@@ -739,7 +772,62 @@ class InstructorController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
-        $authorizations = $query->orderBy('request_date', 'desc')->paginate($perPage);
+        $authorizations = $query->orderBy('request_date', 'desc')
+            ->paginate($perPage)
+            ->through(function ($authorization) {
+                $data = $authorization->toArray();
+
+                // Get requested course IDs from documents_json
+                $documentsData = $authorization->documents_json ?? [];
+                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+
+                // Build requested_courses array with course details
+                $requestedCourses = [];
+                if (!empty($requestedCourseIds)) {
+                    $courses = \App\Models\Course::whereIn('id', $requestedCourseIds)->get();
+                    $requestedCourses = $courses->map(function ($course) {
+                        return [
+                            'id' => $course->id,
+                            'name' => $course->name,
+                            'name_ar' => $course->name_ar,
+                            'code' => $course->code,
+                        ];
+                    })->toArray();
+                }
+
+                $data['requested_courses'] = $requestedCourses;
+
+                // If there is a sub_category, add category/sub-category info for extra context
+                if ($authorization->sub_category_id && $authorization->subCategory) {
+                    $subCategory = $authorization->subCategory;
+                    $category = $subCategory->category;
+
+                    $data['category'] = $category ? [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'name_ar' => $category->name_ar ?? null,
+                    ] : null;
+
+                    $data['sub_category'] = [
+                        'id' => $subCategory->id,
+                        'name' => $subCategory->name,
+                        'name_ar' => $subCategory->name_ar,
+                        'courses' => $subCategory->courses->map(function ($course) {
+                            return [
+                                'id' => $course->id,
+                                'name' => $course->name,
+                                'name_ar' => $course->name_ar,
+                                'code' => $course->code,
+                            ];
+                        }),
+                    ];
+                } else {
+                    $data['category'] = null;
+                    $data['sub_category'] = null;
+                }
+
+                return $data;
+            });
 
         return response()->json($authorizations);
     }
