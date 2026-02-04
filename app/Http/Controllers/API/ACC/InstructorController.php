@@ -16,13 +16,12 @@ class InstructorController extends Controller
 {
     #[OA\Get(
         path: "/acc/instructors/requests",
-        summary: "List instructor authorization requests",
-        description: "Get all instructor authorization requests for the authenticated ACC with pagination and search.",
+        summary: "List pending instructor authorization requests",
+        description: "Get all pending instructor authorization requests for the authenticated ACC. Multiple pending requests for the same instructor are automatically merged into one request with combined course IDs. Only pending requests are returned - approved, rejected, and returned requests are excluded.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor full name (first name, last name, or both), email, training center name, or request ID"),
-            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "returned"]), description: "Filter by request status"),
             new OA\Parameter(name: "payment_status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "paid", "failed"]), description: "Filter by payment status"),
             new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
             new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
@@ -30,7 +29,7 @@ class InstructorController extends Controller
         responses: [
             new OA\Response(
                 response: 200,
-                description: "Requests retrieved successfully",
+                description: "Pending requests retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "data", type: "array", items: new OA\Items(type: "object")),
@@ -42,11 +41,11 @@ class InstructorController extends Controller
                             property: "statistics",
                             type: "object",
                             properties: [
-                                new OA\Property(property: "total", type: "integer", example: 50, description: "Total number of authorization requests for this ACC"),
-                                new OA\Property(property: "pending", type: "integer", example: 10, description: "Number of pending requests"),
-                                new OA\Property(property: "approved", type: "integer", example: 25, description: "Number of approved requests"),
-                                new OA\Property(property: "rejected", type: "integer", example: 10, description: "Number of rejected requests"),
-                                new OA\Property(property: "returned", type: "integer", example: 5, description: "Number of returned requests")
+                                new OA\Property(property: "total", type: "integer", example: 10, description: "Total number of distinct pending instructor requests (merged)"),
+                                new OA\Property(property: "pending", type: "integer", example: 10, description: "Number of pending requests (same as total, since only pending are returned)"),
+                                new OA\Property(property: "approved", type: "integer", example: 0, description: "Always 0, as only pending requests are returned"),
+                                new OA\Property(property: "rejected", type: "integer", example: 0, description: "Always 0, as only pending requests are returned"),
+                                new OA\Property(property: "returned", type: "integer", example: 0, description: "Always 0, as only pending requests are returned")
                             ]
                         )
                     ]
@@ -65,27 +64,56 @@ class InstructorController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Get all requests with relationships
-        $allRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
+        // Get only pending requests with relationships
+        $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('status', 'pending')
             ->with(['instructor', 'trainingCenter', 'subCategory.category', 'subCategory.courses'])
-            ->orderBy('request_date', 'desc')
+            ->orderBy('request_date', 'asc') // Order by asc to get earliest first for merging
             ->get();
 
-        // Group by instructor_id and get latest request for each
-        $grouped = $allRequests->groupBy('instructor_id');
-        $latestRequests = $grouped->map(function ($requests) {
-            // Get the latest request (first one since we ordered by request_date desc)
-            $latest = $requests->first();
+        // Group by instructor_id and merge multiple pending requests for the same instructor
+        $grouped = $allPendingRequests->groupBy('instructor_id');
+        $mergedRequests = $grouped->map(function ($requests) {
+            // Get the latest request (for most recent data like relationships)
+            $latest = $requests->last();
             
-            // Get all previous requests (excluding the latest)
-            $previous = $requests->slice(1)->values();
+            // Collect all requested course IDs from all pending requests for this instructor
+            $allRequestedCourseIds = [];
+            $allDocuments = [];
+            $earliestRequestDate = null;
+            $requestIds = [];
             
-            // Process latest request data
+            foreach ($requests as $req) {
+                $documentsData = $req->documents_json ?? [];
+                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+                
+                // Merge course IDs (avoid duplicates)
+                $allRequestedCourseIds = array_unique(array_merge($allRequestedCourseIds, $requestedCourseIds));
+                
+                // Collect all documents
+                if (!empty($documentsData)) {
+                    $allDocuments[] = $documentsData;
+                }
+                
+                // Track earliest request date
+                if (!$earliestRequestDate || $req->request_date < $earliestRequestDate) {
+                    $earliestRequestDate = $req->request_date;
+                }
+                
+                // Track all request IDs
+                $requestIds[] = $req->id;
+            }
+            
+            // Process merged request data using latest request as base
             $data = $latest->toArray();
             
-            // Get requested course IDs from documents_json
-            $documentsData = $latest->documents_json ?? [];
-            $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+            // Update request_date to earliest
+            $data['request_date'] = $earliestRequestDate;
+            
+            // Update documents_json to include merged course IDs
+            $mergedDocumentsJson = $latest->documents_json ?? [];
+            $mergedDocumentsJson['requested_course_ids'] = array_values($allRequestedCourseIds);
+            $data['documents_json'] = $mergedDocumentsJson;
             
             // If there is a sub_category, add sub_category name, category, and courses
             if ($latest->sub_category_id && $latest->subCategory) {
@@ -116,10 +144,10 @@ class InstructorController extends Controller
                 $data['sub_category'] = null;
             }
             
-            // Get requested courses by IDs (even if sub_category is null)
+            // Get requested courses by merged IDs
             $requestedCourses = [];
-            if (!empty($requestedCourseIds)) {
-                $courses = \App\Models\Course::whereIn('id', $requestedCourseIds)->get();
+            if (!empty($allRequestedCourseIds)) {
+                $courses = \App\Models\Course::whereIn('id', $allRequestedCourseIds)->get();
                 $requestedCourses = $courses->map(function ($course) {
                     return [
                         'id' => $course->id,
@@ -132,51 +160,25 @@ class InstructorController extends Controller
             
             $data['requested_courses'] = $requestedCourses;
             
-            // Add previous requests info to the latest request
-            $data['previous_requests'] = $previous->map(function ($req) {
-                $documentsData = $req->documents_json ?? [];
-                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
-                
-                return [
-                    'id' => $req->id,
-                    'request_date' => $req->request_date,
-                    'status' => $req->status,
-                    'payment_status' => $req->payment_status,
-                    'authorization_price' => $req->authorization_price,
-                    'rejection_reason' => $req->rejection_reason,
-                    'return_comment' => $req->return_comment,
-                    'reviewed_by' => $req->reviewed_by,
-                    'reviewed_at' => $req->reviewed_at,
-                    'requested_courses_count' => count($requestedCourseIds),
-                    'documents_count' => is_array($req->documents_json) ? count($req->documents_json) : 0,
-                ];
-            })->toArray();
-            
-            $data['total_requests_count'] = $requests->count();
+            // Add info about merged requests
+            $data['merged_requests_count'] = $requests->count();
+            $data['merged_request_ids'] = $requestIds;
             
             return $data;
         })->values();
 
-        // Filter by status if provided (filter latest requests by their status)
-        if ($request->has('status')) {
-            $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
-            if (in_array($request->status, $validStatuses)) {
-                $latestRequests = $latestRequests->where('status', $request->status)->values();
-            }
-        }
-
-        // Filter by payment_status if provided (filter latest requests by their payment_status)
+        // Filter by payment_status if provided
         if ($request->has('payment_status')) {
             $validPaymentStatuses = ['pending', 'paid', 'failed'];
             if (in_array($request->payment_status, $validPaymentStatuses)) {
-                $latestRequests = $latestRequests->where('payment_status', $request->payment_status)->values();
+                $mergedRequests = $mergedRequests->where('payment_status', $request->payment_status)->values();
             }
         }
 
-        // Search functionality (search in latest requests)
+        // Search functionality
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $latestRequests = $latestRequests->filter(function ($req) use ($searchTerm) {
+            $mergedRequests = $mergedRequests->filter(function ($req) use ($searchTerm) {
                 // Access instructor and trainingCenter from the array
                 $instructor = $req['instructor'] ?? null;
                 $trainingCenter = $req['training_center'] ?? null;
@@ -191,27 +193,20 @@ class InstructorController extends Controller
             })->values();
         }
 
-        // Paginate the grouped results
+        // Paginate the merged results
         $perPage = $request->get('per_page', 15);
         $page = $request->get('page', 1);
-        $total = $latestRequests->count();
+        $total = $mergedRequests->count();
         $offset = ($page - 1) * $perPage;
-        $paginated = $latestRequests->slice($offset, $perPage)->values();
+        $paginated = $mergedRequests->slice($offset, $perPage)->values();
 
-        // Calculate statistics based on the latest request per instructor (distinct instructors)
-        $statusCounts = $grouped
-            ->map(function ($requests) {
-                return optional($requests->first())->status;
-            })
-            ->filter()
-            ->countBy();
-
+        // Calculate statistics - only pending requests (distinct instructors)
         $statistics = [
             'total' => $grouped->count(),
-            'pending' => (int) $statusCounts->get('pending', 0),
-            'approved' => (int) $statusCounts->get('approved', 0),
-            'rejected' => (int) $statusCounts->get('rejected', 0),
-            'returned' => (int) $statusCounts->get('returned', 0),
+            'pending' => $grouped->count(),
+            'approved' => 0,
+            'rejected' => 0,
+            'returned' => 0,
         ];
 
         return response()->json([
@@ -242,13 +237,30 @@ class InstructorController extends Controller
         $authorization = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->findOrFail($id);
 
-        $authorization->update([
-            'status' => 'approved',
-            'authorization_price' => $request->authorization_price,
-            'reviewed_by' => $user->id,
-            'reviewed_at' => now(),
-            'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
-        ]);
+        // Get all pending requests for this instructor and ACC (merged requests)
+        $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('instructor_id', $authorization->instructor_id)
+            ->where('status', 'pending')
+            ->get();
+
+        // Collect all course IDs from all pending requests
+        $allCourseIds = [];
+        foreach ($allPendingRequests as $pendingReq) {
+            $documentsData = $pendingReq->documents_json ?? [];
+            $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+            $allCourseIds = array_unique(array_merge($allCourseIds, $requestedCourseIds));
+        }
+
+        // Approve all pending requests for this instructor
+        $allPendingRequests->each(function ($pendingReq) use ($user, $request) {
+            $pendingReq->update([
+                'status' => 'approved',
+                'authorization_price' => $request->authorization_price,
+                'reviewed_by' => $user->id,
+                'reviewed_at' => now(),
+                'group_admin_status' => 'pending', // Waiting for Group Admin to set commission
+            ]);
+        });
 
         // Update instructor status from pending to active if authorized by ACC
         $instructor = Instructor::find($authorization->instructor_id);
@@ -256,13 +268,9 @@ class InstructorController extends Controller
             $instructor->update(['status' => 'active']);
         }
 
-        // Get course IDs from documents_json
-        $documentsData = $authorization->documents_json ?? [];
-        $courseIds = $documentsData['requested_course_ids'] ?? [];
-
-        // Create InstructorCourseAuthorization records for all approved courses
-        if (!empty($courseIds)) {
-            foreach ($courseIds as $courseId) {
+        // Create InstructorCourseAuthorization records for all approved courses (merged from all requests)
+        if (!empty($allCourseIds)) {
+            foreach ($allCourseIds as $courseId) {
                 \App\Models\InstructorCourseAuthorization::updateOrCreate(
                     [
                         'instructor_id' => $authorization->instructor_id,
@@ -278,7 +286,8 @@ class InstructorController extends Controller
             }
         }
 
-        // Send notification to Group Admin to set commission percentage
+        // Send notification to Group Admin to set commission percentage (use the main authorization)
+        $authorization->refresh();
         $authorization->load(['instructor', 'acc', 'subCategory']);
         $instructor = $authorization->instructor;
         $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
@@ -291,8 +300,8 @@ class InstructorController extends Controller
             $request->authorization_price
         );
         
-        // Enhanced notification data includes course count
-        $coursesCount = count($courseIds);
+        // Enhanced notification data includes course count (merged from all requests)
+        $coursesCount = count($allCourseIds);
         $subCategoryName = $authorization->subCategory?->name;
         
         // Also notify training center with enhanced details
@@ -315,7 +324,8 @@ class InstructorController extends Controller
         return response()->json([
             'message' => 'Instructor approved successfully. Waiting for Group Admin to set commission percentage.',
             'authorization' => $authorization->fresh(),
-            'courses_authorized' => count($courseIds)
+            'courses_authorized' => count($allCourseIds),
+            'merged_requests_approved' => $allPendingRequests->count()
         ]);
     }
 
@@ -335,14 +345,24 @@ class InstructorController extends Controller
         $authorization = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->findOrFail($id);
 
-        $authorization->update([
-            'status' => 'rejected',
-            'rejection_reason' => $request->rejection_reason,
-            'reviewed_by' => $user->id,
-            'reviewed_at' => now(),
-        ]);
+        // Get all pending requests for this instructor and ACC (merged requests)
+        $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('instructor_id', $authorization->instructor_id)
+            ->where('status', 'pending')
+            ->get();
+
+        // Reject all pending requests for this instructor
+        $allPendingRequests->each(function ($pendingReq) use ($user, $request) {
+            $pendingReq->update([
+                'status' => 'rejected',
+                'rejection_reason' => $request->rejection_reason,
+                'reviewed_by' => $user->id,
+                'reviewed_at' => now(),
+            ]);
+        });
 
         // Send notification to Training Center
+        $authorization->refresh();
         $authorization->load(['instructor', 'trainingCenter']);
         $trainingCenter = $authorization->trainingCenter;
         if ($trainingCenter) {
@@ -360,7 +380,10 @@ class InstructorController extends Controller
             }
         }
 
-        return response()->json(['message' => 'Instructor rejected']);
+        return response()->json([
+            'message' => 'Instructor rejected',
+            'merged_requests_rejected' => $allPendingRequests->count()
+        ]);
     }
 
     public function return(Request $request, $id)
@@ -379,14 +402,24 @@ class InstructorController extends Controller
         $authorization = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->findOrFail($id);
 
-        $authorization->update([
-            'status' => 'returned',
-            'return_comment' => $request->return_comment,
-            'reviewed_by' => $user->id,
-            'reviewed_at' => now(),
-        ]);
+        // Get all pending requests for this instructor and ACC (merged requests)
+        $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('instructor_id', $authorization->instructor_id)
+            ->where('status', 'pending')
+            ->get();
+
+        // Return all pending requests for this instructor
+        $allPendingRequests->each(function ($pendingReq) use ($user, $request) {
+            $pendingReq->update([
+                'status' => 'returned',
+                'return_comment' => $request->return_comment,
+                'reviewed_by' => $user->id,
+                'reviewed_at' => now(),
+            ]);
+        });
 
         // Send notification to Training Center
+        $authorization->refresh();
         $authorization->load(['instructor', 'trainingCenter', 'acc']);
         $trainingCenter = $authorization->trainingCenter;
         if ($trainingCenter) {
@@ -405,7 +438,10 @@ class InstructorController extends Controller
             }
         }
 
-        return response()->json(['message' => 'Request returned successfully']);
+        return response()->json([
+            'message' => 'Request returned successfully',
+            'merged_requests_returned' => $allPendingRequests->count()
+        ]);
     }
 
     #[OA\Get(
