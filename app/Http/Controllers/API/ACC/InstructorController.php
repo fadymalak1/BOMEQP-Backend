@@ -635,7 +635,7 @@ class InstructorController extends Controller
             }
 
             // Build authorizations list - show all approved authorizations separately
-            $authorizationsList = $approvedAuthorizations.reverse()->map(function ($authorization) {
+            $authorizationsList = $approvedAuthorizations->map(function ($authorization) {
                 $subCategoryData = null;
                 $categoryData = null;
                 
@@ -669,7 +669,7 @@ class InstructorController extends Controller
                     'category' => $categoryData,
                     'sub_category' => $subCategoryData,
                 ];
-            })->values();
+            })->values()->reverse()->values();
 
             // Build latest authorization summary
             $latestAuthSummary = null;
