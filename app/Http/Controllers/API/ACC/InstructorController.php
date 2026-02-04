@@ -21,7 +21,10 @@ class InstructorController extends Controller
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
-            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor full name (first name, last name, or both), email, training center name, or request ID"),
+            new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor name, email, phone, ID number, country, city, training center name, request ID, or content in certificates/specializations"),
+            new OA\Parameter(name: "country", in: "query", required: false, schema: new OA\Schema(type: "string"), example: "USA", description: "Filter by instructor country"),
+            new OA\Parameter(name: "city", in: "query", required: false, schema: new OA\Schema(type: "string"), example: "New York", description: "Filter by instructor city"),
+            new OA\Parameter(name: "is_assessor", in: "query", required: false, schema: new OA\Schema(type: "boolean"), example: false, description: "Filter by assessor status (true for Assessor, false for Instructor)"),
             new OA\Parameter(name: "payment_status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "paid", "failed"]), description: "Filter by payment status"),
             new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
             new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
@@ -65,10 +68,63 @@ class InstructorController extends Controller
         }
 
         // Get only pending requests with relationships
-        $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
+        $allPendingRequestsQuery = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->where('status', 'pending')
-            ->with(['instructor', 'trainingCenter', 'subCategory.category', 'subCategory.courses'])
-            ->orderBy('request_date', 'desc') // Order by asc to get earliest first for merging
+            ->with(['instructor', 'trainingCenter', 'subCategory.category', 'subCategory.courses']);
+
+        // Apply filters before merging (filter by instructor attributes)
+        $allPendingRequestsQuery->whereHas('instructor', function ($instructorQuery) use ($request) {
+            // Filter by country
+            if ($request->has('country') && !empty($request->country)) {
+                $instructorQuery->where('country', 'like', "%{$request->country}%");
+            }
+
+            // Filter by city
+            if ($request->has('city') && !empty($request->city)) {
+                $instructorQuery->where('city', 'like', "%{$request->city}%");
+            }
+
+            // Filter by assessor status
+            if ($request->has('is_assessor')) {
+                $instructorQuery->where('is_assessor', $request->boolean('is_assessor'));
+            }
+
+            // Comprehensive search in instructor fields
+            if ($request->has('search') && !empty($request->search)) {
+                $searchTerm = $request->search;
+                $instructorQuery->where(function($q) use ($searchTerm) {
+                    $q->where('first_name', 'like', "%{$searchTerm}%")
+                        ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
+                        ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
+                        ->orWhere('email', 'like', "%{$searchTerm}%")
+                        ->orWhere('phone', 'like', "%{$searchTerm}%")
+                        ->orWhere('id_number', 'like', "%{$searchTerm}%")
+                        ->orWhere('country', 'like', "%{$searchTerm}%")
+                        ->orWhere('city', 'like', "%{$searchTerm}%")
+                        // Search in JSON fields
+                        ->orWhereRaw("JSON_SEARCH(certificates_json, 'one', ?, NULL, '$[*].*') IS NOT NULL", ["%{$searchTerm}%"])
+                        ->orWhereRaw("JSON_SEARCH(specializations, 'one', ?, NULL, '$[*]') IS NOT NULL", ["%{$searchTerm}%"]);
+                });
+            }
+        });
+
+        // Also search in training center name
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $allPendingRequestsQuery->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
+                $tcQuery->where('name', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        // Also search in request ID
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $allPendingRequestsQuery->orWhere('id', 'like', "%{$searchTerm}%");
+        }
+
+        $allPendingRequests = $allPendingRequestsQuery
+            ->orderBy('request_date', 'desc') // Order by desc to get latest first for merging
             ->get();
 
         // Group by instructor_id and merge multiple pending requests for the same instructor
@@ -167,30 +223,12 @@ class InstructorController extends Controller
             return $data;
         })->values();
 
-        // Filter by payment_status if provided
+        // Filter by payment_status if provided (after merging)
         if ($request->has('payment_status')) {
             $validPaymentStatuses = ['pending', 'paid', 'failed'];
             if (in_array($request->payment_status, $validPaymentStatuses)) {
                 $mergedRequests = $mergedRequests->where('payment_status', $request->payment_status)->values();
             }
-        }
-
-        // Search functionality
-        if ($request->has('search') && !empty($request->search)) {
-            $searchTerm = $request->search;
-            $mergedRequests = $mergedRequests->filter(function ($req) use ($searchTerm) {
-                // Access instructor and trainingCenter from the array
-                $instructor = $req['instructor'] ?? null;
-                $trainingCenter = $req['training_center'] ?? null;
-                
-                return stripos((string)$req['id'], $searchTerm) !== false
-                    || ($instructor && (
-                        stripos($instructor['first_name'] ?? '', $searchTerm) !== false
-                        || stripos($instructor['last_name'] ?? '', $searchTerm) !== false
-                        || stripos($instructor['email'] ?? '', $searchTerm) !== false
-                    ))
-                    || ($trainingCenter && stripos($trainingCenter['name'] ?? '', $searchTerm) !== false);
-            })->values();
         }
 
         // Paginate the merged results
