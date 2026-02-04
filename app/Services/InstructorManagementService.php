@@ -113,10 +113,16 @@ class InstructorManagementService
                     $instructorName,
                     $trainingCenter->name
                 ));
-            } catch (\Exception $e) {
-                Log::warning('Failed to send instructor credentials email', [
+                Log::info('Instructor credentials email sent successfully', [
                     'email' => $request->email,
-                    'error' => $e->getMessage()
+                    'instructor_name' => $instructorName
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send instructor credentials email', [
+                    'email' => $request->email,
+                    'instructor_name' => $instructorName,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
                 ]);
             }
 
