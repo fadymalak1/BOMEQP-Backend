@@ -68,7 +68,7 @@ class InstructorController extends Controller
         $allPendingRequests = InstructorAccAuthorization::where('acc_id', $acc->id)
             ->where('status', 'pending')
             ->with(['instructor', 'trainingCenter', 'subCategory.category', 'subCategory.courses'])
-            ->orderBy('request_date', 'asc') // Order by asc to get earliest first for merging
+            ->orderBy('request_date', 'desc') // Order by asc to get earliest first for merging
             ->get();
 
         // Group by instructor_id and merge multiple pending requests for the same instructor
