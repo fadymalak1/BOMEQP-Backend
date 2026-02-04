@@ -198,13 +198,20 @@ class InstructorController extends Controller
         $offset = ($page - 1) * $perPage;
         $paginated = $latestRequests->slice($offset, $perPage)->values();
 
-        // Calculate statistics for all requests for this ACC (not just paginated results)
+        // Calculate statistics based on the latest request per instructor (distinct instructors)
+        $statusCounts = $grouped
+            ->map(function ($requests) {
+                return optional($requests->first())->status;
+            })
+            ->filter()
+            ->countBy();
+
         $statistics = [
-            'total' => $allRequests->count(),
-            'pending' => $allRequests->where('status', 'pending')->count(),
-            'approved' => $allRequests->where('status', 'approved')->count(),
-            'rejected' => $allRequests->where('status', 'rejected')->count(),
-            'returned' => $allRequests->where('status', 'returned')->count(),
+            'total' => $grouped->count(),
+            'pending' => (int) $statusCounts->get('pending', 0),
+            'approved' => (int) $statusCounts->get('approved', 0),
+            'rejected' => (int) $statusCounts->get('rejected', 0),
+            'returned' => (int) $statusCounts->get('returned', 0),
         ];
 
         return response()->json([
