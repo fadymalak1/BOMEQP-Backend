@@ -691,12 +691,12 @@ class InstructorController extends Controller
     #[OA\Get(
         path: "/training-center/instructors/authorizations",
         summary: "List instructor authorization requests",
-        description: "Get all instructor authorization requests for the authenticated training center with pagination and search.",
+        description: "Get all instructor authorization requests for the authenticated training center with pagination and search. Multiple pending requests for the same instructor are automatically merged into one request with combined course IDs.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
             new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by instructor full name (first name, last name, or both), ACC name, or authorization ID"),
-            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "returned"]), description: "Filter by authorization status"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "approved", "rejected", "returned"]), description: "Filter by authorization status. When filtering by 'pending', multiple pending requests for the same instructor are merged."),
             new OA\Parameter(name: "payment_status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "paid", "failed"]), description: "Filter by payment status"),
             new OA\Parameter(name: "per_page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 15, description: "Number of items per page (default: 15)"),
             new OA\Parameter(name: "page", in: "query", required: false, schema: new OA\Schema(type: "integer"), example: 1, description: "Page number (default: 1)")
@@ -728,7 +728,8 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $query = InstructorAccAuthorization::where('training_center_id', $trainingCenter->id)
+        // Get all requests with relationships
+        $allRequests = InstructorAccAuthorization::where('training_center_id', $trainingCenter->id)
             ->with([
                 // Return richer instructor data
                 'instructor:id,training_center_id,first_name,last_name,email,phone,country,city,status,is_assessor',
@@ -736,51 +737,97 @@ class InstructorController extends Controller
                 // Optional relations for category / sub-category context
                 'subCategory.category',
                 'subCategory.courses',
-            ]);
+            ])
+            ->orderBy('request_date', 'desc')
+            ->get();
 
-        // Filter by status if provided
+        // Filter by status if provided (before grouping)
         if ($request->has('status')) {
             $validStatuses = ['pending', 'approved', 'rejected', 'returned'];
             if (in_array($request->status, $validStatuses)) {
-                $query->where('status', $request->status);
+                $allRequests = $allRequests->where('status', $request->status);
             }
         }
 
-        // Filter by payment_status if provided
+        // Filter by payment_status if provided (before grouping)
         if ($request->has('payment_status')) {
             $validPaymentStatuses = ['pending', 'paid', 'failed'];
             if (in_array($request->payment_status, $validPaymentStatuses)) {
-                $query->where('payment_status', $request->payment_status);
+                $allRequests = $allRequests->where('payment_status', $request->payment_status);
             }
         }
 
-        // Search functionality
-        if ($request->has('search') && !empty($request->search)) {
-            $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('id', 'like', "%{$searchTerm}%")
-                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
-                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
-                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
-                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
-                            ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"]);
-                    })
-                    ->orWhereHas('acc', function ($accQuery) use ($searchTerm) {
-                        $accQuery->where('name', 'like', "%{$searchTerm}%");
-                    });
-            });
-        }
-
-        $perPage = $request->get('per_page', 15);
-        $authorizations = $query->orderBy('request_date', 'desc')
-            ->paginate($perPage)
-            ->through(function ($authorization) {
-                $data = $authorization->toArray();
-
+        // Group by instructor_id and merge multiple pending requests for the same instructor
+        // For non-pending statuses, we still group but don't merge (show latest only)
+        $grouped = $allRequests->groupBy('instructor_id');
+        $mergedRequests = $grouped->map(function ($requests) use ($request) {
+            // Get the latest request (for most recent data like relationships)
+            $latest = $requests->first();
+            
+            // Only merge if status is pending (or no status filter and latest is pending)
+            $shouldMerge = ($request->has('status') && $request->status === 'pending') 
+                || (!$request->has('status') && $latest->status === 'pending');
+            
+            if ($shouldMerge && $latest->status === 'pending') {
+                // Collect all requested course IDs from all pending requests for this instructor
+                $allRequestedCourseIds = [];
+                $earliestRequestDate = null;
+                $requestIds = [];
+                
+                foreach ($requests->where('status', 'pending') as $req) {
+                    $documentsData = $req->documents_json ?? [];
+                    $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+                    
+                    // Merge course IDs (avoid duplicates)
+                    $allRequestedCourseIds = array_unique(array_merge($allRequestedCourseIds, $requestedCourseIds));
+                    
+                    // Track earliest request date
+                    if (!$earliestRequestDate || $req->request_date < $earliestRequestDate) {
+                        $earliestRequestDate = $req->request_date;
+                    }
+                    
+                    // Track all request IDs
+                    $requestIds[] = $req->id;
+                }
+                
+                // Process merged request data using latest request as base
+                $data = $latest->toArray();
+                
+                // Update request_date to earliest
+                $data['request_date'] = $earliestRequestDate;
+                
+                // Update documents_json to include merged course IDs
+                $mergedDocumentsJson = $latest->documents_json ?? [];
+                $mergedDocumentsJson['requested_course_ids'] = array_values($allRequestedCourseIds);
+                $data['documents_json'] = $mergedDocumentsJson;
+                
+                // Get requested courses by merged IDs
+                $requestedCourses = [];
+                if (!empty($allRequestedCourseIds)) {
+                    $courses = \App\Models\Course::whereIn('id', $allRequestedCourseIds)->get();
+                    $requestedCourses = $courses->map(function ($course) {
+                        return [
+                            'id' => $course->id,
+                            'name' => $course->name,
+                            'name_ar' => $course->name_ar,
+                            'code' => $course->code,
+                        ];
+                    })->toArray();
+                }
+                
+                $data['requested_courses'] = $requestedCourses;
+                
+                // Add info about merged requests
+                $data['merged_requests_count'] = count($requestIds);
+                $data['merged_request_ids'] = $requestIds;
+            } else {
+                // For non-pending or when not merging, use latest request as-is
+                $data = $latest->toArray();
+                
                 // Get requested course IDs from documents_json
-                $documentsData = $authorization->documents_json ?? [];
+                $documentsData = $latest->documents_json ?? [];
                 $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
-
+                
                 // Build requested_courses array with course details
                 $requestedCourses = [];
                 if (!empty($requestedCourseIds)) {
@@ -794,42 +841,73 @@ class InstructorController extends Controller
                         ];
                     })->toArray();
                 }
-
+                
                 $data['requested_courses'] = $requestedCourses;
+            }
 
-                // If there is a sub_category, add category/sub-category info for extra context
-                if ($authorization->sub_category_id && $authorization->subCategory) {
-                    $subCategory = $authorization->subCategory;
-                    $category = $subCategory->category;
+            // If there is a sub_category, add category/sub-category info for extra context
+            if ($latest->sub_category_id && $latest->subCategory) {
+                $subCategory = $latest->subCategory;
+                $category = $subCategory->category;
 
-                    $data['category'] = $category ? [
-                        'id' => $category->id,
-                        'name' => $category->name,
-                        'name_ar' => $category->name_ar ?? null,
-                    ] : null;
+                $data['category'] = $category ? [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'name_ar' => $category->name_ar ?? null,
+                ] : null;
 
-                    $data['sub_category'] = [
-                        'id' => $subCategory->id,
-                        'name' => $subCategory->name,
-                        'name_ar' => $subCategory->name_ar,
-                        'courses' => $subCategory->courses->map(function ($course) {
-                            return [
-                                'id' => $course->id,
-                                'name' => $course->name,
-                                'name_ar' => $course->name_ar,
-                                'code' => $course->code,
-                            ];
-                        }),
-                    ];
-                } else {
-                    $data['category'] = null;
-                    $data['sub_category'] = null;
-                }
+                $data['sub_category'] = [
+                    'id' => $subCategory->id,
+                    'name' => $subCategory->name,
+                    'name_ar' => $subCategory->name_ar,
+                    'courses' => $subCategory->courses->map(function ($course) {
+                        return [
+                            'id' => $course->id,
+                            'name' => $course->name,
+                            'name_ar' => $course->name_ar,
+                            'code' => $course->code,
+                        ];
+                    }),
+                ];
+            } else {
+                $data['category'] = null;
+                $data['sub_category'] = null;
+            }
 
-                return $data;
-            });
+            return $data;
+        })->values();
 
-        return response()->json($authorizations);
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $mergedRequests = $mergedRequests->filter(function ($req) use ($searchTerm) {
+                $instructor = $req['instructor'] ?? null;
+                $acc = $req['acc'] ?? null;
+                
+                return stripos((string)$req['id'], $searchTerm) !== false
+                    || ($instructor && (
+                        stripos($instructor['first_name'] ?? '', $searchTerm) !== false
+                        || stripos($instructor['last_name'] ?? '', $searchTerm) !== false
+                        || stripos($instructor['email'] ?? '', $searchTerm) !== false
+                    ))
+                    || ($acc && stripos($acc['name'] ?? '', $searchTerm) !== false);
+            })->values();
+        }
+
+        // Paginate the merged results
+        $perPage = $request->get('per_page', 15);
+        $page = $request->get('page', 1);
+        $total = $mergedRequests->count();
+        $offset = ($page - 1) * $perPage;
+        $paginated = $mergedRequests->slice($offset, $perPage)->values();
+
+        return response()->json([
+            'data' => $paginated,
+            'current_page' => (int) $page,
+            'per_page' => (int) $perPage,
+            'total' => $total,
+            'last_page' => (int) ceil($total / $perPage),
+        ]);
     }
 }
 

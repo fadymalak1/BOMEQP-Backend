@@ -313,14 +313,35 @@ class InstructorController extends Controller
             ], 400);
         }
 
-        $authorization->update([
-            'commission_percentage' => $request->commission_percentage,
-            'group_admin_status' => 'commission_set',
-            'group_commission_set_by' => $request->user()->id,
-            'group_commission_set_at' => now(),
-        ]);
+        // Get all approved requests for this instructor waiting for commission (merged requests)
+        $allPendingCommissionRequests = InstructorAccAuthorization::where('instructor_id', $authorization->instructor_id)
+            ->where('status', 'approved')
+            ->where('group_admin_status', 'pending')
+            ->whereNotNull('authorization_price')
+            ->get();
 
-        // Send notification to Training Center to complete payment with enhanced details
+        // Set commission for all merged requests
+        $allPendingCommissionRequests->each(function ($req) use ($request) {
+            $req->update([
+                'commission_percentage' => $request->commission_percentage,
+                'group_admin_status' => 'commission_set',
+                'group_commission_set_by' => $request->user()->id,
+                'group_commission_set_at' => now(),
+            ]);
+        });
+
+        // Collect all course IDs from all merged requests
+        $allCourseIds = [];
+        $totalAuthorizationPrice = 0;
+        foreach ($allPendingCommissionRequests as $req) {
+            $documentsData = $req->documents_json ?? [];
+            $courseIds = $documentsData['requested_course_ids'] ?? [];
+            $allCourseIds = array_unique(array_merge($allCourseIds, $courseIds));
+            $totalAuthorizationPrice += $req->authorization_price ?? 0;
+        }
+
+        // Send notification to Training Center to complete payment with enhanced details (use main authorization)
+        $authorization->refresh();
         $authorization->load(['instructor', 'trainingCenter', 'acc', 'subCategory']);
         $trainingCenter = $authorization->trainingCenter;
         if ($trainingCenter) {
@@ -330,17 +351,15 @@ class InstructorController extends Controller
                 $instructor = $authorization->instructor;
                 $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
                 
-                // Get course count from documents_json
-                $documentsData = $authorization->documents_json ?? [];
-                $courseIds = $documentsData['requested_course_ids'] ?? [];
-                $coursesCount = count($courseIds);
+                // Use merged course count
+                $coursesCount = count($allCourseIds);
                 
                 $notificationService->notifyInstructorCommissionSet(
                     $trainingCenterUser->id,
                     $authorization->id,
                     $instructorName,
                     $authorization->acc->name,
-                    $authorization->authorization_price ?? 0,
+                    $totalAuthorizationPrice,
                     $request->commission_percentage,
                     $coursesCount
                 );
@@ -349,14 +368,15 @@ class InstructorController extends Controller
 
         return response()->json([
             'message' => 'Commission percentage set successfully. Training Center can now complete payment.',
-            'authorization' => $authorization->fresh()->load(['instructor', 'acc', 'trainingCenter'])
+            'authorization' => $authorization->fresh()->load(['instructor', 'acc', 'trainingCenter']),
+            'merged_requests_commission_set' => $allPendingCommissionRequests->count()
         ], 200);
     }
 
     #[OA\Get(
         path: "/admin/instructor-authorizations/pending-commission",
         summary: "Get pending commission requests",
-        description: "Get instructor authorization requests that are approved by ACC Admin and waiting for commission setting by Group Admin, with pagination and search.",
+        description: "Get instructor authorization requests that are approved by ACC Admin and waiting for commission setting by Group Admin. Multiple approved requests for the same instructor are automatically merged into one request with combined course IDs and summed authorization prices.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
@@ -383,43 +403,111 @@ class InstructorController extends Controller
     )]
     public function pendingCommissionRequests(Request $request)
     {
-        $query = InstructorAccAuthorization::where('status', 'approved')
+        // Get all approved requests waiting for commission
+        $allRequests = InstructorAccAuthorization::where('status', 'approved')
             ->where('group_admin_status', 'pending')
             ->whereNotNull('authorization_price')
-            ->with(['instructor', 'acc', 'trainingCenter']);
+            ->with(['instructor', 'acc', 'trainingCenter', 'subCategory.category', 'subCategory.courses'])
+            ->orderBy('reviewed_at', 'desc')
+            ->get();
+
+        // Group by instructor_id and merge multiple requests for the same instructor
+        $grouped = $allRequests->groupBy('instructor_id');
+        $mergedRequests = $grouped->map(function ($requests) {
+            // Get the latest request (for most recent data like relationships)
+            $latest = $requests->first();
+            
+            // Collect all requested course IDs from all requests for this instructor
+            $allRequestedCourseIds = [];
+            $totalAuthorizationPrice = 0;
+            $requestIds = [];
+            
+            foreach ($requests as $req) {
+                $documentsData = $req->documents_json ?? [];
+                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
+                
+                // Merge course IDs (avoid duplicates)
+                $allRequestedCourseIds = array_unique(array_merge($allRequestedCourseIds, $requestedCourseIds));
+                
+                // Sum authorization prices
+                $totalAuthorizationPrice += $req->authorization_price ?? 0;
+                
+                // Track all request IDs
+                $requestIds[] = $req->id;
+            }
+            
+            // Process merged request data using latest request as base
+            $data = $latest->toArray();
+            
+            // Update authorization_price to sum of all merged requests
+            $data['authorization_price'] = $totalAuthorizationPrice;
+            
+            // Update documents_json to include merged course IDs
+            $mergedDocumentsJson = $latest->documents_json ?? [];
+            $mergedDocumentsJson['requested_course_ids'] = array_values($allRequestedCourseIds);
+            $data['documents_json'] = $mergedDocumentsJson;
+            
+            // Get requested courses by merged IDs
+            $requestedCourses = [];
+            if (!empty($allRequestedCourseIds)) {
+                $courses = \App\Models\Course::whereIn('id', $allRequestedCourseIds)->get();
+                $requestedCourses = $courses->map(function ($course) {
+                    return [
+                        'id' => $course->id,
+                        'name' => $course->name,
+                        'name_ar' => $course->name_ar,
+                        'code' => $course->code,
+                    ];
+                })->toArray();
+            }
+            
+            $data['requested_courses'] = $requestedCourses;
+            
+            // Add info about merged requests
+            $data['merged_requests_count'] = $requests->count();
+            $data['merged_request_ids'] = $requestIds;
+            
+            return $data;
+        })->values();
 
         // Search functionality
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('id', 'like', "%{$searchTerm}%")
-                    ->orWhereHas('instructor', function ($instructorQuery) use ($searchTerm) {
-                        $instructorQuery->where('first_name', 'like', "%{$searchTerm}%")
-                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
-                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$searchTerm}%"])
-                            ->orWhereRaw("CONCAT(last_name, ' ', first_name) LIKE ?", ["%{$searchTerm}%"])
-                            ->orWhere('email', 'like', "%{$searchTerm}%");
-                    })
-                    ->orWhereHas('acc', function ($accQuery) use ($searchTerm) {
-                        $accQuery->where('name', 'like', "%{$searchTerm}%")
-                            ->orWhere('email', 'like', "%{$searchTerm}%");
-                    })
-                    ->orWhereHas('trainingCenter', function ($tcQuery) use ($searchTerm) {
-                        $tcQuery->where('name', 'like', "%{$searchTerm}%")
-                            ->orWhere('email', 'like', "%{$searchTerm}%");
-                    });
-            });
+            $mergedRequests = $mergedRequests->filter(function ($req) use ($searchTerm) {
+                $instructor = $req['instructor'] ?? null;
+                $acc = $req['acc'] ?? null;
+                $trainingCenter = $req['training_center'] ?? null;
+                
+                return stripos((string)$req['id'], $searchTerm) !== false
+                    || ($instructor && (
+                        stripos($instructor['first_name'] ?? '', $searchTerm) !== false
+                        || stripos($instructor['last_name'] ?? '', $searchTerm) !== false
+                        || stripos($instructor['email'] ?? '', $searchTerm) !== false
+                    ))
+                    || ($acc && (
+                        stripos($acc['name'] ?? '', $searchTerm) !== false
+                        || stripos($acc['email'] ?? '', $searchTerm) !== false
+                    ))
+                    || ($trainingCenter && (
+                        stripos($trainingCenter['name'] ?? '', $searchTerm) !== false
+                        || stripos($trainingCenter['email'] ?? '', $searchTerm) !== false
+                    ));
+            })->values();
         }
 
+        // Paginate the merged results
         $perPage = $request->get('per_page', 15);
-        $authorizations = $query->orderBy('reviewed_at', 'desc')->paginate($perPage);
+        $page = $request->get('page', 1);
+        $total = $mergedRequests->count();
+        $offset = ($page - 1) * $perPage;
+        $paginated = $mergedRequests->slice($offset, $perPage)->values();
 
         return response()->json([
-            'authorizations' => $authorizations->items(),
-            'current_page' => $authorizations->currentPage(),
-            'per_page' => $authorizations->perPage(),
-            'total' => $authorizations->total(),
-            'last_page' => $authorizations->lastPage(),
+            'authorizations' => $paginated,
+            'current_page' => (int) $page,
+            'per_page' => (int) $perPage,
+            'total' => $total,
+            'last_page' => (int) ceil($total / $perPage),
         ], 200);
     }
 }
