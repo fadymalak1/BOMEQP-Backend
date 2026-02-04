@@ -569,15 +569,14 @@ class InstructorController extends Controller
         $perPage = $request->get('per_page', 15);
         $instructors = $instructorsQuery->orderBy('created_at', 'desc')->paginate($perPage);
 
-        // Get all approved authorizations for these instructors
+        // Get ALL authorizations for these instructors (not just approved) to check for pending requests
         $allAuthorizations = InstructorAccAuthorization::where('acc_id', $acc->id)
-            ->where('status', 'approved')
             ->whereIn('instructor_id', $instructors->pluck('id')->toArray())
             ->with(['subCategory.category', 'subCategory.courses', 'trainingCenter'])
             ->get()
             ->groupBy('instructor_id');
 
-        // Transform the data to include instructor details with aggregated authorization info
+        // Transform the data to include instructor details with authorization info
         $instructorsData = $instructors->through(function ($instructor) use ($allAuthorizations, $acc) {
             $instructorAuthorizations = $allAuthorizations->get($instructor->id, collect());
 
@@ -598,47 +597,82 @@ class InstructorController extends Controller
                 ->unique('id')
                 ->values();
 
-            // Merge multiple approved authorizations for the same instructor
-            // Collect all course IDs and merge payment status
-            $allRequestedCourseIds = [];
-            $mergedPaymentStatus = 'pending';
-            $latestPaymentDate = null;
-            $requestIds = [];
-            $earliestRequestDate = null;
+            // Get approved authorizations only for the list
+            $approvedAuthorizations = $instructorAuthorizations->where('status', 'approved');
             
-            foreach ($instructorAuthorizations as $authorization) {
-                $documentsData = $authorization->documents_json ?? [];
-                $requestedCourseIds = $documentsData['requested_course_ids'] ?? [];
-                
-                // Merge course IDs (avoid duplicates)
-                $allRequestedCourseIds = array_unique(array_merge($allRequestedCourseIds, $requestedCourseIds));
-                
-                // Track payment status - if any is paid, the merged status is paid
-                if ($authorization->payment_status === 'paid') {
-                    $mergedPaymentStatus = 'paid';
-                    if (!$latestPaymentDate || $authorization->payment_date > $latestPaymentDate) {
-                        $latestPaymentDate = $authorization->payment_date;
-                    }
-                } elseif ($mergedPaymentStatus === 'pending' && $authorization->payment_status === 'failed') {
-                    $mergedPaymentStatus = 'failed';
+            // Check if there are any pending requests - if yes, payment status should be pending
+            $pendingAuthorizations = $instructorAuthorizations->where('status', 'pending');
+            $hasPendingRequests = $pendingAuthorizations->isNotEmpty();
+            
+            // Determine payment status and get latest authorization details
+            // Priority: If there's a pending request, use its status and show pending
+            // Otherwise, use the latest approved authorization's details
+            $overallPaymentStatus = 'pending';
+            $latestPaymentDate = null;
+            $overallCommissionPercentage = null;
+            $overallAuthorizationPrice = null;
+            $latestAuthorization = null;
+            
+            if ($hasPendingRequests) {
+                // If there are pending requests, status is pending
+                // Get the latest pending request
+                $latestPending = $pendingAuthorizations->sortByDesc('request_date')->first();
+                $overallPaymentStatus = 'pending';
+                $latestAuthorization = $latestPending;
+                // Pending requests don't have commission or payment yet
+                $overallCommissionPercentage = null;
+                $overallAuthorizationPrice = $latestPending->authorization_price;
+            } else {
+                // Otherwise, use the latest approved authorization's payment status and details
+                $latestApproved = $approvedAuthorizations->sortByDesc('reviewed_at')->first();
+                if ($latestApproved) {
+                    $overallPaymentStatus = $latestApproved->payment_status ?? 'pending';
+                    $latestPaymentDate = $latestApproved->payment_date;
+                    $overallCommissionPercentage = $latestApproved->commission_percentage;
+                    $overallAuthorizationPrice = $latestApproved->authorization_price;
+                    $latestAuthorization = $latestApproved;
                 }
-                
-                // Track earliest request date
-                if (!$earliestRequestDate || $authorization->request_date < $earliestRequestDate) {
-                    $earliestRequestDate = $authorization->request_date;
-                }
-                
-                // Track all request IDs
-                $requestIds[] = $authorization->id;
             }
 
-            // Get the latest authorization for summary (use it as base for merged data)
-            // When merging, use the authorization_price from the latest authorization (not sum)
-            // because all merged requests should have the same price when approved together
-            $latestAuthorization = $instructorAuthorizations->sortByDesc('reviewed_at')->first();
-            
-            // Build merged authorization entry
-            $mergedAuthorization = null;
+            // Build authorizations list - show all approved authorizations separately
+            $authorizationsList = $approvedAuthorizations->map(function ($authorization) {
+                $subCategoryData = null;
+                $categoryData = null;
+                
+                if ($authorization->sub_category_id && $authorization->subCategory) {
+                    $subCategory = $authorization->subCategory;
+                    $category = $subCategory->category;
+                    
+                    $categoryData = $category ? [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'name_ar' => $category->name_ar ?? null,
+                    ] : null;
+                    
+                    $subCategoryData = [
+                        'id' => $subCategory->id,
+                        'name' => $subCategory->name,
+                        'name_ar' => $subCategory->name_ar,
+                    ];
+                }
+
+                return [
+                    'id' => $authorization->id,
+                    'request_date' => $authorization->request_date?->toISOString(),
+                    'reviewed_at' => $authorization->reviewed_at?->toISOString(),
+                    'reviewed_by' => $authorization->reviewed_by,
+                    'commission_percentage' => $authorization->commission_percentage,
+                    'authorization_price' => $authorization->authorization_price,
+                    'payment_status' => $authorization->payment_status,
+                    'payment_date' => $authorization->payment_date?->toISOString(),
+                    'group_admin_status' => $authorization->group_admin_status,
+                    'category' => $categoryData,
+                    'sub_category' => $subCategoryData,
+                ];
+            })->values();
+
+            // Build latest authorization summary
+            $latestAuthSummary = null;
             if ($latestAuthorization) {
                 $subCategoryData = null;
                 $categoryData = null;
@@ -660,26 +694,18 @@ class InstructorController extends Controller
                     ];
                 }
 
-                $mergedAuthorization = [
+                $latestAuthSummary = [
                     'id' => $latestAuthorization->id,
-                    'request_date' => $earliestRequestDate?->toISOString(),
+                    'request_date' => $latestAuthorization->request_date?->toISOString(),
                     'reviewed_at' => $latestAuthorization->reviewed_at?->toISOString(),
                     'reviewed_by' => $latestAuthorization->reviewed_by,
-                    'commission_percentage' => $latestAuthorization->commission_percentage,
-                    // Use the authorization_price from latest (not sum) since all merged requests have the same price
-                    'authorization_price' => $latestAuthorization->authorization_price,
-                    'payment_status' => $mergedPaymentStatus,
+                    'commission_percentage' => $overallCommissionPercentage ?? $latestAuthorization->commission_percentage,
+                    'authorization_price' => $overallAuthorizationPrice ?? $latestAuthorization->authorization_price,
+                    'payment_status' => $overallPaymentStatus,
                     'payment_date' => $latestPaymentDate?->toISOString(),
                     'group_admin_status' => $latestAuthorization->group_admin_status,
-                    'category' => $categoryData,
-                    'sub_category' => $subCategoryData,
-                    'merged_requests_count' => count($requestIds),
-                    'merged_request_ids' => $requestIds,
                 ];
             }
-
-            // Return single merged authorization in the list
-            $authorizationsList = $mergedAuthorization ? collect([$mergedAuthorization])->values() : collect();
 
             return [
                 'id' => $instructor->id,
@@ -703,20 +729,10 @@ class InstructorController extends Controller
                     'name' => $instructor->trainingCenter->name,
                     'email' => $instructor->trainingCenter->email,
                 ] : null,
-                'latest_authorization' => $mergedAuthorization ? [
-                    'id' => $mergedAuthorization['id'],
-                    'request_date' => $mergedAuthorization['request_date'],
-                    'reviewed_at' => $mergedAuthorization['reviewed_at'],
-                    'reviewed_by' => $mergedAuthorization['reviewed_by'],
-                    'commission_percentage' => $mergedAuthorization['commission_percentage'],
-                    'authorization_price' => $mergedAuthorization['authorization_price'],
-                    'payment_status' => $mergedAuthorization['payment_status'],
-                    'payment_date' => $mergedAuthorization['payment_date'],
-                    'group_admin_status' => $mergedAuthorization['group_admin_status'],
-                ] : null,
+                'latest_authorization' => $latestAuthSummary,
                 'authorizations' => $authorizationsList,
                 'authorized_courses' => $authorizedCourses,
-                'authorizations_count' => $mergedAuthorization ? 1 : 0,
+                'authorizations_count' => $authorizationsList->count(),
             ];
         });
 
