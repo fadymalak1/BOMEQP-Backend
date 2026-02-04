@@ -601,7 +601,6 @@ class InstructorController extends Controller
             // Merge multiple approved authorizations for the same instructor
             // Collect all course IDs and merge payment status
             $allRequestedCourseIds = [];
-            $totalAuthorizationPrice = 0;
             $mergedPaymentStatus = 'pending';
             $latestPaymentDate = null;
             $requestIds = [];
@@ -613,9 +612,6 @@ class InstructorController extends Controller
                 
                 // Merge course IDs (avoid duplicates)
                 $allRequestedCourseIds = array_unique(array_merge($allRequestedCourseIds, $requestedCourseIds));
-                
-                // Sum authorization prices
-                $totalAuthorizationPrice += $authorization->authorization_price ?? 0;
                 
                 // Track payment status - if any is paid, the merged status is paid
                 if ($authorization->payment_status === 'paid') {
@@ -637,6 +633,8 @@ class InstructorController extends Controller
             }
 
             // Get the latest authorization for summary (use it as base for merged data)
+            // When merging, use the authorization_price from the latest authorization (not sum)
+            // because all merged requests should have the same price when approved together
             $latestAuthorization = $instructorAuthorizations->sortByDesc('reviewed_at')->first();
             
             // Build merged authorization entry
@@ -668,7 +666,8 @@ class InstructorController extends Controller
                     'reviewed_at' => $latestAuthorization->reviewed_at?->toISOString(),
                     'reviewed_by' => $latestAuthorization->reviewed_by,
                     'commission_percentage' => $latestAuthorization->commission_percentage,
-                    'authorization_price' => $totalAuthorizationPrice,
+                    // Use the authorization_price from latest (not sum) since all merged requests have the same price
+                    'authorization_price' => $latestAuthorization->authorization_price,
                     'payment_status' => $mergedPaymentStatus,
                     'payment_date' => $latestPaymentDate?->toISOString(),
                     'group_admin_status' => $latestAuthorization->group_admin_status,

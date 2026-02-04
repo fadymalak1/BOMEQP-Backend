@@ -332,12 +332,10 @@ class InstructorController extends Controller
 
         // Collect all course IDs from all merged requests
         $allCourseIds = [];
-        $totalAuthorizationPrice = 0;
         foreach ($allPendingCommissionRequests as $req) {
             $documentsData = $req->documents_json ?? [];
             $courseIds = $documentsData['requested_course_ids'] ?? [];
             $allCourseIds = array_unique(array_merge($allCourseIds, $courseIds));
-            $totalAuthorizationPrice += $req->authorization_price ?? 0;
         }
 
         // Send notification to Training Center to complete payment with enhanced details (use main authorization)
@@ -354,12 +352,13 @@ class InstructorController extends Controller
                 // Use merged course count
                 $coursesCount = count($allCourseIds);
                 
+                // Use authorization_price from the main authorization (not sum) since all merged requests have the same price
                 $notificationService->notifyInstructorCommissionSet(
                     $trainingCenterUser->id,
                     $authorization->id,
                     $instructorName,
                     $authorization->acc->name,
-                    $totalAuthorizationPrice,
+                    $authorization->authorization_price ?? 0,
                     $request->commission_percentage,
                     $coursesCount
                 );
@@ -376,7 +375,7 @@ class InstructorController extends Controller
     #[OA\Get(
         path: "/admin/instructor-authorizations/pending-commission",
         summary: "Get pending commission requests",
-        description: "Get instructor authorization requests that are approved by ACC Admin and waiting for commission setting by Group Admin. Multiple approved requests for the same instructor are automatically merged into one request with combined course IDs and summed authorization prices.",
+        description: "Get instructor authorization requests that are approved by ACC Admin and waiting for commission setting by Group Admin. Multiple approved requests for the same instructor are automatically merged into one request with combined course IDs. The authorization price and commission remain the same as the individual requests (not summed).",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         parameters: [
@@ -419,7 +418,6 @@ class InstructorController extends Controller
             
             // Collect all requested course IDs from all requests for this instructor
             $allRequestedCourseIds = [];
-            $totalAuthorizationPrice = 0;
             $requestIds = [];
             
             foreach ($requests as $req) {
@@ -429,18 +427,13 @@ class InstructorController extends Controller
                 // Merge course IDs (avoid duplicates)
                 $allRequestedCourseIds = array_unique(array_merge($allRequestedCourseIds, $requestedCourseIds));
                 
-                // Sum authorization prices
-                $totalAuthorizationPrice += $req->authorization_price ?? 0;
-                
                 // Track all request IDs
                 $requestIds[] = $req->id;
             }
             
             // Process merged request data using latest request as base
+            // Use authorization_price from latest (not sum) since all merged requests have the same price
             $data = $latest->toArray();
-            
-            // Update authorization_price to sum of all merged requests
-            $data['authorization_price'] = $totalAuthorizationPrice;
             
             // Update documents_json to include merged course IDs
             $mergedDocumentsJson = $latest->documents_json ?? [];
