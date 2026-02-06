@@ -683,25 +683,40 @@ class ClassController extends Controller
         // Always update the status to 'completed' when marking as complete
         $wasAlreadyCompleted = $class->status === 'completed';
         
-        // Update status in training_classes table
-        $class->status = 'completed';
-        $class->end_date = now()->toDateString();
-        $class->save();
+        // Update status in training_classes table explicitly
+        $updated = TrainingClass::where('id', $class->id)
+            ->update([
+                'status' => 'completed',
+                'end_date' => now()->toDateString(),
+                'updated_at' => now(),
+            ]);
         
-        // Verify the update was successful
+        if (!$updated) {
+            \Illuminate\Support\Facades\Log::error('Failed to update training class status in database', [
+                'class_id' => $class->id,
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to update class status in database',
+                'error' => 'Status update failed'
+            ], 500);
+        }
+        
+        // Refresh the model to get updated data
         $class->refresh();
         
-        // Double-check the status was updated
+        // Verify the status was updated successfully
         if ($class->status !== 'completed') {
-            \Illuminate\Support\Facades\Log::error('Failed to update training class status', [
+            \Illuminate\Support\Facades\Log::error('Training class status verification failed', [
                 'class_id' => $class->id,
                 'expected_status' => 'completed',
                 'actual_status' => $class->status
             ]);
             
             return response()->json([
-                'message' => 'Failed to update class status',
-                'error' => 'Status update failed'
+                'message' => 'Class status was not updated correctly',
+                'error' => 'Status verification failed',
+                'current_status' => $class->status
             ], 500);
         }
 
