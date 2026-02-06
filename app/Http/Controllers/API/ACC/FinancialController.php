@@ -180,7 +180,7 @@ class FinancialController extends Controller
         
         $summary = [
             'total_transactions' => $allTransactions->count(),
-            'total_received' => round($receivedTransactions->sum(function ($t) {
+            'total_received' => round($receivedTransactions->where('status', 'completed')->sum(function ($t) {
                 return $t->provider_amount ?? $t->amount;
             }), 2),
             'total_paid' => round($paidTransactions->sum('amount'), 2),

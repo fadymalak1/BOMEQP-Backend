@@ -82,11 +82,12 @@ class DashboardController extends Controller
             ->count();
 
         // Calculate revenue: Use provider_amount if available (destination charge), otherwise use amount
+        // Use created_at for monthly calculation to match total revenue calculation
         $revenueThisMonth = Transaction::where('payee_type', 'acc')
             ->where('payee_id', $acc->id)
             ->where('status', 'completed')
-            ->whereMonth('completed_at', now()->month)
-            ->whereYear('completed_at', now()->year)
+            ->whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year)
             ->get()
             ->sum(function ($transaction) {
                 return $transaction->provider_amount ?? $transaction->amount;
@@ -115,14 +116,15 @@ class DashboardController extends Controller
         $totalPendingRequests = $pendingRequests + $pendingInstructorRequests;
 
         // Revenue chart data (last 6 months)
+        // Use created_at for consistency with monthly and total revenue calculations
         $revenueChart = [];
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
             $monthRevenue = Transaction::where('payee_type', 'acc')
                 ->where('payee_id', $acc->id)
                 ->where('status', 'completed')
-                ->whereMonth('completed_at', $month->month)
-                ->whereYear('completed_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->whereYear('created_at', $month->year)
                 ->get()
                 ->sum(function ($transaction) {
                     return $transaction->provider_amount ?? $transaction->amount;
