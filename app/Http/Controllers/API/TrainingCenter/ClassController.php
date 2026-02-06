@@ -645,10 +645,10 @@ class ClassController extends Controller
         return response()->json(['message' => 'Class deleted successfully']);
     }
 
-    #[OA\Post(
+    #[OA\Put(
         path: "/training-center/classes/{id}/complete",
         summary: "Mark class as completed",
-        description: "Mark a training class as completed and create a completion record.",
+        description: "Mark a training class as completed, update its status to 'completed', and create a completion record.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -660,7 +660,8 @@ class ClassController extends Controller
                 description: "Class marked as completed",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "message", type: "string", example: "Class marked as completed")
+                        new OA\Property(property: "message", type: "string", example: "Class marked as completed"),
+                        new OA\Property(property: "class", type: "object")
                     ]
                 )
             ),
@@ -679,21 +680,35 @@ class ClassController extends Controller
 
         $class = TrainingClass::where('training_center_id', $trainingCenter->id)->findOrFail($id);
 
-        if ($class->status !== 'completed') {
-            $class->update([
-                'status' => 'completed',
-                'end_date' => now()->toDateString(), // Update end_date to today
-            ]);
+        // Always update the status to 'completed' when marking as complete
+        $wasAlreadyCompleted = $class->status === 'completed';
+        
+        $class->update([
+            'status' => 'completed',
+            'end_date' => now()->toDateString(), // Update end_date to today
+        ]);
 
-            ClassCompletion::create([
-                'training_class_id' => $class->id,
+        // Only create completion record if it doesn't exist
+        $completion = ClassCompletion::firstOrCreate(
+            ['training_class_id' => $class->id],
+            [
                 'completed_date' => now(),
                 'completion_rate_percentage' => 100,
                 'certificates_generated_count' => 0,
                 'marked_by' => $user->id,
-            ]);
+            ]
+        );
 
-            // Send notification to instructor
+        // Update completion record if it already existed
+        if ($completion->wasRecentlyCreated === false) {
+            $completion->update([
+                'completed_date' => now(),
+                'marked_by' => $user->id,
+            ]);
+        }
+
+        // Send notification to instructor only if it wasn't already completed
+        if (!$wasAlreadyCompleted) {
             $class->load(['instructor', 'course']);
             $instructor = $class->instructor;
             if ($instructor) {
@@ -715,7 +730,13 @@ class ClassController extends Controller
             }
         }
 
-        return response()->json(['message' => 'Class marked as completed']);
+        // Reload class with relationships
+        $class = $class->fresh(['course', 'instructor', 'trainees', 'completion']);
+
+        return response()->json([
+            'message' => 'Class marked as completed',
+            'class' => $class
+        ]);
     }
 }
 
