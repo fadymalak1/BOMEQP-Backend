@@ -92,6 +92,32 @@ class ClassController extends Controller
         $classes = $query->orderBy('created_at', 'desc')
             ->paginate($perPage)
             ->through(function ($class) {
+                // Auto-update status based on start_date and end_date
+                if ($class->start_date && $class->end_date && $class->status !== 'cancelled') {
+                    $today = now()->toDateString();
+                    $startDate = $class->start_date;
+                    $endDate = $class->end_date;
+                    $currentStatus = $class->status;
+
+                    // Determine the appropriate status based on dates
+                    if ($today < $startDate) {
+                        // Class hasn't started yet
+                        $newStatus = 'scheduled';
+                    } elseif ($today >= $startDate && $today <= $endDate) {
+                        // Class is currently in progress
+                        $newStatus = 'in_progress';
+                    } else {
+                        // Class has ended
+                        $newStatus = 'completed';
+                    }
+
+                    // Update status if it has changed
+                    if ($currentStatus !== $newStatus) {
+                        $class->status = $newStatus;
+                        $class->save();
+                    }
+                }
+
                 $classData = $class->toArray();
                 // Format trainees data
                 $classData['trainees'] = $class->trainees->map(function ($trainee) {
@@ -361,7 +387,34 @@ class ClassController extends Controller
         $class = TrainingClass::where('training_center_id', $trainingCenter->id)
             ->with(['course', 'instructor', 'trainingCenter', 'completion', 'trainees', 'createdBy'])
             ->findOrFail($id);
-        return response()->json(['class' => $class]);
+
+        // Auto-update status based on start_date and end_date
+        if ($class->start_date && $class->end_date && $class->status !== 'cancelled') {
+            $today = now()->toDateString();
+            $startDate = $class->start_date;
+            $endDate = $class->end_date;
+            $currentStatus = $class->status;
+
+            // Determine the appropriate status based on dates
+            if ($today < $startDate) {
+                // Class hasn't started yet
+                $newStatus = 'scheduled';
+            } elseif ($today >= $startDate && $today <= $endDate) {
+                // Class is currently in progress
+                $newStatus = 'in_progress';
+            } else {
+                // Class has ended
+                $newStatus = 'completed';
+            }
+
+            // Update status if it has changed
+            if ($currentStatus !== $newStatus) {
+                $class->status = $newStatus;
+                $class->save();
+            }
+        }
+
+        return response()->json(['class' => $class->fresh()]);
     }
 
     #[OA\Put(

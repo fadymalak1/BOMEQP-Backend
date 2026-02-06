@@ -16,3 +16,6 @@ Schedule::command('discount-codes:check-status')->daily();
 
 // Schedule certificate expiration check daily
 Schedule::command('certificates:check-expired')->daily();
+
+// Schedule training class status update daily
+Schedule::command('training-classes:update-status')->everyMinute();
