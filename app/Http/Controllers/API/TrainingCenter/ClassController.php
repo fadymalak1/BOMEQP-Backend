@@ -683,10 +683,27 @@ class ClassController extends Controller
         // Always update the status to 'completed' when marking as complete
         $wasAlreadyCompleted = $class->status === 'completed';
         
-        $class->update([
-            'status' => 'completed',
-            'end_date' => now()->toDateString(), // Update end_date to today
-        ]);
+        // Update status in training_classes table
+        $class->status = 'completed';
+        $class->end_date = now()->toDateString();
+        $class->save();
+        
+        // Verify the update was successful
+        $class->refresh();
+        
+        // Double-check the status was updated
+        if ($class->status !== 'completed') {
+            \Illuminate\Support\Facades\Log::error('Failed to update training class status', [
+                'class_id' => $class->id,
+                'expected_status' => 'completed',
+                'actual_status' => $class->status
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to update class status',
+                'error' => 'Status update failed'
+            ], 500);
+        }
 
         // Only create completion record if it doesn't exist
         $completion = ClassCompletion::firstOrCreate(
