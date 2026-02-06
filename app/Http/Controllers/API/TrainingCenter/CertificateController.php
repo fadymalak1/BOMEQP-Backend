@@ -455,19 +455,51 @@ class CertificateController extends Controller
             return response()->json(['message' => 'Course does not belong to the selected ACC'], 403);
         }
 
-        // If training_class_id is provided, verify the class status is completed
+        // Check training class status - certificates can only be generated for completed classes
+        $trainingClass = null;
+        
         if ($request->has('training_class_id') && $request->training_class_id) {
+            // If training_class_id is explicitly provided, check it
             $trainingClass = TrainingClass::where('id', $request->training_class_id)
                 ->where('training_center_id', $trainingCenter->id)
+                ->where('course_id', $request->course_id)
                 ->first();
 
             if (!$trainingClass) {
                 return response()->json([
-                    'message' => 'Training class not found or does not belong to this training center'
+                    'message' => 'Training class not found, does not belong to this training center, or does not match the selected course'
                 ], 404);
             }
+        } else {
+            // If training_class_id is not provided, check if there are any training classes for this course
+            // that have trainees matching the trainee name
+            $traineeName = trim($request->trainee_name);
+            
+            // Try to find trainees with matching name
+            $matchingTrainees = \App\Models\Trainee::where('training_center_id', $trainingCenter->id)
+                ->where(function ($query) use ($traineeName) {
+                    // Match full name
+                    $query->whereRaw("CONCAT(first_name, ' ', last_name) = ?", [$traineeName])
+                        ->orWhereRaw("CONCAT(last_name, ' ', first_name) = ?", [$traineeName])
+                        // Also try matching if trainee_name contains first_name or last_name
+                        ->orWhere('first_name', 'like', "%{$traineeName}%")
+                        ->orWhere('last_name', 'like', "%{$traineeName}%");
+                })
+                ->pluck('id');
 
-            // Check if class status is completed
+            if ($matchingTrainees->isNotEmpty()) {
+                // Find training classes for this course that have these trainees enrolled
+                $trainingClass = TrainingClass::where('training_center_id', $trainingCenter->id)
+                    ->where('course_id', $request->course_id)
+                    ->whereHas('trainees', function ($query) use ($matchingTrainees) {
+                        $query->whereIn('trainees.id', $matchingTrainees);
+                    })
+                    ->first();
+            }
+        }
+
+        // If a training class is found (either explicitly or by trainee matching), verify it's completed
+        if ($trainingClass) {
             if ($trainingClass->status !== 'completed') {
                 return response()->json([
                     'message' => 'Certificates can only be generated for completed classes',
@@ -632,10 +664,13 @@ class CertificateController extends Controller
             ];
 
             // Create certificate record first (with temporary URL or placeholder)
+            // Use the training_class_id from request if provided, otherwise use the found class
+            $certificateTrainingClassId = $request->training_class_id ?? ($trainingClass ? $trainingClass->id : null);
+            
             $certificate = Certificate::create([
                 'certificate_number' => $certificateNumber,
                 'course_id' => $request->course_id,
-                'training_class_id' => $request->training_class_id,
+                'training_class_id' => $certificateTrainingClassId,
                 'training_center_id' => $trainingCenter->id,
                 'instructor_id' => $request->instructor_id,
                 'trainee_name' => $request->trainee_name,
