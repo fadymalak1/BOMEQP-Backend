@@ -93,7 +93,9 @@ class ClassController extends Controller
             ->paginate($perPage)
             ->through(function ($class) {
                 // Auto-update status based on start_date and end_date
-                if ($class->start_date && $class->end_date && $class->status !== 'cancelled') {
+                // Don't update if status is 'completed' or 'cancelled' - these are manually set
+                if ($class->start_date && $class->end_date && 
+                    $class->status !== 'cancelled' && $class->status !== 'completed') {
                     $today = now()->toDateString();
                     $startDate = $class->start_date;
                     $endDate = $class->end_date;
@@ -389,7 +391,9 @@ class ClassController extends Controller
             ->findOrFail($id);
 
         // Auto-update status based on start_date and end_date
-        if ($class->start_date && $class->end_date && $class->status !== 'cancelled') {
+        // Don't update if status is 'completed' or 'cancelled' - these are manually set
+        if ($class->start_date && $class->end_date && 
+            $class->status !== 'cancelled' && $class->status !== 'completed') {
             $today = now()->toDateString();
             $startDate = $class->start_date;
             $endDate = $class->end_date;
