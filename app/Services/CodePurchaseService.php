@@ -177,7 +177,7 @@ class CodePurchaseService
                 if ($remainingQuantity < $quantity) {
                     return [
                         'success' => false,
-                        'message' => 'Discount code quantity limit exceeded'
+                        'message' => "Discount code quantity limit exceeded. Available quantity: {$remainingQuantity}, requested: {$quantity}"
                     ];
                 }
             }

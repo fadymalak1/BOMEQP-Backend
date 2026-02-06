@@ -177,7 +177,7 @@ class WalletController extends Controller
         
         $summary = [
             'total_transactions' => $allTransactions->count(),
-            'total_spent' => round($allTransactions->where('payer_type', 'training_center')->where('payer_id', $trainingCenter->id)->sum('amount'), 2),
+            'total_spent' => round($allTransactions->where('payer_type', 'training_center')->where('payer_id', $trainingCenter->id)->where('status', 'completed')->sum('amount'), 2),
             'total_received' => round($allTransactions->where('payee_type', 'training_center')->where('payee_id', $trainingCenter->id)->sum('amount'), 2),
             'completed_amount' => round($completedTransactions->sum('amount'), 2),
             'pending_amount' => round($pendingTransactions->sum('amount'), 2),
