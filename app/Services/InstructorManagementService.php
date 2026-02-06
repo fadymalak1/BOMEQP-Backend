@@ -710,8 +710,19 @@ class InstructorManagementService
                 ]);
             }
 
-            // Generate and send certificates for each authorized course
-            $this->generateAndSendInstructorCertificates($authorization, $acc);
+            // Load ACC relationship for certificate generation
+            $authorization->load('acc');
+            $acc = $authorization->acc;
+            
+            if (!$acc) {
+                Log::warning('ACC not found for authorization', [
+                    'authorization_id' => $authorization->id,
+                    'acc_id' => $authorization->acc_id
+                ]);
+            } else {
+                // Generate and send certificates for each authorized course
+                $this->generateAndSendInstructorCertificates($authorization, $acc);
+            }
 
             DB::commit();
 
