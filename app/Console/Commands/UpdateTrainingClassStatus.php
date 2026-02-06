@@ -36,10 +36,12 @@ class UpdateTrainingClassStatus extends Command
         $inProgressCount = 0;
         $completedCount = 0;
 
-        // Get all classes that have start_date and end_date and are not cancelled
+        // Get all classes that have start_date and end_date, are not cancelled, and are not already completed
+        // If status is 'completed', don't change it
         $classes = TrainingClass::whereNotNull('start_date')
             ->whereNotNull('end_date')
             ->where('status', '!=', 'cancelled')
+            ->where('status', '!=', 'completed')
             ->get();
 
         foreach ($classes as $class) {
