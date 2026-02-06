@@ -71,10 +71,18 @@ class SubscriptionController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
+        // If Stripe is not configured in database, use admin's Stripe account from .env
+        // This ensures payments always work and go to admin account when ACC-specific config is missing
         if (!$this->stripeService->isConfigured()) {
-            return response()->json([
-                'message' => 'Stripe payment is not configured'
-            ], 400);
+            // Check if admin Stripe keys exist in .env
+            $adminStripeKey = env('STRIPE_KEY');
+            if (empty($adminStripeKey)) {
+                return response()->json([
+                    'message' => 'Stripe payment is not configured. Please configure Stripe settings or add STRIPE_KEY to .env file.'
+                ], 400);
+            }
+            // If .env has keys, StripeService will use them automatically
+            // Continue to create payment intent - money will go to admin account
         }
 
         try {
@@ -86,6 +94,7 @@ class SubscriptionController extends Controller
                     'user_id' => (string)$user->id,
                     'type' => 'subscription',
                     'amount' => (string)$request->amount,
+                    'payment_destination' => 'admin', // Indicate payment goes to admin when not configured
                 ]
             );
 
@@ -173,10 +182,17 @@ class SubscriptionController extends Controller
             ], 400);
         }
 
+        // If Stripe is not configured in database, use admin's Stripe account from .env
         if (!$this->stripeService->isConfigured()) {
-            return response()->json([
-                'message' => 'Stripe payment is not configured'
-            ], 400);
+            // Check if admin Stripe keys exist in .env
+            $adminStripeKey = env('STRIPE_KEY');
+            if (empty($adminStripeKey)) {
+                return response()->json([
+                    'message' => 'Stripe payment is not configured. Please configure Stripe settings or add STRIPE_KEY to .env file.'
+                ], 400);
+            }
+            // If .env has keys, StripeService will use them automatically
+            // Continue to create payment intent - money will go to admin account
         }
 
         try {

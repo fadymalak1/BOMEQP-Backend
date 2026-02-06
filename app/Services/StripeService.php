@@ -55,12 +55,17 @@ class StripeService
         // Check if secret key exists
         $secretKey = $this->settings->secret_key ?? null;
         if (empty($secretKey)) {
-            return false;
+            // Fallback to .env if database settings don't have key
+            return !empty(env('STRIPE_KEY'));
         }
         
         // If it's a database model, check is_active
         if ($this->settings instanceof \App\Models\StripeSetting) {
-            return $this->settings->is_active === true;
+            // If database setting is inactive, fallback to .env
+            if ($this->settings->is_active !== true) {
+                return !empty(env('STRIPE_KEY'));
+            }
+            return true;
         }
         
         // For .env object, assume active
@@ -72,8 +77,33 @@ class StripeService
      */
     public function createPaymentIntent(float $amount, string $currency = 'USD', array $metadata = []): array
     {
-        if (!$this->isConfigured()) {
-            throw new \Exception('Stripe is not configured or not active');
+        // Ensure Stripe API key is set (use .env as fallback if database settings not available)
+        $stripeKey = null;
+        
+        if ($this->settings && !empty($this->settings->secret_key)) {
+            // Use database settings if available and active
+            if ($this->settings instanceof \App\Models\StripeSetting) {
+                if ($this->settings->is_active) {
+                    $stripeKey = $this->settings->secret_key;
+                }
+            } else {
+                // .env object
+                $stripeKey = $this->settings->secret_key;
+            }
+        }
+        
+        // Fallback to .env if no database settings
+        if (empty($stripeKey)) {
+            $stripeKey = env('STRIPE_KEY');
+        }
+        
+        if (empty($stripeKey)) {
+            throw new \Exception('Stripe is not configured. Please set STRIPE_KEY in .env or configure Stripe settings.');
+        }
+        
+        // Set API key if not already set
+        if (Stripe::getApiKey() !== $stripeKey) {
+            Stripe::setApiKey($stripeKey);
         }
 
         try {
