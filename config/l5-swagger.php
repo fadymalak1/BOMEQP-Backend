@@ -3,6 +3,107 @@
 return [
     /*
     |--------------------------------------------------------------------------
+    | Default documentation name
+    |--------------------------------------------------------------------------
+    */
+    'default' => 'default',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Documentation configurations
+    |--------------------------------------------------------------------------
+    */
+    'documentations' => [
+        'default' => [
+            'api' => [
+                'title' => 'BOMEQP API',
+            ],
+
+            'routes' => [
+                /*
+                |--------------------------------------------------------------------------
+                | Route for accessing api documentation interface
+                |--------------------------------------------------------------------------
+                */
+                'api' => 'api/documentation',
+
+                /*
+                |--------------------------------------------------------------------------
+                | Route for accessing parsed swagger annotations
+                |--------------------------------------------------------------------------
+                */
+                'docs' => 'api/documentation/docs',
+
+                /*
+                |--------------------------------------------------------------------------
+                | Route for Oauth2 authentication callback
+                |--------------------------------------------------------------------------
+                */
+                'oauth2_callback' => 'api/oauth2-callback',
+
+                /*
+                |--------------------------------------------------------------------------
+                | Middleware allows to prevent unexpected access to API documentation
+                |--------------------------------------------------------------------------
+                */
+                'middleware' => [
+                    'api' => [],
+                    'asset' => [],
+                    'docs' => [],
+                    'oauth2_callback' => [],
+                ],
+            ],
+
+            'paths' => [
+                /*
+                |--------------------------------------------------------------------------
+                | Edit to include full URL in ui for assets
+                |--------------------------------------------------------------------------
+                */
+                'use_absolute_path' => env('L5_SWAGGER_USE_ABSOLUTE_PATH', true),
+
+                /*
+                |--------------------------------------------------------------------------
+                | Edit to set path where swagger ui assets should be stored
+                |--------------------------------------------------------------------------
+                */
+                'swagger_ui_assets_path' => env('L5_SWAGGER_UI_ASSETS_PATH', 'vendor/swagger-api/swagger-ui/dist/'),
+
+                /*
+                |--------------------------------------------------------------------------
+                | File name of the generated json documentation file
+                |--------------------------------------------------------------------------
+                */
+                'docs_json' => 'api-docs.json',
+
+                /*
+                |--------------------------------------------------------------------------
+                | File name of the generated YAML documentation file
+                |--------------------------------------------------------------------------
+                */
+                'docs_yaml' => 'api-docs.yaml',
+
+                /*
+                |--------------------------------------------------------------------------
+                | Set this to `json` or `yaml` to determine which documentation file to use in UI
+                |--------------------------------------------------------------------------
+                */
+                'format_to_use_for_docs' => env('L5_FORMAT_TO_USE_FOR_DOCS', 'json'),
+
+                /*
+                |--------------------------------------------------------------------------
+                | Absolute paths to directory containing the swagger annotations are stored.
+                |--------------------------------------------------------------------------
+                */
+                'annotations' => [
+                    base_path('app'),
+                ],
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Default documentation route
     |--------------------------------------------------------------------------
     |
@@ -13,10 +114,36 @@ return [
         'routes' => [
             /*
             |--------------------------------------------------------------------------
-            | Route for accessing api documentation interface
+            | Route for accessing parsed swagger annotations.
             |--------------------------------------------------------------------------
             */
-            'api' => 'api/documentation',
+            'docs' => 'docs',
+
+            /*
+            |--------------------------------------------------------------------------
+            | Route for Oauth2 authentication callback.
+            |--------------------------------------------------------------------------
+            */
+            'oauth2_callback' => 'api/oauth2-callback',
+
+            /*
+            |--------------------------------------------------------------------------
+            | Middleware allows to prevent unexpected access to API documentation
+            |--------------------------------------------------------------------------
+            */
+            'middleware' => [
+                'api' => [],
+                'asset' => [],
+                'docs' => [],
+                'oauth2_callback' => [],
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Route Group options
+            |--------------------------------------------------------------------------
+            */
+            'group_options' => [],
         ],
 
         /*
@@ -255,28 +382,6 @@ return [
         ],
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | API Middleware
-    |--------------------------------------------------------------------------
-    |
-    | Middleware applied to all routes registered by this package.
-    | This middleware will be applied to ALL routes even if they have their own middleware defined.
-    |
-    | Note: Empty array means no middleware applied.
-    |
-    */
-    'routes' => [
-        'api' => [
-            /*
-            |--------------------------------------------------------------------------
-            | Middleware for the documentation UI interface
-            |--------------------------------------------------------------------------
-            | Empty array means no middleware applied (public access)
-            */
-            'middleware' => [],
-        ],
-    ],
 
     /*
     |--------------------------------------------------------------------------
