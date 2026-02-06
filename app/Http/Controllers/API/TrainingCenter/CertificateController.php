@@ -398,7 +398,7 @@ class CertificateController extends Controller
                 properties: [
                     new OA\Property(property: "acc_id", type: "integer", example: 1, description: "ID of the authorized ACC"),
                     new OA\Property(property: "course_id", type: "integer", example: 1, description: "ID of the course from the selected ACC"),
-                    new OA\Property(property: "training_class_id", type: "integer", nullable: true, example: 1, description: "ID of the training class"),
+                    new OA\Property(property: "training_class_id", type: "integer", nullable: true, example: 1, description: "ID of the training class. If provided, the class must have a status of 'completed'."),
                     new OA\Property(property: "instructor_id", type: "integer", nullable: true, example: 1),
                     new OA\Property(property: "trainee_name", type: "string", example: "John Doe", description: "Student name"),
                     new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
@@ -412,8 +412,8 @@ class CertificateController extends Controller
             new OA\Response(response: 201, description: "Certificate issued successfully"),
             new OA\Response(response: 401, description: "Unauthenticated"),
             new OA\Response(response: 403, description: "ACC not authorized or course not available"),
-            new OA\Response(response: 404, description: "ACC, Course, or Template not found"),
-            new OA\Response(response: 422, description: "Validation error")
+            new OA\Response(response: 404, description: "ACC, Course, Template, or Training Class not found"),
+            new OA\Response(response: 422, description: "Validation error or training class is not completed")
         ]
     )]
     public function store(Request $request)
@@ -453,6 +453,30 @@ class CertificateController extends Controller
         
         if ($course->acc_id != $request->acc_id) {
             return response()->json(['message' => 'Course does not belong to the selected ACC'], 403);
+        }
+
+        // If training_class_id is provided, verify the class status is completed
+        if ($request->has('training_class_id') && $request->training_class_id) {
+            $trainingClass = TrainingClass::where('id', $request->training_class_id)
+                ->where('training_center_id', $trainingCenter->id)
+                ->first();
+
+            if (!$trainingClass) {
+                return response()->json([
+                    'message' => 'Training class not found or does not belong to this training center'
+                ], 404);
+            }
+
+            // Check if class status is completed
+            if ($trainingClass->status !== 'completed') {
+                return response()->json([
+                    'message' => 'Certificates can only be generated for completed classes',
+                    'class_status' => $trainingClass->status,
+                    'class_id' => $trainingClass->id,
+                    'class_name' => $trainingClass->name,
+                    'hint' => 'The training class must have a status of "completed" before certificates can be generated. Please mark the class as completed first.'
+                ], 422);
+            }
         }
 
         // Get or automatically select purchase code
