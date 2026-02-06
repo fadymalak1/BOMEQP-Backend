@@ -119,7 +119,7 @@ class StripeSettingController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'environment' => 'required|string|in:sandbox,live',
+            'environment' => 'nullable|string|in:sandbox,live',
             'publishable_key' => 'required|string',
             'secret_key' => 'required|string',
             'webhook_secret' => 'nullable|string',
@@ -135,13 +135,31 @@ class StripeSettingController extends Controller
             ], 422);
         }
 
+        // Auto-detect environment from keys if not provided
+        $environment = $request->environment;
+        if (!$environment) {
+            // Detect from secret key (test keys start with sk_test_, live keys start with sk_live_)
+            if (str_starts_with($request->secret_key, 'sk_test_')) {
+                $environment = 'sandbox';
+            } elseif (str_starts_with($request->secret_key, 'sk_live_')) {
+                $environment = 'live';
+            } else {
+                // Default to live if cannot be determined
+                $environment = 'live';
+            }
+        }
+
+        // Prepare data for creation
+        $data = $request->all();
+        $data['environment'] = $environment;
+
         // If activating, deactivate others in the same environment
         if ($request->is_active) {
-            StripeSetting::where('environment', $request->environment)
+            StripeSetting::where('environment', $environment)
                 ->update(['is_active' => false]);
         }
 
-        $setting = StripeSetting::create($request->all());
+        $setting = StripeSetting::create($data);
 
         return response()->json([
             'success' => true,
