@@ -861,19 +861,42 @@ class InstructorManagementService
                         $pdfPath = Storage::disk('public')->path($result['file_path']);
                         
                         if (file_exists($pdfPath)) {
-                            // Send email with certificate
-                            Mail::to($instructor->email)->send(new \App\Mail\InstructorCertificateMail(
-                                trim($instructor->first_name . ' ' . $instructor->last_name),
-                                $courseAuth->course->name,
-                                $acc->name,
-                                $pdfPath
-                            ));
+                            // Send email with certificate immediately (not queued)
+                            try {
+                                $mail = new \App\Mail\InstructorCertificateMail(
+                                    trim($instructor->first_name . ' ' . $instructor->last_name),
+                                    $courseAuth->course->name,
+                                    $acc->name,
+                                    $pdfPath
+                                );
+                                
+                                // Force send immediately by setting connection to sync
+                                // This bypasses the queue even if ShouldQueue is implemented
+                                $mail->onConnection('sync');
+                                Mail::to($instructor->email)->send($mail);
 
-                            Log::info('Instructor certificate generated and sent', [
+                                Log::info('Instructor certificate generated and sent', [
+                                    'instructor_id' => $instructor->id,
+                                    'course_id' => $courseAuth->course->id,
+                                    'course_name' => $courseAuth->course->name,
+                                    'email' => $instructor->email,
+                                    'pdf_path' => $pdfPath,
+                                ]);
+                            } catch (\Exception $mailException) {
+                                Log::error('Failed to send instructor certificate email', [
+                                    'instructor_id' => $instructor->id,
+                                    'course_id' => $courseAuth->course->id,
+                                    'email' => $instructor->email,
+                                    'pdf_path' => $pdfPath,
+                                    'error' => $mailException->getMessage(),
+                                    'trace' => $mailException->getTraceAsString(),
+                                ]);
+                            }
+                        } else {
+                            Log::warning('Certificate PDF file does not exist', [
                                 'instructor_id' => $instructor->id,
                                 'course_id' => $courseAuth->course->id,
-                                'course_name' => $courseAuth->course->name,
-                                'email' => $instructor->email,
+                                'pdf_path' => $pdfPath,
                             ]);
                         }
                     } else {
@@ -888,6 +911,7 @@ class InstructorManagementService
                         'instructor_id' => $instructor->id,
                         'course_id' => $courseAuth->course->id,
                         'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
                     ]);
                 }
             }
