@@ -886,6 +886,7 @@ class InstructorManagementService
 
                     if ($result['success'] && isset($result['file_path'])) {
                         $pdfPath = Storage::disk('public')->path($result['file_path']);
+                        $pdfUrl = $result['file_url'] ?? Storage::disk('public')->url($result['file_path']);
                         
                         if (file_exists($pdfPath)) {
                             // Send email with certificate immediately (not queued)
@@ -902,13 +903,35 @@ class InstructorManagementService
                                 $mail->onConnection('sync');
                                 Mail::to($instructor->email)->send($mail);
 
-                                Log::info('Instructor certificate generated and sent', [
+                                // Generate certificate number (same format as CertificateController)
+                                do {
+                                    $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
+                                } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
+
+                                // Save certificate to database after successful email send
+                                \App\Models\Certificate::create([
+                                    'certificate_number' => $certificateNumber,
+                                    'course_id' => $courseAuth->course->id,
+                                    'training_center_id' => $instructor->training_center_id,
+                                    'instructor_id' => $instructor->id,
+                                    'trainee_name' => trim($instructor->first_name . ' ' . $instructor->last_name),
+                                    'trainee_id_number' => $instructor->id_number,
+                                    'issue_date' => now()->toDateString(),
+                                    'expiry_date' => null, // Instructor certificates don't expire
+                                    'template_id' => $certificateTemplate->id,
+                                    'certificate_pdf_url' => $pdfUrl,
+                                    'verification_code' => $verificationCode,
+                                    'status' => 'valid',
+                                ]);
+
+                                Log::info('Instructor certificate generated, sent, and saved to database', [
                                     'instructor_id' => $instructor->id,
                                     'course_id' => $courseAuth->course->id,
                                     'course_name' => $courseAuth->course->name,
                                     'email' => $instructor->email,
                                     'pdf_path' => $pdfPath,
                                     'verification_code' => $verificationCode,
+                                    'certificate_number' => $certificateNumber,
                                 ]);
                             } catch (\Exception $mailException) {
                                 Log::error('Failed to send instructor certificate email', [
