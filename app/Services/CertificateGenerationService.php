@@ -676,9 +676,10 @@ class CertificateGenerationService
      * @param CertificateTemplate $template
      * @param \App\Models\TrainingCenter $trainingCenter
      * @param \App\Models\ACC $acc
+     * @param string|null $verificationCode Optional verification code to include in certificate
      * @return array
      */
-    public function generateTrainingCenterCertificate(CertificateTemplate $template, $trainingCenter, $acc): array
+    public function generateTrainingCenterCertificate(CertificateTemplate $template, $trainingCenter, $acc, ?string $verificationCode = null): array
     {
         $data = [
             'training_center_name' => $trainingCenter->name ?? '',
@@ -695,6 +696,11 @@ class CertificateGenerationService
             'issue_date_formatted' => now()->format('F j, Y'),
         ];
 
+        // Add verification code if provided
+        if ($verificationCode) {
+            $data['verification_code'] = $verificationCode;
+        }
+
         return $this->generate($template, $data, 'pdf');
     }
 
@@ -705,9 +711,10 @@ class CertificateGenerationService
      * @param \App\Models\Instructor $instructor
      * @param \App\Models\Course $course
      * @param \App\Models\ACC $acc
+     * @param string|null $verificationCode Optional verification code to include in certificate
      * @return array
      */
-    public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc): array
+    public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null): array
     {
         $data = [
             'instructor_name' => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
@@ -727,6 +734,11 @@ class CertificateGenerationService
             'issue_date' => now()->format('Y-m-d'),
             'issue_date_formatted' => now()->format('F j, Y'),
         ];
+
+        // Add verification code if provided
+        if ($verificationCode) {
+            $data['verification_code'] = $verificationCode;
+        }
 
         return $this->generate($template, $data, 'pdf');
     }

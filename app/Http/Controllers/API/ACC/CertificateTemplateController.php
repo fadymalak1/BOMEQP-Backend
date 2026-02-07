@@ -644,6 +644,9 @@ new OA\Property(
             'config_json.*.textAlign' => 'nullable|in:left,center,right', // Accept camelCase from frontend
         ]);
 
+        // Note: verification_code variable is allowed in config_json for instructor and training_center templates
+        // The variable {{verification_code}} can be used in the template to display the verification code
+
         $template->update(['config_json' => $request->config_json]);
 
         return response()->json([

@@ -253,13 +253,48 @@ class TrainingCenterController extends Controller
                         $pdfPath = \Illuminate\Support\Facades\Storage::disk('public')->path($result['file_path']);
                         
                         if (file_exists($pdfPath)) {
-                            \Illuminate\Support\Facades\Mail::to($trainingCenter->email)
-                                ->send(new \App\Mail\TrainingCenterCertificateMail(
+                            // Send email with certificate immediately (not queued)
+                            try {
+                                $mail = new \App\Mail\TrainingCenterCertificateMail(
                                     $trainingCenter->name,
                                     $acc->name,
                                     $pdfPath
-                                ));
+                                );
+                                
+                                // Force send immediately by setting connection to sync
+                                // This bypasses the queue even if ShouldQueue is implemented
+                                $mail->onConnection('sync');
+                                \Illuminate\Support\Facades\Mail::to($trainingCenter->email)->send($mail);
+
+                                \Illuminate\Support\Facades\Log::info('Training center certificate generated and sent', [
+                                    'training_center_id' => $trainingCenter->id,
+                                    'acc_id' => $acc->id,
+                                    'email' => $trainingCenter->email,
+                                    'pdf_path' => $pdfPath,
+                                ]);
+                            } catch (\Exception $mailException) {
+                                \Illuminate\Support\Facades\Log::error('Failed to send training center certificate email', [
+                                    'training_center_id' => $trainingCenter->id,
+                                    'acc_id' => $acc->id,
+                                    'email' => $trainingCenter->email,
+                                    'pdf_path' => $pdfPath,
+                                    'error' => $mailException->getMessage(),
+                                    'trace' => $mailException->getTraceAsString(),
+                                ]);
+                            }
+                        } else {
+                            \Illuminate\Support\Facades\Log::warning('Certificate PDF file does not exist', [
+                                'training_center_id' => $trainingCenter->id,
+                                'acc_id' => $acc->id,
+                                'pdf_path' => $pdfPath,
+                            ]);
                         }
+                    } else {
+                        \Illuminate\Support\Facades\Log::warning('Failed to generate training center certificate', [
+                            'training_center_id' => $trainingCenter->id,
+                            'acc_id' => $acc->id,
+                            'error' => $result['message'] ?? 'Unknown error',
+                        ]);
                     }
                 } catch (\Exception $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate/send training center certificate', [

@@ -850,11 +850,38 @@ class InstructorManagementService
                 }
 
                 try {
+                    // Check if certificate already exists for this instructor and course
+                    // If a certificate exists, it means the email was already sent before
+                    $existingCertificate = \App\Models\Certificate::where('instructor_id', $instructor->id)
+                        ->where('course_id', $courseAuth->course->id)
+                        ->where('training_center_id', $instructor->training_center_id)
+                        ->first();
+
+                    if ($existingCertificate) {
+                        Log::info('Instructor certificate already exists for this course, skipping email', [
+                            'instructor_id' => $instructor->id,
+                            'course_id' => $courseAuth->course->id,
+                            'course_name' => $courseAuth->course->name,
+                            'existing_certificate_id' => $existingCertificate->id,
+                            'message' => 'Email was already sent for this instructor and course combination',
+                        ]);
+                        continue; // Skip this course - don't send email again
+                    }
+
+                    // Generate verification code for the certificate
+                    $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
+                    
+                    // Ensure verification code is unique
+                    while (\App\Models\Certificate::where('verification_code', $verificationCode)->exists()) {
+                        $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
+                    }
+
                     $result = $certificateService->generateInstructorCertificate(
                         $certificateTemplate,
                         $instructor,
                         $courseAuth->course,
-                        $acc
+                        $acc,
+                        $verificationCode
                     );
 
                     if ($result['success'] && isset($result['file_path'])) {
@@ -881,6 +908,7 @@ class InstructorManagementService
                                     'course_name' => $courseAuth->course->name,
                                     'email' => $instructor->email,
                                     'pdf_path' => $pdfPath,
+                                    'verification_code' => $verificationCode,
                                 ]);
                             } catch (\Exception $mailException) {
                                 Log::error('Failed to send instructor certificate email', [
