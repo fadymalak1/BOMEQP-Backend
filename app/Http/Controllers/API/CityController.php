@@ -48,7 +48,7 @@ class CityController extends Controller
     {
         $countryCode = $request->query('country');
         $cities = $this->getCities($countryCode);
-        
+
         return response()->json([
             'cities' => $cities
         ]);
@@ -189,23 +189,48 @@ class CityController extends Controller
             ['name' => 'Guangzhou', 'country_code' => 'CN'],
             ['name' => 'Shenzhen', 'country_code' => 'CN'],
             ['name' => 'Chengdu', 'country_code' => 'CN'],
-            
+
             // Australia
             ['name' => 'Sydney', 'country_code' => 'AU'],
             ['name' => 'Melbourne', 'country_code' => 'AU'],
             ['name' => 'Brisbane', 'country_code' => 'AU'],
             ['name' => 'Perth', 'country_code' => 'AU'],
             ['name' => 'Adelaide', 'country_code' => 'AU'],
+
+            // Spain
+            ['name' => 'Madrid', 'country_code' => 'ES'],
+            ['name' => 'Barcelona', 'country_code' => 'ES'],
+            ['name' => 'Valencia', 'country_code' => 'ES'],
+            ['name' => 'Seville', 'country_code' => 'ES'],
+
+            // Turkey
+            ['name' => 'Istanbul', 'country_code' => 'TR'],
+            ['name' => 'Ankara', 'country_code' => 'TR'],
+            ['name' => 'Izmir', 'country_code' => 'TR'],
+
+            // Brazil
+            ['name' => 'São Paulo', 'country_code' => 'BR'],
+            ['name' => 'Rio de Janeiro', 'country_code' => 'BR'],
+            ['name' => 'Brasília', 'country_code' => 'BR'],
+
+            // South Africa
+            ['name' => 'Johannesburg', 'country_code' => 'ZA'],
+            ['name' => 'Cape Town', 'country_code' => 'ZA'],
+            ['name' => 'Durban', 'country_code' => 'ZA'],
         ];
 
         // Filter by country if provided
         if ($countryCode) {
-            return array_filter($allCities, function($city) use ($countryCode) {
+            $filtered = array_filter($allCities, function ($city) use ($countryCode) {
                 return strtoupper($city['country_code']) === strtoupper($countryCode);
             });
+
+            // Reindex array to ensure JSON is always an array, not an object with numeric keys
+            return array_values($filtered);
         }
 
-        return $allCities;
+        // Ensure consistent numeric indexing for all responses
+        return array_values($allCities);
     }
 }
 
