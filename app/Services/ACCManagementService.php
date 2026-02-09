@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ACC;
+use App\Models\ACCSubscription;
 use App\Models\Category;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -250,6 +251,27 @@ class ACCManagementService
     }
 
     /**
+     * Check if ACC is one of the special accounts that get lifetime subscriptions
+     *
+     * @param ACC $acc
+     * @return bool
+     */
+    private function isSpecialAccAccount(ACC $acc): bool
+    {
+        $specialEmails = [
+            'support@iaoshuk.com',
+            'support@rsles.com',
+            'support@bseca.com',
+            'support@bilpm.com',
+            'support@bsape.com',
+            'support@bocaq.com',
+            'support@bihhm.com',
+        ];
+
+        return in_array($acc->email, $specialEmails);
+    }
+
+    /**
      * Activate ACC (second step after approval)
      * This allows the ACC to start working
      *
@@ -284,11 +306,43 @@ class ACCManagementService
                 $this->notificationService->notifyAccApproved($user->id, $acc->id, $acc->name);
             }
 
+            // Check if this is a special ACC account that should get lifetime subscription
+            if ($this->isSpecialAccAccount($acc)) {
+                // Check if subscription already exists
+                $existingSubscription = ACCSubscription::where('acc_id', $acc->id)
+                    ->where('payment_status', 'paid')
+                    ->first();
+
+                if (!$existingSubscription) {
+                    // Create lifetime subscription (set end date to far future: 2099-12-31)
+                    $lifetimeEndDate = \Carbon\Carbon::create(2099, 12, 31);
+                    
+                    ACCSubscription::create([
+                        'acc_id' => $acc->id,
+                        'subscription_start_date' => now(),
+                        'subscription_end_date' => $lifetimeEndDate,
+                        'renewal_date' => $lifetimeEndDate,
+                        'amount' => 0.00, // Free lifetime subscription
+                        'payment_status' => 'paid',
+                        'payment_date' => now(),
+                        'payment_method' => 'bank_transfer', // Marked as bank transfer (free)
+                        'transaction_id' => 'LIFETIME-' . strtoupper(uniqid()),
+                        'auto_renew' => false, // No need to auto-renew lifetime subscription
+                    ]);
+
+                    Log::info('Lifetime subscription created for special ACC account', [
+                        'acc_id' => $acc->id,
+                        'acc_email' => $acc->email,
+                    ]);
+                }
+            }
+
             DB::commit();
 
             Log::info('ACC activated successfully', [
                 'acc_id' => $acc->id,
                 'activated_by' => $activatedBy,
+                'is_special_account' => $this->isSpecialAccAccount($acc),
             ]);
 
             return [

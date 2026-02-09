@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             OrganizationAccountsSeeder::class,
             CategorySeeder::class,
             SubCategorySeeder::class,
+            SpecialACCAccountsSeeder::class, // Special ACC accounts that get lifetime subscriptions
             ACCSeeder::class,
             ACCSubscriptionSeeder::class,
             ACCDocumentSeeder::class,
