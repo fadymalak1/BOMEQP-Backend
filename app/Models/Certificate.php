@@ -17,6 +17,7 @@ class Certificate extends Model
         'training_class_id', // New field for training class reference
         'training_center_id',
         'instructor_id',
+        'type',
         'trainee_name',
         'trainee_id_number',
         'issue_date',
@@ -69,6 +70,31 @@ class Certificate extends Model
     public function codeUsed(): BelongsTo
     {
         return $this->belongsTo(CertificateCode::class, 'code_used_id');
+    }
+
+    /**
+     * Determine if this certificate is for an instructor based on trainee_name matching instructor's name
+     */
+    public static function determineType(?int $instructorId, string $traineeName): string
+    {
+        if (!$instructorId) {
+            return 'trainee';
+        }
+
+        $instructor = \App\Models\Instructor::find($instructorId);
+        if (!$instructor) {
+            return 'trainee';
+        }
+
+        $instructorFullName = trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? ''));
+        $normalizedInstructorName = preg_replace('/\s+/', ' ', strtolower(trim($instructorFullName)));
+        $normalizedTraineeName = preg_replace('/\s+/', ' ', strtolower(trim($traineeName)));
+
+        if (!empty($normalizedInstructorName) && $normalizedTraineeName === $normalizedInstructorName) {
+            return 'instructor';
+        }
+
+        return 'trainee';
     }
 }
 

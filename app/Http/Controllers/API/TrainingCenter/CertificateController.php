@@ -72,29 +72,7 @@ class CertificateController extends Controller
 
         // Filter by type (instructor or trainee)
         if ($request->has('type') && in_array($request->type, ['instructor', 'trainee'])) {
-            $type = $request->type;
-            if ($type === 'instructor') {
-                // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
-                $query->whereNotNull('instructor_id')
-                    ->whereExists(function ($subQuery) {
-                        $subQuery->select(DB::raw(1))
-                            ->from('instructors')
-                            ->whereColumn('instructors.id', 'certificates.instructor_id')
-                            ->whereRaw("LOWER(TRIM(CONCAT(COALESCE(instructors.first_name, ''), ' ', COALESCE(instructors.last_name, '')))) = LOWER(TRIM(certificates.trainee_name))");
-                    });
-            } else {
-                // Trainee certificates: trainee_name doesn't match instructor's name OR instructor_id is null
-                $query->where(function ($q) {
-                    $q->whereNull('instructor_id')
-                        ->orWhereDoesntHave('instructor')
-                        ->orWhereNotExists(function ($subQuery) {
-                            $subQuery->select(DB::raw(1))
-                                ->from('instructors')
-                                ->whereColumn('instructors.id', 'certificates.instructor_id')
-                                ->whereRaw("LOWER(TRIM(CONCAT(COALESCE(instructors.first_name, ''), ' ', COALESCE(instructors.last_name, '')))) = LOWER(TRIM(certificates.trainee_name))");
-                        });
-                });
-            }
+            $query->where('type', $request->type);
         }
 
         // Search functionality
@@ -126,21 +104,11 @@ class CertificateController extends Controller
                 unset($data['trainee_name']);
             }
             
-            // Determine type: instructor or trainee using database query
-            // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
-            $isInstructorCertificate = false;
-            if ($certificate->instructor_id) {
-                $exists = DB::table('instructors')
-                    ->where('instructors.id', $certificate->instructor_id)
-                    ->whereRaw("LOWER(TRIM(CONCAT(COALESCE(instructors.first_name, ''), ' ', COALESCE(instructors.last_name, '')))) = LOWER(TRIM(?))", [$certificate->trainee_name])
-                    ->exists();
-                
-                if ($exists) {
-                    $isInstructorCertificate = true;
-                }
+            // Type is already stored in the database, use it directly
+            // Ensure type is set (fallback to trainee for old records)
+            if (!isset($data['type']) || empty($data['type'])) {
+                $data['type'] = 'trainee';
             }
-            
-            $data['type'] = $isInstructorCertificate ? 'instructor' : 'trainee';
             
             return $data;
         });
@@ -196,20 +164,11 @@ class CertificateController extends Controller
             unset($certificateData['trainee_name']);
         }
         
-        // Determine type: instructor or trainee
-        // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
-        // Trainee certificates: instructor_id might be set (teacher) but trainee_name doesn't match instructor's name
-        $isInstructorCertificate = false;
-        if ($certificate->instructor_id && $certificate->instructor) {
-            $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
-            $traineeName = trim($certificate->trainee_name ?? '');
-            // Check if trainee_name matches instructor's name (certificate is FOR the instructor)
-            if (!empty($instructorFullName) && strtolower($traineeName) === strtolower($instructorFullName)) {
-                $isInstructorCertificate = true;
-            }
+        // Type is already stored in the database, use it directly
+        // Ensure type is set (fallback to trainee for old records)
+        if (!isset($certificateData['type']) || empty($certificateData['type'])) {
+            $certificateData['type'] = 'trainee';
         }
-        
-        $certificateData['type'] = $isInstructorCertificate ? 'instructor' : 'trainee';
             
         return response()->json(['certificate' => $certificateData]);
     }
@@ -284,17 +243,7 @@ class CertificateController extends Controller
                 'certificate_number' => $certificate->certificate_number,
                 'verification_code' => $certificate->verification_code,
                 'name' => $certificate->trainee_name,
-                'type' => (function() use ($certificate) {
-                    // Determine type: instructor or trainee
-                    if ($certificate->instructor_id && $certificate->instructor) {
-                        $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
-                        $traineeName = trim($certificate->trainee_name ?? '');
-                        if (!empty($instructorFullName) && strtolower($traineeName) === strtolower($instructorFullName)) {
-                            return 'instructor';
-                        }
-                    }
-                    return 'trainee';
-                })(),
+                'type' => $certificate->type ?? 'trainee',
                 'issue_date' => $certificate->issue_date,
                 'expiry_date' => $certificate->expiry_date,
                 'status' => $certificate->status,
@@ -768,6 +717,7 @@ class CertificateController extends Controller
                 'training_class_id' => $certificateTrainingClassId,
                 'training_center_id' => $trainingCenter->id,
                 'instructor_id' => $request->instructor_id,
+                'type' => Certificate::determineType($request->instructor_id, $request->trainee_name),
                 'trainee_name' => $request->trainee_name,
                 'trainee_id_number' => $request->trainee_id_number,
                 'issue_date' => $request->issue_date,

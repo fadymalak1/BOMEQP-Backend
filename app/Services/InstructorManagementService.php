@@ -909,12 +909,14 @@ class InstructorManagementService
                                 } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
 
                                 // Save certificate to database after successful email send
+                                $instructorFullName = trim($instructor->first_name . ' ' . $instructor->last_name);
                                 \App\Models\Certificate::create([
                                     'certificate_number' => $certificateNumber,
                                     'course_id' => $courseAuth->course->id,
                                     'training_center_id' => $instructor->training_center_id,
                                     'instructor_id' => $instructor->id,
-                                    'trainee_name' => trim($instructor->first_name . ' ' . $instructor->last_name),
+                                    'type' => 'instructor', // This is always an instructor certificate
+                                    'trainee_name' => $instructorFullName,
                                     'trainee_id_number' => $instructor->id_number,
                                     'issue_date' => now()->toDateString(),
                                     'expiry_date' => null, // Instructor certificates don't expire
