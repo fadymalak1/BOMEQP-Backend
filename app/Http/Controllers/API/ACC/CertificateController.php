@@ -125,12 +125,24 @@ class CertificateController extends Controller
             // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
             // Trainee certificates: instructor_id might be set (teacher) but trainee_name doesn't match instructor's name
             $isInstructorCertificate = false;
-            if ($certificate->instructor_id && $certificate->instructor) {
-                $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
-                $traineeName = trim($certificate->trainee_name ?? '');
-                // Check if trainee_name matches instructor's name (certificate is FOR the instructor)
-                if (!empty($instructorFullName) && strtolower($traineeName) === strtolower($instructorFullName)) {
-                    $isInstructorCertificate = true;
+            if ($certificate->instructor_id) {
+                // Ensure instructor relationship is loaded
+                if (!$certificate->relationLoaded('instructor')) {
+                    $certificate->load('instructor');
+                }
+                
+                if ($certificate->instructor) {
+                    $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
+                    $traineeName = trim($certificate->trainee_name ?? '');
+                    
+                    // Normalize both names for comparison (remove extra spaces, lowercase)
+                    $normalizedInstructorName = preg_replace('/\s+/', ' ', strtolower(trim($instructorFullName)));
+                    $normalizedTraineeName = preg_replace('/\s+/', ' ', strtolower(trim($traineeName)));
+                    
+                    // Check if trainee_name matches instructor's name (certificate is FOR the instructor)
+                    if (!empty($normalizedInstructorName) && $normalizedTraineeName === $normalizedInstructorName) {
+                        $isInstructorCertificate = true;
+                    }
                 }
             }
             
