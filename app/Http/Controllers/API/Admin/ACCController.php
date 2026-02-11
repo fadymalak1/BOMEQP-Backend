@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Services\ACCManagementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use OpenApi\Attributes as OA;
 
 class ACCController extends Controller
@@ -763,11 +764,21 @@ class ACCController extends Controller
         $request->validate([
             'name' => 'sometimes|string|max:255',
             'legal_name' => 'sometimes|string|max:255',
-            'registration_number' => 'sometimes|string|max:255|unique:accs,registration_number,' . $id,
+            'registration_number' => [
+                'sometimes',
+                'string',
+                'max:255',
+                Rule::unique('accs', 'registration_number')->ignore($id),
+            ],
             'country' => 'sometimes|string|max:255',
             'address' => 'sometimes|string',
             'phone' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|max:255|unique:accs,email,' . $id,
+            'email' => [
+                'sometimes',
+                'email',
+                'max:255',
+                Rule::unique('accs', 'email')->ignore($id),
+            ],
             'website' => 'nullable|string|max:255',
             'logo_url' => 'nullable|string|max:255',
             'status' => 'sometimes|in:pending,active,suspended,expired,rejected',
