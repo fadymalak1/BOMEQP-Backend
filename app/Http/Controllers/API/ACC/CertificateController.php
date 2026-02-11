@@ -82,6 +82,25 @@ class CertificateController extends Controller
         $perPage = $request->get('per_page', 15);
         $certificates = $query->paginate($perPage);
 
+        // Transform certificates data
+        $transformedCertificates = $certificates->getCollection()->map(function ($certificate) {
+            $data = $certificate->toArray();
+            
+            // Change trainee_name to name
+            if (isset($data['trainee_name'])) {
+                $data['name'] = $data['trainee_name'];
+                unset($data['trainee_name']);
+            }
+            
+            // Add type field: instructor or trainee
+            $data['type'] = !empty($certificate->instructor_id) ? 'instructor' : 'trainee';
+            
+            return $data;
+        });
+
+        // Replace the collection in paginator
+        $certificates->setCollection($transformedCertificates);
+
         return response()->json($certificates);
     }
 }
