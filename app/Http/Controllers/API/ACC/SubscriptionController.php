@@ -318,6 +318,17 @@ class SubscriptionController extends Controller
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
+        // Check if Stripe API keys are configured before processing payment
+        if (!$this->stripeService->isConfigured()) {
+            // Check if admin Stripe keys exist in .env
+            $adminStripeKey = env('STRIPE_KEY');
+            if (empty($adminStripeKey)) {
+                return response()->json([
+                    'message' => 'Stripe payment is not configured. Please contact the administrator to configure Stripe API keys.'
+                ], 400);
+            }
+        }
+
         try {
             $result = $this->subscriptionService->processPayment(
                 $acc,
@@ -416,6 +427,17 @@ class SubscriptionController extends Controller
                 'message' => 'Cannot renew subscription. Current subscription is still active and ends on ' . $currentSubscription->subscription_end_date->format('Y-m-d') . '. Please wait until the subscription ends before renewing.',
                 'subscription_end_date' => $currentSubscription->subscription_end_date->format('Y-m-d'),
             ], 400);
+        }
+
+        // Check if Stripe API keys are configured before processing renewal payment
+        if (!$this->stripeService->isConfigured()) {
+            // Check if admin Stripe keys exist in .env
+            $adminStripeKey = env('STRIPE_KEY');
+            if (empty($adminStripeKey)) {
+                return response()->json([
+                    'message' => 'Stripe payment is not configured. Please contact the administrator to configure Stripe API keys.'
+                ], 400);
+            }
         }
 
         try {
