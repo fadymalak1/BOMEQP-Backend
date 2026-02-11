@@ -98,8 +98,20 @@ class CertificateController extends Controller
                 unset($data['trainee_name']);
             }
             
-            // Add type field: instructor or trainee
-            $data['type'] = !empty($certificate->instructor_id) ? 'instructor' : 'trainee';
+            // Determine type: instructor or trainee
+            // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
+            // Trainee certificates: instructor_id might be set (teacher) but trainee_name doesn't match instructor's name
+            $isInstructorCertificate = false;
+            if ($certificate->instructor_id && $certificate->instructor) {
+                $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
+                $traineeName = trim($certificate->trainee_name ?? '');
+                // Check if trainee_name matches instructor's name (certificate is FOR the instructor)
+                if (!empty($instructorFullName) && strtolower($traineeName) === strtolower($instructorFullName)) {
+                    $isInstructorCertificate = true;
+                }
+            }
+            
+            $data['type'] = $isInstructorCertificate ? 'instructor' : 'trainee';
             
             return $data;
         });
@@ -155,8 +167,20 @@ class CertificateController extends Controller
             unset($certificateData['trainee_name']);
         }
         
-        // Add type field: instructor or trainee
-        $certificateData['type'] = !empty($certificate->instructor_id) ? 'instructor' : 'trainee';
+        // Determine type: instructor or trainee
+        // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
+        // Trainee certificates: instructor_id might be set (teacher) but trainee_name doesn't match instructor's name
+        $isInstructorCertificate = false;
+        if ($certificate->instructor_id && $certificate->instructor) {
+            $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
+            $traineeName = trim($certificate->trainee_name ?? '');
+            // Check if trainee_name matches instructor's name (certificate is FOR the instructor)
+            if (!empty($instructorFullName) && strtolower($traineeName) === strtolower($instructorFullName)) {
+                $isInstructorCertificate = true;
+            }
+        }
+        
+        $certificateData['type'] = $isInstructorCertificate ? 'instructor' : 'trainee';
             
         return response()->json(['certificate' => $certificateData]);
     }
@@ -231,7 +255,17 @@ class CertificateController extends Controller
                 'certificate_number' => $certificate->certificate_number,
                 'verification_code' => $certificate->verification_code,
                 'name' => $certificate->trainee_name,
-                'type' => !empty($certificate->instructor_id) ? 'instructor' : 'trainee',
+                'type' => (function() use ($certificate) {
+                    // Determine type: instructor or trainee
+                    if ($certificate->instructor_id && $certificate->instructor) {
+                        $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
+                        $traineeName = trim($certificate->trainee_name ?? '');
+                        if (!empty($instructorFullName) && strtolower($traineeName) === strtolower($instructorFullName)) {
+                            return 'instructor';
+                        }
+                    }
+                    return 'trainee';
+                })(),
                 'issue_date' => $certificate->issue_date,
                 'expiry_date' => $certificate->expiry_date,
                 'status' => $certificate->status,
