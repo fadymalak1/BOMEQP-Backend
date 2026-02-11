@@ -150,16 +150,31 @@ class InstructorProfileService
 
             // Update instructor if there are changes
             if (!empty($updateData)) {
+                $oldEmail = $instructor->email;
                 $instructor->update($updateData);
                 $instructor->refresh();
 
-                // Update user account name if name changed
-                if (isset($updateData['first_name']) || isset($updateData['last_name'])) {
-                    $fullName = ($updateData['first_name'] ?? $instructor->first_name) . ' ' . 
-                                ($updateData['last_name'] ?? $instructor->last_name);
-                    $userAccount = User::where('email', $user->email)->lockForUpdate()->first();
-                    if ($userAccount) {
-                        $userAccount->update(['name' => trim($fullName)]);
+                // Update user account if name or email changed
+                $userAccount = User::where('email', $oldEmail)->lockForUpdate()->first();
+                if ($userAccount) {
+                    $userUpdateData = [];
+                    
+                    // Sync name if instructor name changed
+                    if (isset($updateData['first_name']) || isset($updateData['last_name'])) {
+                        $fullName = ($updateData['first_name'] ?? $instructor->first_name) . ' ' . 
+                                    ($updateData['last_name'] ?? $instructor->last_name);
+                        if ($userAccount->name !== trim($fullName)) {
+                            $userUpdateData['name'] = trim($fullName);
+                        }
+                    }
+                    
+                    // Sync email if instructor email changed (e.g., updated by admin)
+                    if (isset($updateData['email']) && $oldEmail !== $updateData['email']) {
+                        $userUpdateData['email'] = $updateData['email'];
+                    }
+                    
+                    if (!empty($userUpdateData)) {
+                        $userAccount->update($userUpdateData);
                     }
                 }
             }

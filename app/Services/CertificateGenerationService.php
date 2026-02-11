@@ -377,6 +377,20 @@ class CertificateGenerationService
                 ];
             }
 
+            // Log data being passed for debugging (especially verification_code)
+            if (isset($data['verification_code'])) {
+                Log::info('Certificate generation - verification_code present', [
+                    'template_id' => $template->id,
+                    'verification_code' => $data['verification_code'],
+                    'has_verification_code' => true,
+                ]);
+            } else {
+                Log::warning('Certificate generation - verification_code missing', [
+                    'template_id' => $template->id,
+                    'data_keys' => array_keys($data),
+                ]);
+            }
+
             // Replace variables in template_html
             $html = $this->replaceTemplateVariables($template->template_html, $data);
 
@@ -471,9 +485,39 @@ class CertificateGenerationService
             
             // Escape HTML special characters
             $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
-            // Replace both {{key}} and {{ key }}
-            $html = str_replace('{{' . $key . '}}', $safeValue, $html);
-            $html = str_replace('{{ ' . $key . ' }}', $safeValue, $html);
+            
+            // Replace variables in multiple formats (case-insensitive and with/without spaces)
+            // Handle: {{key}}, {{ key }}, {{Key}}, {{KEY}}, {{key_name}}, {{keyName}}, etc.
+            $patterns = [
+                '/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i',  // Case-insensitive with optional spaces
+            ];
+            
+            foreach ($patterns as $pattern) {
+                $html = preg_replace($pattern, $safeValue, $html);
+            }
+            
+            // Also handle common variations for verification_code
+            if ($key === 'verification_code') {
+                $variations = [
+                    'verificationCode',
+                    'VerificationCode',
+                    'VERIFICATION_CODE',
+                    'verification-code',
+                    'Verification-Code',
+                ];
+                
+                foreach ($variations as $variation) {
+                    $variationPattern = '/\{\{\s*' . preg_quote($variation, '/') . '\s*\}\}/i';
+                    $html = preg_replace($variationPattern, $safeValue, $html);
+                }
+                
+                // Log replacement for debugging
+                Log::info('Replacing verification_code variable', [
+                    'original_value' => $value,
+                    'safe_value' => $safeValue,
+                    'variations_checked' => $variations,
+                ]);
+            }
         }
 
         // Clean up any empty lines or extra whitespace

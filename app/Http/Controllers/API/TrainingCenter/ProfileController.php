@@ -320,13 +320,26 @@ class ProfileController extends Controller
             });
 
             if (!empty($updateData)) {
+                $oldEmail = $trainingCenter->email;
                 $trainingCenter->update($updateData);
                 
-                // Sync user name if training center name was updated
-                if (isset($updateData['name']) && $updateData['name']) {
-                    $userAccount = User::where('email', $user->email)->first();
-                    if ($userAccount && $userAccount->name !== $updateData['name']) {
-                        $userAccount->update(['name' => $updateData['name']]);
+                // Sync user account if name or email was updated
+                $userAccount = User::where('email', $oldEmail)->first();
+                if ($userAccount) {
+                    $userUpdateData = [];
+                    
+                    // Sync name if training center name was updated
+                    if (isset($updateData['name']) && $updateData['name'] && $userAccount->name !== $updateData['name']) {
+                        $userUpdateData['name'] = $updateData['name'];
+                    }
+                    
+                    // Sync email if training center email was updated
+                    if (isset($updateData['email']) && $updateData['email'] && $oldEmail !== $updateData['email']) {
+                        $userUpdateData['email'] = $updateData['email'];
+                    }
+                    
+                    if (!empty($userUpdateData)) {
+                        $userAccount->update($userUpdateData);
                     }
                 }
             }

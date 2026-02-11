@@ -9,6 +9,7 @@ use App\Services\FileUploadService;
 use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use OpenApi\Attributes as OA;
 
 class ProfileController extends Controller
@@ -281,6 +282,13 @@ class ProfileController extends Controller
                 'legal_name' => 'sometimes|nullable|string|max:255',
                 'phone' => 'sometimes|nullable|string|max:255',
                 'fax' => 'nullable|string|max:255',
+                'email' => [
+                    'sometimes',
+                    'nullable',
+                    'email',
+                    'max:255',
+                    \Illuminate\Validation\Rule::unique('accs', 'email')->ignore($acc->id),
+                ],
                 'country' => 'sometimes|nullable|string|max:255',
                 'address' => 'sometimes|nullable|string',
                 

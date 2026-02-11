@@ -150,17 +150,30 @@ class ACCProfileService
             DB::beginTransaction();
 
             // Process text/data field updates
+            $oldEmail = $acc->email;
             $updateData = $this->processTextFields($request);
             if (!empty($updateData)) {
                 $hasTextUpdates = true;
                 $acc->update($updateData);
                 $acc->refresh();
                 
-                // Update user account name if name changed
-                if (isset($updateData['name'])) {
-                    $userAccount = User::where('email', $user->email)->lockForUpdate()->first();
-                    if ($userAccount) {
-                        $userAccount->update(['name' => $acc->name]);
+                // Update user account if name or email changed
+                $userAccount = User::where('email', $oldEmail)->lockForUpdate()->first();
+                if ($userAccount) {
+                    $userUpdateData = [];
+                    
+                    // Sync name if ACC name was updated
+                    if (isset($updateData['name']) && $userAccount->name !== $acc->name) {
+                        $userUpdateData['name'] = $acc->name;
+                    }
+                    
+                    // Sync email if ACC email was updated
+                    if (isset($updateData['email']) && $oldEmail !== $updateData['email']) {
+                        $userUpdateData['email'] = $updateData['email'];
+                    }
+                    
+                    if (!empty($userUpdateData)) {
+                        $userAccount->update($userUpdateData);
                     }
                 }
             }
@@ -345,7 +358,7 @@ class ACCProfileService
         
         // Define all updatable text fields
         $textFields = [
-            'name', 'legal_name', 'phone', 'fax', 'country', 'address',
+            'name', 'legal_name', 'phone', 'fax', 'country', 'address', 'email',
             'mailing_street', 'mailing_city', 'mailing_country', 'mailing_postal_code', 'mailing_same_as_physical',
             'physical_street', 'physical_city', 'physical_country', 'physical_postal_code',
             'website', 'logo_url', 'stripe_account_id',
