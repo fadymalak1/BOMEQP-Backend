@@ -121,28 +121,17 @@ class CertificateController extends Controller
                 unset($data['trainee_name']);
             }
             
-            // Determine type: instructor or trainee
+            // Determine type: instructor or trainee using database query
             // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
-            // Trainee certificates: instructor_id might be set (teacher) but trainee_name doesn't match instructor's name
             $isInstructorCertificate = false;
             if ($certificate->instructor_id) {
-                // Ensure instructor relationship is loaded
-                if (!$certificate->relationLoaded('instructor')) {
-                    $certificate->load('instructor');
-                }
+                $exists = DB::table('instructors')
+                    ->where('instructors.id', $certificate->instructor_id)
+                    ->whereRaw("LOWER(TRIM(CONCAT(COALESCE(instructors.first_name, ''), ' ', COALESCE(instructors.last_name, '')))) = LOWER(TRIM(?))", [$certificate->trainee_name])
+                    ->exists();
                 
-                if ($certificate->instructor) {
-                    $instructorFullName = trim(($certificate->instructor->first_name ?? '') . ' ' . ($certificate->instructor->last_name ?? ''));
-                    $traineeName = trim($certificate->trainee_name ?? '');
-                    
-                    // Normalize both names for comparison (remove extra spaces, lowercase)
-                    $normalizedInstructorName = preg_replace('/\s+/', ' ', strtolower(trim($instructorFullName)));
-                    $normalizedTraineeName = preg_replace('/\s+/', ' ', strtolower(trim($traineeName)));
-                    
-                    // Check if trainee_name matches instructor's name (certificate is FOR the instructor)
-                    if (!empty($normalizedInstructorName) && $normalizedTraineeName === $normalizedInstructorName) {
-                        $isInstructorCertificate = true;
-                    }
+                if ($exists) {
+                    $isInstructorCertificate = true;
                 }
             }
             
