@@ -88,6 +88,25 @@ class CertificateController extends Controller
         $perPage = $request->get('per_page', 15);
         $certificates = $query->paginate($perPage);
 
+        // Transform certificates data
+        $transformedCertificates = $certificates->getCollection()->map(function ($certificate) {
+            $data = $certificate->toArray();
+            
+            // Change trainee_name to name
+            if (isset($data['trainee_name'])) {
+                $data['name'] = $data['trainee_name'];
+                unset($data['trainee_name']);
+            }
+            
+            // Add type field: instructor or trainee
+            $data['type'] = !empty($certificate->instructor_id) ? 'instructor' : 'trainee';
+            
+            return $data;
+        });
+
+        // Replace the collection in paginator
+        $certificates->setCollection($transformedCertificates);
+
         return response()->json($certificates);
     }
 
@@ -126,8 +145,20 @@ class CertificateController extends Controller
         $certificate = Certificate::where('training_center_id', $trainingCenter->id)
             ->with(['course', 'instructor', 'trainingCenter', 'template'])
             ->findOrFail($id);
+        
+        // Transform certificate data
+        $certificateData = $certificate->toArray();
+        
+        // Change trainee_name to name
+        if (isset($certificateData['trainee_name'])) {
+            $certificateData['name'] = $certificateData['trainee_name'];
+            unset($certificateData['trainee_name']);
+        }
+        
+        // Add type field: instructor or trainee
+        $certificateData['type'] = !empty($certificate->instructor_id) ? 'instructor' : 'trainee';
             
-        return response()->json(['certificate' => $certificate]);
+        return response()->json(['certificate' => $certificateData]);
     }
 
     #[OA\Get(
@@ -199,7 +230,8 @@ class CertificateController extends Controller
                 'id' => $certificate->id,
                 'certificate_number' => $certificate->certificate_number,
                 'verification_code' => $certificate->verification_code,
-                'trainee_name' => $certificate->trainee_name,
+                'name' => $certificate->trainee_name,
+                'type' => !empty($certificate->instructor_id) ? 'instructor' : 'trainee',
                 'issue_date' => $certificate->issue_date,
                 'expiry_date' => $certificate->expiry_date,
                 'status' => $certificate->status,
