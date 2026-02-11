@@ -73,11 +73,29 @@ class Certificate extends Model
     }
 
     /**
+     * Boot method to automatically set type when saving
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($certificate) {
+            // Auto-determine type if not set
+            if (empty($certificate->type)) {
+                $certificate->type = static::determineType(
+                    $certificate->instructor_id,
+                    $certificate->trainee_name ?? ''
+                );
+            }
+        });
+    }
+
+    /**
      * Determine if this certificate is for an instructor based on trainee_name matching instructor's name
      */
     public static function determineType(?int $instructorId, string $traineeName): string
     {
-        if (!$instructorId) {
+        if (!$instructorId || empty($traineeName)) {
             return 'trainee';
         }
 

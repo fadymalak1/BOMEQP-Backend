@@ -18,13 +18,8 @@ return new class extends Migration
 
         // Backfill existing certificates with their type
         // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
-        DB::statement("
-            UPDATE certificates c
-            INNER JOIN instructors i ON c.instructor_id = i.id
-            SET c.type = 'instructor'
-            WHERE c.instructor_id IS NOT NULL
-            AND LOWER(TRIM(CONCAT(COALESCE(i.first_name, ''), ' ', COALESCE(i.last_name, '')))) = LOWER(TRIM(c.trainee_name))
-        ");
+        // We'll use PHP to backfill more accurately after migration
+        // For now, set all to trainee (default), then run the backfill command
     }
 
     /**
