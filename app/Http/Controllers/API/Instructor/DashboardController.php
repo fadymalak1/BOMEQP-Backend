@@ -236,7 +236,6 @@ class DashboardController extends Controller
 
         // Classes status distribution
         $classesStatusDistribution = [
-            ['label' => 'Total', 'value' => $totalClasses],
             ['label' => 'Scheduled', 'value' => $scheduled],
             ['label' => 'In Progress', 'value' => $inProgress],
             ['label' => 'Completed', 'value' => $completed],

@@ -81,7 +81,21 @@ class StripeSettingController extends Controller
             ], 422);
         }
 
-        $setting = StripeSetting::findOrFail($id);
+        $setting = StripeSetting::find($id);
+        
+        if (!$setting) {
+            // Get available IDs to help user
+            $availableIds = StripeSetting::pluck('id')->toArray();
+            return response()->json([
+                'success' => false,
+                'message' => 'Stripe setting not found',
+                'error' => "No Stripe setting found with ID {$id}.",
+                'available_ids' => $availableIds,
+                'hint' => empty($availableIds) 
+                    ? 'No Stripe settings exist. Please create one first using POST /admin/stripe-settings'
+                    : 'Available Stripe setting IDs: ' . implode(', ', $availableIds),
+            ], 404);
+        }
 
         // If activating this setting, deactivate others in the same environment
         if ($request->has('is_active') && $request->is_active) {
@@ -181,7 +195,22 @@ class StripeSettingController extends Controller
      */
     public function destroy($id)
     {
-        $setting = StripeSetting::findOrFail($id);
+        $setting = StripeSetting::find($id);
+        
+        if (!$setting) {
+            // Get available IDs to help user
+            $availableIds = StripeSetting::pluck('id')->toArray();
+            return response()->json([
+                'success' => false,
+                'message' => 'Stripe setting not found',
+                'error' => "No Stripe setting found with ID {$id}.",
+                'available_ids' => $availableIds,
+                'hint' => empty($availableIds) 
+                    ? 'No Stripe settings exist.'
+                    : 'Available Stripe setting IDs: ' . implode(', ', $availableIds),
+            ], 404);
+        }
+        
         $setting->delete();
 
         return response()->json([
