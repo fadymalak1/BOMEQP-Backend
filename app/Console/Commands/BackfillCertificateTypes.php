@@ -46,10 +46,26 @@ class BackfillCertificateTypes extends Command
         $updatedCount = 0;
 
         foreach ($certificates as $certificate) {
+            // Load instructor relationship if not loaded
+            if ($certificate->instructor_id && !$certificate->relationLoaded('instructor')) {
+                $certificate->load('instructor');
+            }
+
             $calculatedType = Certificate::determineType(
                 $certificate->instructor_id,
                 $certificate->trainee_name ?? ''
             );
+
+            // Debug output for certificates with instructor_id
+            if ($certificate->instructor_id) {
+                $instructor = $certificate->instructor;
+                $instructorName = $instructor ? trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')) : 'N/A';
+                $this->line("\nCertificate ID: {$certificate->id}");
+                $this->line("  Instructor ID: {$certificate->instructor_id}");
+                $this->line("  Instructor Name: {$instructorName}");
+                $this->line("  Trainee Name: {$certificate->trainee_name}");
+                $this->line("  Calculated Type: {$calculatedType}");
+            }
 
             // Only update if type is different or not set
             if ($certificate->type !== $calculatedType) {

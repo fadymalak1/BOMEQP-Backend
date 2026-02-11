@@ -104,12 +104,32 @@ class Certificate extends Model
             return 'trainee';
         }
 
-        $instructorFullName = trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? ''));
+        // Build instructor full name
+        $instructorFirstName = trim($instructor->first_name ?? '');
+        $instructorLastName = trim($instructor->last_name ?? '');
+        $instructorFullName = trim($instructorFirstName . ' ' . $instructorLastName);
+        
+        // Normalize both names for comparison
+        // Remove extra spaces, convert to lowercase, trim
         $normalizedInstructorName = preg_replace('/\s+/', ' ', strtolower(trim($instructorFullName)));
         $normalizedTraineeName = preg_replace('/\s+/', ' ', strtolower(trim($traineeName)));
 
+        // Check if names match exactly
         if (!empty($normalizedInstructorName) && $normalizedTraineeName === $normalizedInstructorName) {
             return 'instructor';
+        }
+
+        // Also check if trainee_name matches just first name or last name (edge case)
+        // But only if instructor has both names
+        if (!empty($instructorFirstName) && !empty($instructorLastName)) {
+            $normalizedFirstName = preg_replace('/\s+/', ' ', strtolower(trim($instructorFirstName)));
+            $normalizedLastName = preg_replace('/\s+/', ' ', strtolower(trim($instructorLastName)));
+            
+            // Check if trainee_name matches first name + last name in any order
+            if ($normalizedTraineeName === $normalizedFirstName . ' ' . $normalizedLastName ||
+                $normalizedTraineeName === $normalizedLastName . ' ' . $normalizedFirstName) {
+                return 'instructor';
+            }
         }
 
         return 'trainee';
