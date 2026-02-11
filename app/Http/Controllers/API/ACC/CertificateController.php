@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\Certificate;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use OpenApi\Attributes as OA;
 
 class CertificateController extends Controller
@@ -20,6 +21,7 @@ class CertificateController extends Controller
             new OA\Parameter(name: "search", in: "query", required: false, schema: new OA\Schema(type: "string"), description: "Search by trainee name, certificate number, verification code, course name, or training center name"),
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["valid", "expired", "revoked"]), example: "valid"),
             new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
+            new OA\Parameter(name: "type", in: "query", schema: new OA\Schema(type: "string", enum: ["instructor", "trainee"]), example: "trainee", description: "Filter by certificate type: instructor or trainee"),
             new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
             new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
         ],
@@ -59,6 +61,33 @@ class CertificateController extends Controller
 
         if ($request->has('course_id')) {
             $query->where('course_id', $request->course_id);
+        }
+
+        // Filter by type (instructor or trainee)
+        if ($request->has('type') && in_array($request->type, ['instructor', 'trainee'])) {
+            $type = $request->type;
+            if ($type === 'instructor') {
+                // Instructor certificates: instructor_id is set AND trainee_name matches instructor's name
+                $query->whereNotNull('instructor_id')
+                    ->whereExists(function ($subQuery) {
+                        $subQuery->select(DB::raw(1))
+                            ->from('instructors')
+                            ->whereColumn('instructors.id', 'certificates.instructor_id')
+                            ->whereRaw("LOWER(TRIM(CONCAT(COALESCE(instructors.first_name, ''), ' ', COALESCE(instructors.last_name, '')))) = LOWER(TRIM(certificates.trainee_name))");
+                    });
+            } else {
+                // Trainee certificates: trainee_name doesn't match instructor's name OR instructor_id is null
+                $query->where(function ($q) {
+                    $q->whereNull('instructor_id')
+                        ->orWhereDoesntHave('instructor')
+                        ->orWhereNotExists(function ($subQuery) {
+                            $subQuery->select(DB::raw(1))
+                                ->from('instructors')
+                                ->whereColumn('instructors.id', 'certificates.instructor_id')
+                                ->whereRaw("LOWER(TRIM(CONCAT(COALESCE(instructors.first_name, ''), ' ', COALESCE(instructors.last_name, '')))) = LOWER(TRIM(certificates.trainee_name))");
+                        });
+                });
+            }
         }
 
         // Search functionality
