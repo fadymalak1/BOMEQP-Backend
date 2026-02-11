@@ -80,12 +80,16 @@ class Certificate extends Model
         parent::boot();
 
         static::saving(function ($certificate) {
-            // Auto-determine type if not set
-            if (empty($certificate->type)) {
-                $certificate->type = static::determineType(
-                    $certificate->instructor_id,
-                    $certificate->trainee_name ?? ''
-                );
+            // Auto-determine type if not set or if it's being created
+            if (empty($certificate->type) || $certificate->isDirty(['instructor_id', 'trainee_name'])) {
+                // Only auto-determine if type is empty or if this is a new record
+                // Don't override manually set types unless fields changed
+                if (empty($certificate->type) || $certificate->wasRecentlyCreated) {
+                    $certificate->type = static::determineType(
+                        $certificate->instructor_id,
+                        $certificate->trainee_name ?? ''
+                    );
+                }
             }
         });
     }
