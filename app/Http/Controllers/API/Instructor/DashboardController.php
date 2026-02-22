@@ -146,7 +146,10 @@ class DashboardController extends Controller
         if ($instructor->training_center_id && !in_array($instructor->training_center_id, $trainingCenterIds)) {
             $trainingCenterIds[] = $instructor->training_center_id;
         }
-        $linkedTcIds = $instructor->linkedTrainingCenters()->pluck('id')->toArray();
+        $linkedTcIds = $instructor->linkedTrainingCenters()
+            ->select('training_centers.id')
+            ->pluck('training_centers.id')
+            ->toArray();
         $trainingCenterIds = array_unique(array_merge($trainingCenterIds, $linkedTcIds));
 
         $trainingCenters = \App\Models\TrainingCenter::whereIn('id', $trainingCenterIds)

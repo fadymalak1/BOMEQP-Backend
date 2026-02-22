@@ -78,7 +78,9 @@ class Instructor extends Model
     public function getTrainingCentersWorkedWith(): \Illuminate\Support\Collection
     {
         $ids = collect([$this->training_center_id])->filter();
-        $ids = $ids->merge($this->linkedTrainingCenters()->pluck('id'));
+        $ids = $ids->merge(
+            $this->linkedTrainingCenters()->select('training_centers.id')->pluck('training_centers.id')
+        );
         $ids = $ids->merge(
             InstructorAccAuthorization::where('instructor_id', $this->id)->distinct()->pluck('training_center_id')
         );
