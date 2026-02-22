@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -97,6 +98,15 @@ class TrainingCenter extends Model
     public function instructors(): HasMany
     {
         return $this->hasMany(Instructor::class, 'training_center_id');
+    }
+
+    /**
+     * Instructors linked to this TC via pivot (added by email when they already existed in system).
+     */
+    public function linkedInstructors(): BelongsToMany
+    {
+        return $this->belongsToMany(Instructor::class, 'instructor_training_center', 'training_center_id', 'instructor_id')
+            ->withTimestamps();
     }
 
     public function certificateCodes(): HasMany

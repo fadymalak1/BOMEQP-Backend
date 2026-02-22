@@ -137,7 +137,7 @@ class DashboardController extends Controller
             ->where('status', 'pending')
             ->sum('amount');
 
-        // Training Centers worked with
+        // Training Centers worked with (classes, primary TC, linked TCs via pivot)
         $trainingCenterIds = TrainingClass::where('instructor_id', $instructor->id)
             ->distinct()
             ->pluck('training_center_id')
@@ -146,6 +146,8 @@ class DashboardController extends Controller
         if ($instructor->training_center_id && !in_array($instructor->training_center_id, $trainingCenterIds)) {
             $trainingCenterIds[] = $instructor->training_center_id;
         }
+        $linkedTcIds = $instructor->linkedTrainingCenters()->pluck('id')->toArray();
+        $trainingCenterIds = array_unique(array_merge($trainingCenterIds, $linkedTcIds));
 
         $trainingCenters = \App\Models\TrainingCenter::whereIn('id', $trainingCenterIds)
             ->select('id', 'name', 'email', 'phone', 'country', 'city', 'status')

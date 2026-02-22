@@ -99,6 +99,22 @@ class InstructorController extends Controller
 
         $instructors = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 15);
 
+        // Append training_centers and accs for each instructor (TCs/ACCs that worked with this instructor)
+        $instructorsData = collect($instructors->items())->map(function ($instructor) {
+            $arr = $instructor->toArray();
+            $arr['training_centers'] = $instructor->getTrainingCentersWorkedWith()->map(fn ($tc) => [
+                'id' => $tc->id,
+                'name' => $tc->name,
+                'email' => $tc->email,
+            ])->values();
+            $arr['accs'] = $instructor->getAccsWorkedWith()->map(fn ($acc) => [
+                'id' => $acc->id,
+                'name' => $acc->name,
+                'email' => $acc->email,
+            ])->values();
+            return $arr;
+        })->all();
+
         // Get statistics (total counts regardless of filters)
         $statistics = [
             'total' => Instructor::count(),
@@ -109,7 +125,7 @@ class InstructorController extends Controller
         ];
 
         return response()->json([
-            'instructors' => $instructors->items(),
+            'instructors' => $instructorsData,
             'statistics' => $statistics,
             'pagination' => [
                 'current_page' => $instructors->currentPage(),
@@ -150,10 +166,23 @@ class InstructorController extends Controller
             'authorizations.acc',
             'courseAuthorizations.course',
             'trainingClasses.course',
-            'certificates'
+            'certificates',
+            'linkedTrainingCenters:id,name,email',
         ])->findOrFail($id);
 
-        return response()->json(['instructor' => $instructor]);
+        $data = $instructor->toArray();
+        $data['training_centers'] = $instructor->getTrainingCentersWorkedWith()->map(fn ($tc) => [
+            'id' => $tc->id,
+            'name' => $tc->name,
+            'email' => $tc->email,
+        ])->values();
+        $data['accs'] = $instructor->getAccsWorkedWith()->map(fn ($acc) => [
+            'id' => $acc->id,
+            'name' => $acc->name,
+            'email' => $acc->email,
+        ])->values();
+
+        return response()->json(['instructor' => $data]);
     }
 
     #[OA\Put(

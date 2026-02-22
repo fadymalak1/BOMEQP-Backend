@@ -824,6 +824,13 @@ class InstructorController extends Controller
                 ];
             }
 
+            // Training centers that worked with this instructor (primary, linked, authorizations, classes)
+            $trainingCentersWorkedWith = $instructor->getTrainingCentersWorkedWith()->map(fn ($tc) => [
+                'id' => $tc->id,
+                'name' => $tc->name,
+                'email' => $tc->email,
+            ])->values();
+
             return [
                 'id' => $instructor->id,
                 'first_name' => $instructor->first_name,
@@ -846,6 +853,7 @@ class InstructorController extends Controller
                     'name' => $instructor->trainingCenter->name,
                     'email' => $instructor->trainingCenter->email,
                 ] : null,
+                'training_centers' => $trainingCentersWorkedWith,
                 'latest_authorization' => $latestAuthSummary,
                 'authorizations' => $authorizationsList,
                 'authorized_courses' => $authorizedCourses,

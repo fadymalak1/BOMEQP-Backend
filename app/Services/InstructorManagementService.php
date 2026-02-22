@@ -32,6 +32,40 @@ class InstructorManagementService
     }
 
     /**
+     * Add an existing instructor (by email) to a training center. Links them via pivot without creating a new user.
+     *
+     * @param Instructor $instructor
+     * @param TrainingCenter $trainingCenter
+     * @return array
+     */
+    public function addExistingInstructorToTrainingCenter(Instructor $instructor, TrainingCenter $trainingCenter): array
+    {
+        // Already primary TC for this instructor
+        if ($instructor->training_center_id === $trainingCenter->id) {
+            return [
+                'success' => true,
+                'instructor' => $instructor->load('trainingCenter'),
+                'message' => 'Instructor is already associated with your training center.',
+            ];
+        }
+        // Already linked via pivot
+        if ($instructor->linkedTrainingCenters()->where('training_centers.id', $trainingCenter->id)->exists()) {
+            return [
+                'success' => true,
+                'instructor' => $instructor->load('trainingCenter'),
+                'message' => 'Instructor is already associated with your training center.',
+            ];
+        }
+        $instructor->linkedTrainingCenters()->attach($trainingCenter->id);
+        $instructor->load('trainingCenter');
+        return [
+            'success' => true,
+            'instructor' => $instructor,
+            'message' => 'Instructor added to your training center successfully.',
+        ];
+    }
+
+    /**
      * Create a new instructor
      *
      * @param Request $request

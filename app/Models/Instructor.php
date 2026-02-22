@@ -62,6 +62,46 @@ class Instructor extends Model
         return $this->belongsTo(TrainingCenter::class, 'training_center_id');
     }
 
+    /**
+     * Additional training centers this instructor is linked to (besides primary training_center_id).
+     * Used when a TC "adds" an existing instructor by email.
+     */
+    public function linkedTrainingCenters(): BelongsToMany
+    {
+        return $this->belongsToMany(TrainingCenter::class, 'instructor_training_center', 'instructor_id', 'training_center_id')
+            ->withTimestamps();
+    }
+
+    /**
+     * Training centers this instructor has worked with: primary TC, linked TCs, TCs from authorizations, TCs from classes.
+     */
+    public function getTrainingCentersWorkedWith(): \Illuminate\Support\Collection
+    {
+        $ids = collect([$this->training_center_id])->filter();
+        $ids = $ids->merge($this->linkedTrainingCenters()->pluck('id'));
+        $ids = $ids->merge(
+            InstructorAccAuthorization::where('instructor_id', $this->id)->distinct()->pluck('training_center_id')
+        );
+        $ids = $ids->merge(
+            $this->trainingClasses()->distinct()->pluck('training_center_id')
+        );
+        $ids = $ids->unique()->filter()->values();
+        return TrainingCenter::whereIn('id', $ids)->get();
+    }
+
+    /**
+     * ACCs this instructor has worked with (from approved authorizations and classes).
+     */
+    public function getAccsWorkedWith(): \Illuminate\Support\Collection
+    {
+        $ids = InstructorAccAuthorization::where('instructor_id', $this->id)->distinct()->pluck('acc_id');
+        $ids = $ids->merge(
+            $this->trainingClasses()->with('course:id,acc_id')->get()->pluck('course.acc_id')->filter()->unique()
+        );
+        $ids = $ids->unique()->filter()->values();
+        return ACC::whereIn('id', $ids)->get();
+    }
+
     public function authorizations(): HasMany
     {
         return $this->hasMany(InstructorAccAuthorization::class, 'instructor_id');

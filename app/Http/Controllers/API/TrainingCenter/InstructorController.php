@@ -69,7 +69,11 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
+        // Instructors that belong to this TC (primary) or are linked via pivot
         $query = Instructor::where('training_center_id', $trainingCenter->id)
+            ->orWhereHas('linkedTrainingCenters', function ($q) use ($trainingCenter) {
+                $q->where('training_centers.id', $trainingCenter->id);
+            })
             ->with(['courses' => function($query) {
                 $query->with(['subCategory', 'acc']);
             }]);
@@ -116,13 +120,17 @@ class InstructorController extends Controller
         $perPage = $request->get('per_page', 15);
         $instructors = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        // Calculate statistics for all instructors in this training center (not just paginated results)
+        // Statistics: instructors that belong to this TC (primary or linked)
+        $tcInstructorIds = Instructor::where('training_center_id', $trainingCenter->id)
+            ->orWhereHas('linkedTrainingCenters', fn ($q) => $q->where('training_centers.id', $trainingCenter->id))
+            ->pluck('id');
+        $baseQuery = Instructor::whereIn('id', $tcInstructorIds);
         $statistics = [
-            'total' => Instructor::where('training_center_id', $trainingCenter->id)->count(),
-            'pending' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'pending')->count(),
-            'active' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'active')->count(),
-            'suspended' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'suspended')->count(),
-            'inactive' => Instructor::where('training_center_id', $trainingCenter->id)->where('status', 'inactive')->count(),
+            'total' => $baseQuery->count(),
+            'pending' => (clone $baseQuery)->where('status', 'pending')->count(),
+            'active' => (clone $baseQuery)->where('status', 'active')->count(),
+            'suspended' => (clone $baseQuery)->where('status', 'suspended')->count(),
+            'inactive' => (clone $baseQuery)->where('status', 'inactive')->count(),
         ];
             
         return response()->json([
@@ -179,6 +187,36 @@ class InstructorController extends Controller
     )]
     public function store(Request $request)
     {
+        $user = $request->user();
+        $trainingCenter = TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $existingInstructor = Instructor::where('email', $request->input('email'))->first();
+
+        if ($existingInstructor) {
+            // Add existing instructor to this training center (by email)
+            $request->validate(['email' => 'required|email']);
+            try {
+                $result = $this->instructorService->addExistingInstructorToTrainingCenter($existingInstructor, $trainingCenter);
+                return response()->json([
+                    'message' => $result['message'],
+                    'instructor' => $result['instructor'],
+                ], 201);
+            } catch (\Exception $e) {
+                Log::error('Failed to add instructor to training center', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json([
+                    'message' => 'Failed to add instructor',
+                    'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                ], 500);
+            }
+        }
+
         $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
@@ -191,13 +229,6 @@ class InstructorController extends Controller
             'cv' => 'required|file|mimetypes:application/pdf|max:10240',
             'passport' => 'required|file|mimetypes:image/jpeg,image/png,application/pdf|max:10240',
         ]);
-
-        $user = $request->user();
-        $trainingCenter = TrainingCenter::where('email', $user->email)->first();
-
-        if (!$trainingCenter) {
-            return response()->json(['message' => 'Training center not found'], 404);
-        }
 
         try {
             $result = $this->instructorService->createInstructor($request, $trainingCenter);
@@ -240,9 +271,19 @@ class InstructorController extends Controller
             new OA\Response(response: 404, description: "Instructor not found")
         ]
     )]
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $instructor = Instructor::with('trainingCenter')->findOrFail($id);
+        $user = $request->user();
+        $trainingCenter = TrainingCenter::where('email', $user->email)->first();
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+        $instructor = Instructor::with(['trainingCenter', 'linkedTrainingCenters:id,name,email'])
+            ->where(function ($q) use ($trainingCenter) {
+                $q->where('training_center_id', $trainingCenter->id)
+                    ->orWhereHas('linkedTrainingCenters', fn ($q2) => $q2->where('training_centers.id', $trainingCenter->id));
+            })
+            ->findOrFail($id);
         return response()->json(['instructor' => $instructor]);
     }
 
@@ -300,7 +341,9 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $instructor = Instructor::where('training_center_id', $trainingCenter->id)->findOrFail($id);
+        $instructor = Instructor::where('training_center_id', $trainingCenter->id)
+            ->orWhereHas('linkedTrainingCenters', fn ($q) => $q->where('training_centers.id', $trainingCenter->id))
+            ->findOrFail($id);
 
         $request->validate([
             'first_name' => 'required|string|max:255',
@@ -543,7 +586,9 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $instructor = Instructor::where('training_center_id', $trainingCenter->id)->findOrFail($id);
+        $instructor = Instructor::where('training_center_id', $trainingCenter->id)
+            ->orWhereHas('linkedTrainingCenters', fn ($q) => $q->where('training_centers.id', $trainingCenter->id))
+            ->findOrFail($id);
 
         try {
             $result = $this->instructorService->requestAuthorization($request, $instructor, $trainingCenter);
@@ -572,19 +617,24 @@ class InstructorController extends Controller
 
     public function destroy($id)
     {
-        $instructor = Instructor::findOrFail($id);
-        
-        // Check if instructor belongs to the training center
         $user = request()->user();
         $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
-        
-        if (!$trainingCenter || $instructor->training_center_id !== $trainingCenter->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
         }
-        
-        $instructor->delete();
-        
-        return response()->json(['message' => 'Instructor deleted successfully']);
+
+        $instructor = Instructor::where(function ($q) use ($trainingCenter) {
+            $q->where('training_center_id', $trainingCenter->id)
+                ->orWhereHas('linkedTrainingCenters', fn ($q2) => $q2->where('training_centers.id', $trainingCenter->id));
+        })->findOrFail($id);
+
+        // If instructor is only linked via pivot, detach; otherwise delete record (only if primary TC)
+        if ($instructor->training_center_id === $trainingCenter->id) {
+            $instructor->delete();
+            return response()->json(['message' => 'Instructor deleted successfully']);
+        }
+        $instructor->linkedTrainingCenters()->detach($trainingCenter->id);
+        return response()->json(['message' => 'Instructor removed from your training center.']);
     }
 
     /**
