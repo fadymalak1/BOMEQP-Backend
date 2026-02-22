@@ -194,10 +194,14 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
+        // If instructor already exists (by email or id_number), link them to this TC instead of creating duplicate
         $existingInstructor = Instructor::where('email', $request->input('email'))->first();
+        if (! $existingInstructor && $request->filled('id_number')) {
+            $existingInstructor = Instructor::where('id_number', $request->input('id_number'))->first();
+        }
 
         if ($existingInstructor) {
-            // Add existing instructor to this training center (by email)
+            // Add existing instructor to this training center
             $request->validate(['email' => 'required|email']);
             try {
                 $result = $this->instructorService->addExistingInstructorToTrainingCenter($existingInstructor, $trainingCenter);
