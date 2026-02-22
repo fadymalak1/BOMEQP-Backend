@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreignId('training_center_id')->constrained('training_centers')->cascadeOnDelete();
             $table->timestamps();
 
-            $table->unique(['instructor_id', 'training_center_id']);
+            $table->unique(['instructor_id', 'training_center_id'], 'instructor_tc_unique');
         });
     }
 
