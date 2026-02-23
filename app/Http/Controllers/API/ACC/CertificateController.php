@@ -5,6 +5,8 @@ namespace App\Http\Controllers\API\ACC;
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\Certificate;
+use App\Models\CertificateTemplate;
+use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use OpenApi\Attributes as OA;
@@ -112,6 +114,82 @@ class CertificateController extends Controller
         $certificates->setCollection($transformedCertificates);
 
         return response()->json($certificates);
+    }
+
+    #[OA\Post(
+        path: "/acc/certificates/generate",
+        summary: "Generate certificate from template",
+        description: "Generate a certificate PDF from a template with provided data. Supports template variables including training_center_logo, acc_logo, qr_code, expiry_date, etc.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["template_id"],
+                properties: [
+                    new OA\Property(property: "template_id", type: "integer", example: 123, description: "Certificate template ID"),
+                    new OA\Property(
+                        property: "data",
+                        type: "object",
+                        description: "Template variable values",
+                        properties: [
+                            new OA\Property(property: "instructor_name", type: "string", example: "John Doe"),
+                            new OA\Property(property: "expiry_date", type: "string", format: "date", example: "2027-01-15"),
+                            new OA\Property(property: "training_center_logo_url", type: "string", format: "uri", example: "https://example.com/logos/tc.png"),
+                            new OA\Property(property: "acc_logo_url", type: "string", format: "uri", example: "https://example.com/logos/acc.png"),
+                            new OA\Property(property: "qr_code_url", type: "string", format: "uri", example: "https://example.com/qrc/cert.png"),
+                        ]
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Certificate generated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "certificate_id", type: "string", example: "CERT-001"),
+                        new OA\Property(property: "pdf_url", type: "string", format: "uri"),
+                        new OA\Property(property: "preview_url", type: "string", format: "uri"),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC or template not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
+    public function generate(Request $request, CertificateGenerationService $certificateService)
+    {
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $request->validate([
+            'template_id' => 'required|exists:certificate_templates,id',
+            'data' => 'sometimes|array',
+        ]);
+
+        $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($request->template_id);
+        $data = $request->input('data', []);
+
+        $result = $certificateService->generate($template, $data, 'pdf');
+
+        if (!$result['success']) {
+            return response()->json([
+                'message' => $result['message'] ?? 'Certificate generation failed',
+            ], 422);
+        }
+
+        return response()->json([
+            'certificate_id' => 'CERT-' . \Illuminate\Support\Str::random(8),
+            'pdf_url' => $result['file_url'] ?? null,
+            'preview_url' => $result['file_url'] ?? null,
+        ]);
     }
 }
 

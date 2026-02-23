@@ -15,6 +15,7 @@ class CertificateTemplate extends Model
     protected $fillable = [
         'acc_id',
         'template_type',
+        'orientation',
         'category_id',
         'course_id',
         'name',

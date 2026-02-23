@@ -22,6 +22,9 @@ class CertificateGenerationService
     public function generate(CertificateTemplate $template, array $data, string $outputFormat = 'png'): array
     {
         try {
+            // Normalize data: map API keys to template variable names
+            $data = $this->normalizeTemplateData($data);
+
             // For PDF generation, use template_html method (generate image first, then embed in PDF)
             if ($outputFormat === 'pdf') {
                 return $this->generatePdfFromBlade($template, $data);
@@ -67,8 +70,13 @@ class CertificateGenerationService
                 ];
             }
 
-            // Apply text placeholders
-            $this->applyTextPlaceholders($image, $template->config_json, $data, $width, $height);
+            // Get elements from config (support both { elements: [...] } and direct array)
+            $config = $template->config_json;
+            $elements = is_array($config) && isset($config['elements']) ? $config['elements'] : $config;
+            $elements = is_array($elements) ? $elements : [];
+
+            // Apply placeholders (text and image elements)
+            $this->applyPlaceholders($image, $elements, $data, $width, $height);
 
             // Generate output file
             $outputPath = $this->saveCertificate($image, $template, $data, $outputFormat, $width, $height);
@@ -162,47 +170,52 @@ class CertificateGenerationService
     }
 
     /**
-     * Apply text placeholders to image
+     * Apply placeholders (text and image elements) to image
      */
-    private function applyTextPlaceholders($image, array $config, array $data, int $imageWidth, int $imageHeight): void
+    private function applyPlaceholders($image, array $elements, array $data, int $imageWidth, int $imageHeight): void
     {
-        foreach ($config as $placeholder) {
+        foreach ($elements as $placeholder) {
             if (!isset($placeholder['variable'])) {
                 continue;
             }
 
+            $type = $placeholder['type'] ?? 'text';
             $variable = $placeholder['variable'];
-            
-            // Handle both dynamic variables ({{variable_name}}) and static text
-            // Frontend sends the actual text content in the 'variable' field
-            if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
-                // Dynamic variable: extract variable name and replace with data
-                $variableKey = trim($matches[1]);
-                $text = $data[$variableKey] ?? $variable; // Fallback to original if data not found
-            } else {
-                // Static text: use as-is
-                $text = $variable;
-            }
 
-            // Calculate absolute coordinates from percentages
+            // Calculate absolute coordinates from normalized (0-1) values
             $x = (float)($placeholder['x'] ?? 0.5) * $imageWidth;
             $y = (float)($placeholder['y'] ?? 0.5) * $imageHeight;
 
-            // Get styling (support both snake_case and camelCase for flexibility)
+            if ($type === 'image') {
+                // Image element: overlay image from URL
+                $variableKey = preg_match('/\{\{([^}]+)\}\}/', $variable, $m) ? trim($m[1]) : $variable;
+                $imageUrl = $data[$variableKey] ?? $data[$variable] ?? null;
+                if ($imageUrl) {
+                    $elWidth = (float)($placeholder['width'] ?? 0.2) * $imageWidth;
+                    $elHeight = (float)($placeholder['height'] ?? 0.15) * $imageHeight;
+                    $this->overlayImage($image, $imageUrl, (int)$x, (int)$y, (int)$elWidth, (int)$elHeight);
+                }
+                continue;
+            }
+
+            // Text element
+            if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
+                $variableKey = trim($matches[1]);
+                $text = $data[$variableKey] ?? $variable;
+            } else {
+                $text = $variable;
+            }
+
             $fontSize = (int)($placeholder['font_size'] ?? $placeholder['fontSize'] ?? 24);
             $colorHex = $placeholder['color'] ?? '#000000';
             $fontFamily = $placeholder['font_family'] ?? $placeholder['fontFamily'] ?? 'Arial';
             $textAlign = $placeholder['text_align'] ?? $placeholder['textAlign'] ?? 'left';
 
-            // Convert hex color to RGB
             $color = $this->hexToRgb($colorHex);
             $textColor = imagecolorallocate($image, $color['r'], $color['g'], $color['b']);
 
-            // Use TrueType fonts if available, otherwise use built-in font
             $fontPath = $this->getFontPath($fontFamily);
-            
             if ($fontPath && function_exists('imagettftext') && function_exists('imagettfbbox')) {
-                // Adjust X position based on text alignment
                 $bbox = @imagettfbbox($fontSize, 0, $fontPath, $text);
                 if ($bbox !== false) {
                     $textWidth = abs($bbox[4] - $bbox[0]);
@@ -212,14 +225,70 @@ class CertificateGenerationService
                         $x = $x - $textWidth;
                     }
                 }
-                
                 imagettftext($image, $fontSize, 0, (int)$x, (int)$y, $textColor, $fontPath, $text);
             } else {
-                // Fallback to built-in font (limited sizing)
-                // Built-in fonts don't support alignment, so just use left alignment
                 imagestring($image, 5, (int)$x, (int)$y - 20, $text, $textColor);
             }
         }
+    }
+
+    /**
+     * Overlay an image from URL onto the certificate at given position/size
+     */
+    private function overlayImage($destImage, string $imageUrl, int $x, int $y, int $width, int $height): void
+    {
+        $srcPath = $this->getImagePath($imageUrl);
+        if (!$srcPath) {
+            return;
+        }
+        $info = @getimagesize($srcPath);
+        if (!$info) {
+            return;
+        }
+        $srcImage = $this->createImageResource($srcPath, $info['mime']);
+        if (!$srcImage) {
+            return;
+        }
+        if (function_exists('imagecopyresampled')) {
+            imagecopyresampled($destImage, $srcImage, $x, $y, 0, 0, $width, $height, imagesx($srcImage), imagesy($srcImage));
+        } else {
+            imagecopyresized($destImage, $srcImage, $x, $y, 0, 0, $width, $height, imagesx($srcImage), imagesy($srcImage));
+        }
+        imagedestroy($srcImage);
+        if ($srcPath && strpos($srcPath, sys_get_temp_dir()) === 0 && file_exists($srcPath)) {
+            @unlink($srcPath);
+        }
+    }
+
+    /**
+     * Normalize template data: map API payload keys to template variable names
+     */
+    private function normalizeTemplateData(array $data): array
+    {
+        $mapping = [
+            'training_center_logo_url' => 'training_center_logo',
+            'acc_logo_url' => 'acc_logo',
+            'qr_code_url' => 'qr_code',
+        ];
+        foreach ($mapping as $apiKey => $templateKey) {
+            if (isset($data[$apiKey]) && !isset($data[$templateKey])) {
+                $data[$templateKey] = $data[$apiKey];
+            }
+        }
+        return $data;
+    }
+
+    /**
+     * Get page dimensions based on orientation
+     * Landscape: 1200x848px, Portrait: 848x1200px
+     */
+    private function getPageDimensions(string $orientation): array
+    {
+        $dimensions = [
+            'landscape' => ['width' => 1200, 'height' => 848],
+            'portrait' => ['width' => 848, 'height' => 1200],
+        ];
+        return $dimensions[$orientation] ?? $dimensions['landscape'];
     }
 
     /**
@@ -394,12 +463,12 @@ class CertificateGenerationService
             // Replace variables in template_html
             $html = $this->replaceTemplateVariables($template->template_html, $data);
 
-            // Extract dimensions from HTML (default: A4 size in pixels)
-            // The HTML template specifies width and height in CSS (e.g., width: 1200px; height: 848px;)
-            $width = 1200; // Default width in pixels
-            $height = 848; // Default height in pixels
+            // Get page dimensions from orientation (landscape: 1200x848, portrait: 848x1200)
+            $dimensions = $this->getPageDimensions($template->orientation ?? 'landscape');
+            $width = $dimensions['width'];
+            $height = $dimensions['height'];
 
-            // Try to extract dimensions from HTML
+            // Try to extract dimensions from HTML (override if template specifies)
             if (preg_match('/width:\s*(\d+)px/i', $html, $widthMatch)) {
                 $width = (int)$widthMatch[1];
             }
@@ -411,9 +480,12 @@ class CertificateGenerationService
             $widthPt = ($width / 96) * 72;
             $heightPt = ($height / 96) * 72;
 
+            // Use orientation for PDF paper
+            $orientation = $template->orientation ?? 'landscape';
+
             // Generate PDF using DomPDF directly from HTML
             $pdf = Pdf::loadHTML($html)
-                ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
+                ->setPaper([0, 0, $widthPt, $heightPt], $orientation)
                 ->setOption('isHtml5ParserEnabled', true)
                 ->setOption('isRemoteEnabled', true)
                 ->setOption('fontDir', storage_path('fonts'))
@@ -738,11 +810,14 @@ class CertificateGenerationService
             'acc_country' => $acc->country ?? '',
             'issue_date' => now()->format('Y-m-d'),
             'issue_date_formatted' => now()->format('F j, Y'),
+            // Image placeholders for template variables
+            'training_center_logo' => $this->resolveLogoUrl($trainingCenter->logo_url ?? null),
+            'acc_logo' => $this->resolveLogoUrl($acc->logo_url ?? null),
         ];
 
-        // Add verification code if provided
         if ($verificationCode) {
             $data['verification_code'] = $verificationCode;
+            $data['qr_code'] = $this->getQrCodeUrl($verificationCode);
         }
 
         return $this->generate($template, $data, 'pdf');
@@ -760,6 +835,9 @@ class CertificateGenerationService
      */
     public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null): array
     {
+        // Instructor certificates typically expire 3 years from issue (configurable)
+        $expiryDate = now()->addYears(3)->format('Y-m-d');
+
         $data = [
             'instructor_name' => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
             'instructor_first_name' => $instructor->first_name ?? '',
@@ -777,14 +855,45 @@ class CertificateGenerationService
             'acc_country' => $acc->country ?? '',
             'issue_date' => now()->format('Y-m-d'),
             'issue_date_formatted' => now()->format('F j, Y'),
+            'expiry_date' => $expiryDate,
+            // Image placeholders
+            'training_center_logo' => $this->resolveLogoUrl($instructor->trainingCenter?->logo_url ?? null),
+            'acc_logo' => $this->resolveLogoUrl($acc->logo_url ?? null),
         ];
 
-        // Add verification code if provided
         if ($verificationCode) {
             $data['verification_code'] = $verificationCode;
+            $data['qr_code'] = $this->getQrCodeUrl($verificationCode);
         }
 
         return $this->generate($template, $data, 'pdf');
+    }
+
+    /**
+     * Resolve logo URL to full URL (for storage paths)
+     */
+    private function resolveLogoUrl(?string $url): ?string
+    {
+        if (!$url) {
+            return null;
+        }
+        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
+            return $url;
+        }
+        return url($url);
+    }
+
+    /**
+     * Get QR code image URL for verification (uses public QR API)
+     */
+    private function getQrCodeUrl(string $verificationCode): string
+    {
+        $verifyUrl = url('/api/certificates/verify/' . $verificationCode);
+        return 'https://api.qrserver.com/v1/create-qr-code/?' . http_build_query([
+            'data' => $verifyUrl,
+            'size' => '200x200',
+            'format' => 'png',
+        ]);
     }
 }
 

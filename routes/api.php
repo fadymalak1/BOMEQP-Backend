@@ -235,6 +235,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
 
         // Certificates & Classes
         Route::get('/certificates', [App\Http\Controllers\API\ACC\CertificateController::class, 'index']);
+        Route::post('/certificates/generate', [App\Http\Controllers\API\ACC\CertificateController::class, 'generate']);
         Route::get('/classes', [App\Http\Controllers\API\ACC\ClassController::class, 'index']);
         Route::get('/classes/{id}', [App\Http\Controllers\API\ACC\ClassController::class, 'show']);
 

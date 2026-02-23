@@ -1,7 +1,7 @@
 # API Changes: Instructor & Training Centers
 
 This document describes the API changes for:
-- Training centers adding instructors (existing by email or new)
+- Training centers adding instructors (existing by email / ID number or new)
 - Instructor data including **training centers** and **ACCs** that worked with each instructor (ACC, Admin, and Instructor dashboard)
 
 ---
@@ -14,12 +14,15 @@ This document describes the API changes for:
 
 | Scenario | Request | Result |
 |---------|---------|--------|
-| **Instructor already exists** (email in system) | Body must include `email` (other fields optional) | Instructor is **linked** to this training center via pivot. No new user, no credentials email. |
+| **Instructor already exists** (same email **or** same `id_number` in system) | Body must include at least `email` (and optionally `id_number`) | Existing instructor is **linked** to this training center via pivot. No new user, no new instructor record, no credentials email. |
 | **Instructor does not exist** | Full body as before (see below) | New instructor and user are created; credentials email is sent. |
 
-**Add existing instructor (by email only):**
+**Add existing instructor (by email / ID number):**
 
-- **Validation:** `email` required and must be valid.
+- **Lookup order:**  
+  1. Try by `email`.  
+  2. If no match and `id_number` is provided, try by `id_number`.  
+- **Validation for this path:** `email` required and must be valid (used to identify / display, but existing instructor data is kept).
 - **Response (201):**  
   `message`: e.g. *"Instructor added to your training center successfully."* or *"Instructor is already associated with your training center."*  
   `instructor`: instructor resource (with `training_center` and relations as applicable).
@@ -89,14 +92,8 @@ Existing fields (`training_center`, `authorizations`, `authorized_courses`, etc.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `training_centers` | `array` | Training centers that worked with this instructor (primary, linked, authorizations, classes). |
-| `accs` | `array` | ACCs that worked with this instructor (from authorizations and classes). |
-
-**Each item in `training_centers` / `accs`:**
-
-- `id` (integer)  
-- `name` (string)  
-- `email` (string)
+| `training_centers` | `array<object>` | **Full objects** for all training centers that worked with this instructor (primary, linked, authorizations, classes). Each item is the full `TrainingCenter` model as returned by `toArray()`. |
+| `accs` | `array<object>` | **Full objects** for all ACCs that worked with this instructor (from authorizations and classes). Each item is the full `ACC` model as returned by `toArray()`. |
 
 ### `GET /api/admin/instructors/{id}`
 

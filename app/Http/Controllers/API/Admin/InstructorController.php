@@ -99,19 +99,11 @@ class InstructorController extends Controller
 
         $instructors = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 15);
 
-        // Append training_centers and accs for each instructor (TCs/ACCs that worked with this instructor)
+        // Append full training_centers and accs data for each instructor (TCs/ACCs that worked with this instructor)
         $instructorsData = collect($instructors->items())->map(function ($instructor) {
             $arr = $instructor->toArray();
-            $arr['training_centers'] = $instructor->getTrainingCentersWorkedWith()->map(fn ($tc) => [
-                'id' => $tc->id,
-                'name' => $tc->name,
-                'email' => $tc->email,
-            ])->values();
-            $arr['accs'] = $instructor->getAccsWorkedWith()->map(fn ($acc) => [
-                'id' => $acc->id,
-                'name' => $acc->name,
-                'email' => $acc->email,
-            ])->values();
+            $arr['training_centers'] = $instructor->getTrainingCentersWorkedWith()->map(fn ($tc) => $tc->toArray())->values();
+            $arr['accs'] = $instructor->getAccsWorkedWith()->map(fn ($acc) => $acc->toArray())->values();
             return $arr;
         })->all();
 
@@ -171,16 +163,8 @@ class InstructorController extends Controller
         ])->findOrFail($id);
 
         $data = $instructor->toArray();
-        $data['training_centers'] = $instructor->getTrainingCentersWorkedWith()->map(fn ($tc) => [
-            'id' => $tc->id,
-            'name' => $tc->name,
-            'email' => $tc->email,
-        ])->values();
-        $data['accs'] = $instructor->getAccsWorkedWith()->map(fn ($acc) => [
-            'id' => $acc->id,
-            'name' => $acc->name,
-            'email' => $acc->email,
-        ])->values();
+        $data['training_centers'] = $instructor->getTrainingCentersWorkedWith()->map(fn ($tc) => $tc->toArray())->values();
+        $data['accs'] = $instructor->getAccsWorkedWith()->map(fn ($acc) => $acc->toArray())->values();
 
         return response()->json(['instructor' => $data]);
     }

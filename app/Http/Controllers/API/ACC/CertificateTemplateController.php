@@ -102,9 +102,11 @@ class CertificateTemplateController extends Controller
                 required: ["name", "status", "template_type"],
                 properties: [
                     new OA\Property(property: "template_type", type: "string", enum: ["course", "training_center", "instructor"], example: "course", description: "Type of certificate template: 'course' for course certificates, 'training_center' for training center authorization certificates, 'instructor' for instructor authorization certificates"),
+                    new OA\Property(property: "orientation", type: "string", enum: ["landscape", "portrait"], example: "landscape", description: "Page orientation: 'landscape' (1200x848px) or 'portrait' (848x1200px)"),
                     new OA\Property(property: "course_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], description: "Array of course IDs - required only if template_type is 'course'. Applies template to these specific courses."),
                     new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
                     new OA\Property(property: "template_html", type: "string", nullable: true),
+                    new OA\Property(property: "config_json", type: "object", nullable: true, description: "Object with elements array for template designer"),
                     new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active")
                 ]
             )
@@ -120,10 +122,12 @@ class CertificateTemplateController extends Controller
     {
         $request->validate([
             'template_type' => 'required|in:course,training_center,instructor',
+            'orientation' => 'sometimes|in:landscape,portrait',
             'course_ids' => 'required_if:template_type,course|array|min:1',
             'course_ids.*' => 'required_if:template_type,course|exists:courses,id',
             'name' => 'required|string|max:255',
             'template_html' => 'nullable|string',
+            'config_json' => 'nullable',
             'status' => 'required|in:active,inactive',
         ]);
 
@@ -265,13 +269,19 @@ class CertificateTemplateController extends Controller
         }
 
         // Create template
+        $configJson = $request->config_json;
+        if (is_string($configJson)) {
+            $configJson = json_decode($configJson, true) ?: null;
+        }
         $template = CertificateTemplate::create([
             'acc_id' => $acc->id,
             'template_type' => $request->template_type,
+            'orientation' => $request->get('orientation', 'landscape'),
             'category_id' => null,
             'course_id' => null,
             'name' => $request->name,
             'template_html' => $request->template_html,
+            'config_json' => $configJson,
             'status' => $request->status,
         ]);
 
@@ -317,6 +327,7 @@ class CertificateTemplateController extends Controller
             content: new OA\JsonContent(
                 properties: [
                     new OA\Property(property: "course_ids", type: "array", items: new OA\Items(type: "integer"), example: [1, 2, 3], description: "Array of course IDs - applies template to these specific courses. At least one course_id must be provided."),
+                    new OA\Property(property: "orientation", type: "string", enum: ["landscape", "portrait"], example: "landscape", description: "Page orientation: 'landscape' (1200x848px) or 'portrait' (848x1200px)"),
                     new OA\Property(property: "name", type: "string", example: "Fire Safety Certificate Template"),
                     new OA\Property(property: "template_html", type: "string", nullable: true),
                     new OA\Property(property: "status", type: "string", enum: ["active", "inactive"], example: "active"),
@@ -366,10 +377,11 @@ new OA\Property(
         $request->validate([
             'course_ids' => 'sometimes|array|min:1',
             'course_ids.*' => 'required|exists:courses,id',
+            'orientation' => 'sometimes|in:landscape,portrait',
             'name' => 'sometimes|string|max:255',
             'template_html' => 'nullable|string',
             'status' => 'sometimes|in:active,inactive',
-            'config_json' => 'nullable|array',
+            'config_json' => 'nullable',
         ]);
 
         // Only allow course_ids updates for course templates
@@ -497,8 +509,17 @@ new OA\Property(
             $template->courses()->sync($request->course_ids);
         }
 
-        // Update other fields
-        $updateData = $request->only(['name', 'template_html', 'status', 'config_json']);
+        // Update other fields (config_json can be object with elements or array)
+        $updateData = [];
+        foreach (['name', 'template_html', 'status', 'orientation', 'config_json'] as $key) {
+            if ($request->has($key)) {
+                $value = $request->input($key);
+                if ($key === 'config_json' && is_string($value)) {
+                    $value = json_decode($value, true);
+                }
+                $updateData[$key] = $value;
+            }
+        }
         if (!empty($updateData)) {
             $template->update($updateData);
         }
@@ -605,9 +626,10 @@ new OA\Property(
                 properties: [
                     new OA\Property(
                         property: "config_json",
-                        type: "array",
-                        description: "Array of placeholder configurations with coordinates (as percentages), styling, etc.",
-                        items: new OA\Items(type: "object")
+                        description: "Object with 'elements' array, or array of elements. Each element: id, type (text|image), variable, x, y, width, height (required for images), font_family, font_size, color, font_weight, text_align (for text)",
+                        properties: [
+                            new OA\Property(property: "config_json", description: "Object with 'elements' array or direct array. Each element: id, type (text|image), variable, x, y, width, height (required for images)")
+                        ]
                     )
                 ]
             )
@@ -630,24 +652,55 @@ new OA\Property(
 
         $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
 
-        $request->validate([
-            'config_json' => 'required|array',
-            'config_json.*.variable' => 'required|string',
-            'config_json.*.x' => 'required|numeric|min:0|max:1',
-            'config_json.*.y' => 'required|numeric|min:0|max:1',
-            'config_json.*.font_family' => 'nullable|string',
-            'config_json.*.fontFamily' => 'nullable|string', // Accept camelCase from frontend
-            'config_json.*.font_size' => 'nullable|integer|min:8|max:200',
-            'config_json.*.fontSize' => 'nullable|integer|min:8|max:200', // Accept camelCase from frontend
-            'config_json.*.color' => 'nullable|string',
-            'config_json.*.text_align' => 'nullable|in:left,center,right',
-            'config_json.*.textAlign' => 'nullable|in:left,center,right', // Accept camelCase from frontend
-        ]);
+        $configJson = $request->config_json;
+        if (is_string($configJson)) {
+            $configJson = json_decode($configJson, true);
+        }
 
-        // Note: verification_code variable is allowed in config_json for instructor and training_center templates
-        // The variable {{verification_code}} can be used in the template to display the verification code
+        // Support both { elements: [...] } and direct array
+        $elements = isset($configJson['elements']) ? $configJson['elements'] : $configJson;
+        if (!is_array($elements)) {
+            return response()->json([
+                'message' => 'config_json must be an object with elements array or an array of elements',
+                'errors' => ['config_json' => ['Invalid structure']]
+            ], 422);
+        }
 
-        $template->update(['config_json' => $request->config_json]);
+        // Validate each element
+        foreach ($elements as $i => $el) {
+            $type = $el['type'] ?? 'text';
+            if (!in_array($type, ['text', 'image'])) {
+                return response()->json([
+                    'message' => "Element {$i}: type must be 'text' or 'image'",
+                    'errors' => ['config_json' => ["Invalid type at index {$i}"]]
+                ], 422);
+            }
+            if (empty($el['variable'])) {
+                return response()->json([
+                    'message' => "Element {$i}: variable is required",
+                    'errors' => ['config_json' => ["Missing variable at index {$i}"]]
+                ], 422);
+            }
+            $x = $el['x'] ?? null;
+            $y = $el['y'] ?? null;
+            if ($x === null || $y === null || $x < 0 || $x > 1 || $y < 0 || $y > 1) {
+                return response()->json([
+                    'message' => "Element {$i}: x and y must be between 0 and 1",
+                    'errors' => ['config_json' => ["Invalid coordinates at index {$i}"]]
+                ], 422);
+            }
+            if ($type === 'image') {
+                if (!isset($el['width']) || !isset($el['height']) || $el['width'] < 0 || $el['width'] > 1 || $el['height'] < 0 || $el['height'] > 1) {
+                    return response()->json([
+                        'message' => "Element {$i}: width and height (0-1) are required for image elements",
+                        'errors' => ['config_json' => ["Invalid dimensions at index {$i}"]]
+                    ], 422);
+                }
+            }
+        }
+
+        // Store as { elements: [...] } for consistency
+        $template->update(['config_json' => ['elements' => $elements]]);
 
         return response()->json([
             'message' => 'Template configuration updated successfully',
