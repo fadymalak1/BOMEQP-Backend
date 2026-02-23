@@ -239,27 +239,40 @@ class CertificateGenerationService
             $bytes = @file_get_contents($localPath);
             if ($bytes && strlen($bytes) > 50) {
                 $mime = $this->detectMime($localPath, $bytes);
+                Log::debug('toDataUri: embedded from local path', ['source' => $source, 'path' => $localPath, 'mime' => $mime, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
         }
 
         // ------------------------------------------------------------------
-        // Fall back to HTTP fetch for external URLs (e.g. QR code API)
+        // Fall back to HTTP fetch (external URLs, QR code API, etc.)
+        // Try both the original URL and the public storage URL form.
         // ------------------------------------------------------------------
-        $fetchUrl = $source;
+        $candidates = [$source];
+        // Also try the storage base URL form in case logo_url stored without host
         if (str_starts_with($source, '/') && !str_starts_with($source, '//')) {
-            $fetchUrl = url($source);
+            $candidates[] = url($source);
         }
 
-        if (filter_var($fetchUrl, FILTER_VALIDATE_URL)) {
+        foreach ($candidates as $fetchUrl) {
+            if (!filter_var($fetchUrl, FILTER_VALIDATE_URL)) {
+                continue;
+            }
             $bytes = $this->httpFetch($fetchUrl);
             if ($bytes && strlen($bytes) > 50) {
                 $mime = $this->detectMimeFromBytes($bytes);
+                Log::debug('toDataUri: embedded from HTTP fetch', ['source' => $source, 'fetch_url' => $fetchUrl, 'mime' => $mime, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
+            Log::warning('toDataUri: HTTP fetch failed', ['fetch_url' => $fetchUrl]);
         }
 
-        Log::warning('toDataUri: could not convert image', ['source' => substr($source, 0, 200)]);
+        Log::warning('toDataUri: could not convert image', [
+            'source'      => substr($source, 0, 300),
+            'local_path'  => $localPath,
+            'storage_url' => Storage::disk('public')->url('') ,
+            'app_url'     => config('app.url'),
+        ]);
         return null;
     }
 
@@ -318,30 +331,56 @@ class CertificateGenerationService
     /**
      * Resolve a URL or path to a local filesystem path, or return null.
      *
-     * This replaces the old getImagePath() + urlToLocalPath() tandem with one
-     * clean method. No temp-dir copying needed because we read bytes directly.
+     * Strategy: try the original URL first (covers the common case where logo_url
+     * is already in Storage::disk('public')->url() format), then try after
+     * fixStorageUrl() in case the URL has a malformed double-prefix.
      */
     private function resolveToLocalPath(string $source): ?string
     {
-        $source = $this->fixStorageUrl($source);
-
         // Already a local absolute path
         if (str_starts_with($source, '/') && !str_starts_with($source, '//') && file_exists($source)) {
             return $source;
         }
 
-        // Strip the public storage base URL
+        // Try original URL first, then fixStorageUrl variant
+        foreach ([$source, $this->fixStorageUrl($source)] as $candidate) {
+            $path = $this->tryUrlToStoragePath($candidate);
+            if ($path) {
+                Log::debug('resolveToLocalPath: found', ['source' => $source, 'candidate' => $candidate, 'path' => $path]);
+                return $path;
+            }
+        }
+
+        Log::debug('resolveToLocalPath: no local path found, will HTTP-fetch', ['source' => $source]);
+        return null;
+    }
+
+    /**
+     * Attempt to map a URL to a local public-disk path using several heuristics.
+     * Returns the path only if it exists.
+     */
+    private function tryUrlToStoragePath(string $url): ?string
+    {
+        // Heuristic 1: URL starts with Storage::disk('public')->url() base
         $storageBaseUrl = rtrim(Storage::disk('public')->url(''), '/');
-        if (str_starts_with($source, $storageBaseUrl . '/') || $source === $storageBaseUrl) {
-            $relative = ltrim(substr($source, strlen($storageBaseUrl)), '/');
+        if ($storageBaseUrl && (str_starts_with($url, $storageBaseUrl . '/') || $url === $storageBaseUrl)) {
+            $relative = ltrim(substr($url, strlen($storageBaseUrl)), '/');
             $path     = Storage::disk('public')->path($relative);
             if (file_exists($path)) {
                 return $path;
             }
         }
 
-        // Match /storage/... or /laravel/storage/... patterns
-        if (preg_match('#/(?:laravel/)?storage/(.+)$#', $source, $m)) {
+        // Heuristic 2: match /laravel/storage/app/public/... or /storage/app/public/... in URL
+        if (preg_match('#/(?:laravel/)?storage/app/public/(.+)$#i', $url, $m)) {
+            $path = Storage::disk('public')->path($m[1]);
+            if (file_exists($path)) {
+                return $path;
+            }
+        }
+
+        // Heuristic 3: match /laravel/storage/... or /storage/... (without app/public)
+        if (preg_match('#/(?:laravel/)?storage/(.+)$#', $url, $m)) {
             $relative = preg_replace('#^app/public/#i', '', $m[1]);
             $path     = Storage::disk('public')->path($relative);
             if (file_exists($path)) {
@@ -349,11 +388,10 @@ class CertificateGenerationService
             }
         }
 
-        // Absolute URL to the same app host → try to map to public disk
+        // Heuristic 4: same app host → strip host and try relative to public disk
         $appUrl = rtrim(config('app.url', ''), '/');
-        if ($appUrl && str_starts_with($source, $appUrl)) {
-            $relative = ltrim(substr($source, strlen($appUrl)), '/');
-            // Strip leading "storage/" so we look in public disk root
+        if ($appUrl && str_starts_with($url, $appUrl)) {
+            $relative = ltrim(substr($url, strlen($appUrl)), '/');
             $relative = preg_replace('#^storage/#i', '', $relative);
             $path     = Storage::disk('public')->path($relative);
             if (file_exists($path)) {
@@ -361,7 +399,7 @@ class CertificateGenerationService
             }
         }
 
-        return null; // caller will fall back to HTTP fetch
+        return null;
     }
 
     /**
