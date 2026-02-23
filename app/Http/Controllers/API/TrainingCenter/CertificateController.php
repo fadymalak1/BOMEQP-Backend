@@ -693,18 +693,37 @@ class CertificateController extends Controller
             // Generate certificate number and verification code
             $certificateNumber = $this->generateCertificateNumber();
             $verificationCode = $this->generateVerificationCode();
-            
+
+            // Load ACC and training center for logo fields
+            $acc = \App\Models\ACC::find($request->acc_id);
+
+            // Build QR code URL pointing to the frontend verification page
+            $frontendBase = rtrim(env('FRONTEND_URL', config('app.url')), '/');
+            $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?' . http_build_query([
+                'data'   => $frontendBase . '/verify-certificate?code=' . urlencode($verificationCode),
+                'size'   => '200x200',
+                'format' => 'png',
+            ]);
+
             // Auto-generate student_data from course information
             $certificateData = [
-                'student_name' => $request->trainee_name,
-                'trainee_name' => $request->trainee_name,
-                'course_name' => $course->name,
-                'date' => $request->issue_date,
-                'cert_id' => $certificateNumber,
+                'student_name'      => $request->trainee_name,
+                'trainee_name'      => $request->trainee_name,
+                'course_name'       => $course->name,
+                'date'              => $request->issue_date,
+                'cert_id'           => $certificateNumber,
                 'certificate_number' => $certificateNumber,
-                'issue_date' => $request->issue_date,
-                'expiry_date' => $request->expiry_date ?? null,
-                'verification_code' => $verificationCode, // Add verification code to template data
+                'issue_date'        => $request->issue_date,
+                'expiry_date'       => $request->expiry_date ?? null,
+                'verification_code' => $verificationCode,
+                // Image variables – resolved to full URLs so the service can embed them
+                'training_center_logo' => $trainingCenter->logo_url
+                    ? (str_starts_with($trainingCenter->logo_url, 'http') ? $trainingCenter->logo_url : url($trainingCenter->logo_url))
+                    : null,
+                'acc_logo' => $acc?->logo_url
+                    ? (str_starts_with($acc->logo_url, 'http') ? $acc->logo_url : url($acc->logo_url))
+                    : null,
+                'qr_code' => $qrCodeUrl,
             ];
 
             // Create certificate record first (with temporary URL or placeholder)
