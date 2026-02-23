@@ -431,35 +431,33 @@ class CertificateGenerationService
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
                 $varRegex = '(?:\{\{\s*' . preg_quote($key, '/') . '\s*\}\})';
-                $html = preg_replace('/<div[^>]*>[\s\S]*?' . $varRegex . '[\s\S]*?<\/div>/i', '', $html);
-                $html = preg_replace('/<img[^>]*' . $varRegex . '[^>]*\/?>/i', '', $html);
+                $html = preg_replace('/<div[^>]*>[\s\S]*?' . $varRegex . '[\s\S]*?<\/div>/i', '', $html) ?? $html;
+                $html = preg_replace('/<img[^>]*' . $varRegex . '[^>]*\/?>/i', '', $html) ?? $html;
             }
         }
-
+    
         // Replace remaining variables
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
                 continue;
             }
-
-            // Data-URIs must NOT be HTML-encoded (they are safe and encoding breaks them)
+    
             if (is_string($value) && str_starts_with($value, 'data:')) {
-                $safeValue = $value; // already safe for src="..." attributes
+                $safeValue = $value;
             } else {
                 $safeValue = htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
             }
-
-            $html = preg_replace('/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i', $safeValue, $html);
-
-            // Also handle camelCase / UPPER variants of verification_code
+    
+            $html = preg_replace('/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i', $safeValue, $html) ?? $html;
+    
             if ($key === 'verification_code') {
                 foreach (['verificationCode', 'VerificationCode', 'VERIFICATION_CODE', 'verification-code'] as $alt) {
-                    $html = preg_replace('/\{\{\s*' . preg_quote($alt, '/') . '\s*\}\}/i', $safeValue, $html);
+                    $html = preg_replace('/\{\{\s*' . preg_quote($alt, '/') . '\s*\}\}/i', $safeValue, $html) ?? $html;
                 }
             }
         }
-
-        $html = preg_replace('/\n\s*\n/', "\n", $html);
+    
+        $html = preg_replace('/\n\s*\n/', "\n", $html) ?? $html;
         return $html;
     }
 
@@ -473,7 +471,7 @@ class CertificateGenerationService
     private function embedRemainingRemoteImages(string $html): string
     {
         // CSS url(...) – skip data: and file:// (already embedded)
-        $html = preg_replace_callback(
+        $result = preg_replace_callback(
             '/url\s*\(\s*["\']?([^"\')\s]+)["\']?\s*\)/i',
             function ($m) {
                 $url = trim($m[1]);
@@ -485,9 +483,10 @@ class CertificateGenerationService
             },
             $html
         );
-
+        $html = $result ?? $html;   // ← guard: if preg_replace_callback returns null, keep original
+    
         // <img src="..."> – skip data: and file://
-        $html = preg_replace_callback(
+        $result = preg_replace_callback(
             '/<img([^>]*)\ssrc\s*=\s*["\']([^"\']+)["\']([^>]*)>/i',
             function ($m) {
                 $url = trim($m[2]);
@@ -500,7 +499,8 @@ class CertificateGenerationService
             },
             $html
         );
-
+        $html = $result ?? $html;   // ← guard
+    
         return $html;
     }
 
