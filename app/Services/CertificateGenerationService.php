@@ -517,8 +517,19 @@ class CertificateGenerationService
                 $html = preg_replace('/<html/i', "<html>\n<head><style>{$pageCss}</style></head>", $html, 1);
             }
 
+            // Ensure DomPDF chroot includes base and storage so file:// image paths load
+            $pdf = app('dompdf.wrapper');
+            $options = $pdf->getDomPDF()->getOptions();
+            $chroot = array_filter(array_unique(array_merge(
+                $options->getChroot() ?: [],
+                [realpath(base_path()), realpath(storage_path())]
+            )));
+            if (!empty($chroot)) {
+                $options->setChroot($chroot);
+            }
+
             // Custom size: pass dimensions in order; use 'portrait' so DomPDF does not swap them
-            $pdf = Pdf::loadHTML($html)
+            $pdf->loadHTML($html)
                 ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
                 ->setOption('isHtml5ParserEnabled', true)
                 ->setOption('isRemoteEnabled', true)
@@ -590,13 +601,18 @@ class CertificateGenerationService
                 continue;
             }
 
-            // For image variables: convert URL to base64 data URI so DomPDF can render (avoids remote fetch issues)
+            // For image variables: use file:// path for DomPDF (reliable); fallback to data URI or URL
             if (in_array($key, $imageVariables) && is_string($value)) {
                 if (str_starts_with($value, 'data:')) {
-                    $safeValue = $value; // already embedded
+                    $safeValue = $value;
                 } elseif (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/')) {
-                    $dataUri = $this->urlToDataUri($value);
-                    $safeValue = $dataUri ?: $value; // keep URL if conversion failed so embedImageUrlsInHtml can try
+                    $localPath = $this->urlToLocalPath($value);
+                    if ($localPath) {
+                        $safeValue = htmlspecialchars($this->filePathToFileUri($localPath), ENT_QUOTES, 'UTF-8');
+                    } else {
+                        $dataUri = $this->urlToDataUri($value);
+                        $safeValue = $dataUri ?: htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+                    }
                 } else {
                     $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
                 }
@@ -915,32 +931,40 @@ class CertificateGenerationService
      */
     private function embedImageUrlsInHtml(string $html): string
     {
-        // Match url('...') or url("...") in CSS (handles background-image, etc.)
+        // Match url('...') or url("...") in CSS (handles background-image, etc.) — use file:// for DomPDF
         $html = preg_replace_callback(
             '/url\s*\(\s*["\']?([^"\')\s]+)["\']?\s*\)/i',
             function ($matches) {
                 $url = trim($matches[1]);
-                if (empty($url) || str_starts_with($url, 'data:')) {
+                if (empty($url) || str_starts_with($url, 'data:') || str_starts_with($url, 'file://')) {
                     return $matches[0];
                 }
-                $url = $this->fixStorageUrl($url);
+                $localPath = $this->urlToLocalPath($url);
+                if ($localPath) {
+                    $fileUri = $this->filePathToFileUri($localPath);
+                    return 'url("' . str_replace('"', '%22', $fileUri) . '")';
+                }
                 $dataUri = $this->urlToDataUri($url);
                 return $dataUri ? 'url(' . $dataUri . ')' : $matches[0];
             },
             $html
         );
 
-        // Match img src="..." or src='...'
+        // Match img src="..." or src='...' — use file:// for DomPDF
         $html = preg_replace_callback(
             '/<img([^>]*)\ssrc\s*=\s*["\']([^"\']+)["\']([^>]*)>/i',
             function ($matches) {
                 $url = trim($matches[2]);
-                if (empty($url) || str_starts_with($url, 'data:')) {
+                if (empty($url) || str_starts_with($url, 'data:') || str_starts_with($url, 'file://')) {
                     return $matches[0];
                 }
-                $url = $this->fixStorageUrl($url);
-                $dataUri = $this->urlToDataUri($url);
-                $src = $dataUri ?: $url;
+                $localPath = $this->urlToLocalPath($url);
+                if ($localPath) {
+                    $src = htmlspecialchars($this->filePathToFileUri($localPath), ENT_QUOTES, 'UTF-8');
+                } else {
+                    $dataUri = $this->urlToDataUri($url);
+                    $src = $dataUri ?: htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+                }
                 return '<img' . $matches[1] . ' src="' . $src . '"' . $matches[3] . '>';
             },
             $html
@@ -964,14 +988,60 @@ class CertificateGenerationService
     }
 
     /**
-     * Convert image URL to base64 data URI for embedding in PDF
-     * DomPDF often fails to load remote images; data URIs work reliably
+     * Resolve image URL to a local file path that DomPDF can load (under chroot).
+     * DomPDF shows broken image boxes for failed data URIs; file:// paths under base_path() work reliably.
+     */
+    private function urlToLocalPath(string $url): ?string
+    {
+        $url = $this->fixStorageUrl($url);
+        $localPath = $this->getImagePath($url);
+        if (!$localPath || !file_exists($localPath)) {
+            return null;
+        }
+        $basePath = realpath(base_path());
+        $localReal = realpath($localPath);
+        if (!$basePath || !$localReal) {
+            return null;
+        }
+        // Path must be under chroot (base_path). If in system temp, copy to storage under base_path.
+        if (str_starts_with($localReal, $basePath)) {
+            return $localReal;
+        }
+        $tempDir = storage_path('app/temp/cert-images');
+        if (!is_dir($tempDir)) {
+            @mkdir($tempDir, 0755, true);
+        }
+        $ext = pathinfo($localPath, PATHINFO_EXTENSION) ?: 'png';
+        if (!in_array(strtolower($ext), ['png', 'jpg', 'jpeg', 'gif', 'webp'], true)) {
+            $ext = 'png';
+        }
+        $dest = $tempDir . '/' . Str::random(16) . '.' . $ext;
+        if (!@copy($localPath, $dest)) {
+            return null;
+        }
+        $destReal = realpath($dest);
+        return $destReal && str_starts_with($destReal, $basePath) ? $destReal : null;
+    }
+
+    /**
+     * Format local file path as file:// URI for use in HTML (DomPDF loads these under chroot).
+     */
+    private function filePathToFileUri(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+        if (!str_starts_with($path, '/')) {
+            $path = '/' . $path;
+        }
+        return 'file://' . $path;
+    }
+
+    /**
+     * Convert image URL to base64 data URI (fallback when file path not used).
      */
     private function urlToDataUri(string $url): ?string
     {
         try {
             $url = $this->fixStorageUrl($url);
-            // Try local path first (storage URLs, relative paths)
             $localPath = $this->getImagePath($url);
             if ($localPath && file_exists($localPath)) {
                 $imageData = file_get_contents($localPath);
@@ -981,8 +1051,6 @@ class CertificateGenerationService
                     return 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
                 }
             }
-
-            // Fallback: fetch via URL (for remote URLs like QR API)
             $fullUrl = str_starts_with($url, '/') && !str_starts_with($url, '//') ? url($url) : $url;
             $context = stream_context_create([
                 'http' => ['timeout' => 10, 'follow_location' => true],
@@ -993,13 +1061,11 @@ class CertificateGenerationService
                 Log::warning('Failed to fetch image for certificate', ['url' => $fullUrl]);
                 return null;
             }
-
             $finfo = new \finfo(FILEINFO_MIME_TYPE);
             $mimeType = $finfo->buffer($imageData) ?: 'image/png';
             if (!str_starts_with($mimeType, 'image/')) {
                 $mimeType = 'image/png';
             }
-
             return 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
         } catch (\Throwable $e) {
             Log::warning('Error converting image URL to data URI', ['url' => $url, 'error' => $e->getMessage()]);
