@@ -120,6 +120,17 @@ class InstructorController extends Controller
         $perPage = $request->get('per_page', 15);
         $instructors = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
+        // Append accs for each instructor (ACCs that worked with this instructor)
+        $data = collect($instructors->items())->map(function ($instructor) {
+            $item = $instructor->toArray();
+            $item['accs'] = $instructor->getAccsWorkedWith()->map(fn ($acc) => [
+                'id' => $acc->id,
+                'name' => $acc->name,
+                'email' => $acc->email,
+            ])->values();
+            return $item;
+        })->all();
+
         // Statistics: instructors that belong to this TC (primary or linked)
         $tcInstructorIds = Instructor::where('training_center_id', $trainingCenter->id)
             ->orWhereHas('linkedTrainingCenters', fn ($q) => $q->where('training_centers.id', $trainingCenter->id))
@@ -134,7 +145,7 @@ class InstructorController extends Controller
         ];
             
         return response()->json([
-            'data' => $instructors->items(),
+            'data' => $data,
             'current_page' => $instructors->currentPage(),
             'per_page' => $instructors->perPage(),
             'total' => $instructors->total(),
