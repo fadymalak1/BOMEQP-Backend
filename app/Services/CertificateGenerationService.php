@@ -529,46 +529,46 @@ class CertificateGenerationService
 
     /**
      * Replace variables in template HTML and remove elements with null values
+     * Image URLs (training_center_logo, acc_logo, qr_code) are converted to base64 data URIs
+     * so DomPDF can render them without fetching remote URLs (which often fails)
      */
     private function replaceTemplateVariables(string $html, array $data): string
     {
-        // First, remove elements (divs) that contain variables with null values
+        $imageVariables = ['training_center_logo', 'acc_logo', 'qr_code'];
+
+        // First, remove elements (divs and imgs) that contain variables with null values
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
-                // Find and remove the entire div element containing this variable
-                // Pattern matches: <div ...>{{variable}}</div>
-                // Try to match the div that contains the variable
                 $variablePattern = preg_quote('{{' . $key . '}}', '/');
                 $variablePatternSpaced = preg_quote('{{ ' . $key . ' }}', '/');
-                
-                // More precise pattern: match div from opening tag to closing tag containing the variable
-                $pattern = '/<div[^>]*>[\s\S]*?(?:' . $variablePattern . '|' . $variablePatternSpaced . ')[\s\S]*?<\/div>/i';
-                
-                $html = preg_replace($pattern, '', $html);
+                $varRegex = '(?:' . $variablePattern . '|' . $variablePatternSpaced . ')';
+
+                // Remove divs containing the variable
+                $html = preg_replace('/<div[^>]*>[\s\S]*?' . $varRegex . '[\s\S]*?<\/div>/i', '', $html);
+                // Remove img tags that contain this variable (e.g. <img src="{{variable}}">)
+                $html = preg_replace('/<img[^>]*' . $varRegex . '[^>]*\/?>/i', '', $html);
             }
         }
 
         // Then, replace remaining variables with actual values
         foreach ($data as $key => $value) {
-            // Skip null or empty values (they should be removed above)
             if ($value === null || $value === '') {
                 continue;
             }
-            
-            // Escape HTML special characters
-            $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
-            
-            // Replace variables in multiple formats (case-insensitive and with/without spaces)
-            // Handle: {{key}}, {{ key }}, {{Key}}, {{KEY}}, {{key_name}}, {{keyName}}, etc.
-            $patterns = [
-                '/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i',  // Case-insensitive with optional spaces
-            ];
-            
+
+            // For image variables: convert URL to base64 data URI so DomPDF can render (avoids remote fetch issues)
+            if (in_array($key, $imageVariables) && is_string($value) && (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/'))) {
+                $dataUri = $this->urlToDataUri($value);
+                $safeValue = $dataUri ?: htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+            } else {
+                $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+            }
+
+            $patterns = ['/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i'];
             foreach ($patterns as $pattern) {
                 $html = preg_replace($pattern, $safeValue, $html);
             }
-            
-            // Also handle common variations for verification_code
+
             if ($key === 'verification_code') {
                 $variations = [
                     'verificationCode',
@@ -867,6 +867,49 @@ class CertificateGenerationService
         }
 
         return $this->generate($template, $data, 'pdf');
+    }
+
+    /**
+     * Convert image URL to base64 data URI for embedding in PDF
+     * DomPDF often fails to load remote images; data URIs work reliably
+     */
+    private function urlToDataUri(string $url): ?string
+    {
+        try {
+            // Try local path first (storage URLs, relative paths)
+            $localPath = $this->getImagePath($url);
+            if ($localPath && file_exists($localPath)) {
+                $imageData = file_get_contents($localPath);
+                if ($imageData) {
+                    $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                    $mimeType = $finfo->file($localPath) ?: 'image/png';
+                    return 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
+                }
+            }
+
+            // Fallback: fetch via URL (for remote URLs like QR API)
+            $fullUrl = str_starts_with($url, '/') && !str_starts_with($url, '//') ? url($url) : $url;
+            $context = stream_context_create([
+                'http' => ['timeout' => 10, 'follow_location' => true],
+                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+            ]);
+            $imageData = @file_get_contents($fullUrl, false, $context);
+            if (!$imageData || strlen($imageData) < 50) {
+                Log::warning('Failed to fetch image for certificate', ['url' => $fullUrl]);
+                return null;
+            }
+
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($imageData) ?: 'image/png';
+            if (!str_starts_with($mimeType, 'image/')) {
+                $mimeType = 'image/png';
+            }
+
+            return 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
+        } catch (\Throwable $e) {
+            Log::warning('Error converting image URL to data URI', ['url' => $url, 'error' => $e->getMessage()]);
+            return null;
+        }
     }
 
     /**
