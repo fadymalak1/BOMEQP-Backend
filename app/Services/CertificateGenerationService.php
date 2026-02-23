@@ -507,7 +507,15 @@ class CertificateGenerationService
             $heightPt = ($height / 96) * 72;
 
             // Inject @page so DomPDF respects size (reinforces setPaper)
-            $html = $this->injectPdfPageSize($html, $widthPt, $heightPt);
+            $pageCss = sprintf('@page { size: %spt %spt; margin: 0; }', round($widthPt, 2), round($heightPt, 2));
+            if (preg_match('/<style[^>]*>/i', $html, $m, PREG_OFFSET_CAPTURE)) {
+                $insertPos = $m[0][1] + strlen($m[0][0]);
+                $html = substr_replace($html, "\n" . $pageCss . "\n", $insertPos, 0);
+            } elseif (stripos($html, '<head>') !== false) {
+                $html = preg_replace('/<head>/i', "<head>\n<style>{$pageCss}</style>", $html, 1);
+            } else {
+                $html = preg_replace('/<html/i', "<html>\n<head><style>{$pageCss}</style></head>", $html, 1);
+            }
 
             // Custom size: pass dimensions in order; use 'portrait' so DomPDF does not swap them
             $pdf = Pdf::loadHTML($html)
