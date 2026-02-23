@@ -132,9 +132,11 @@ class CertificateGenerationService
             }
         }
 
-        // Extract path from URL like .../storage/certificate-templates/7/file.jpg or .../laravel/storage/...
+        // Extract path from URL like .../storage/... or .../laravel/storage/app/public/...
         if (preg_match('#/(?:storage/|laravel/storage/)(.+)$#', $imageUrl, $m)) {
             $relativePath = $m[1];
+            // Public disk root is storage/app/public — strip duplicate "app/public/" if present
+            $relativePath = preg_replace('#^app/public/#i', '', $relativePath);
             $fullPath = Storage::disk('public')->path($relativePath);
             if (file_exists($fullPath)) {
                 return $fullPath;
@@ -936,6 +938,9 @@ class CertificateGenerationService
         // Fix: .../storage/app/public/... -> .../storage/... (Laravel public symlink)
         $url = preg_replace('#/storage/app/public/#i', '/storage/', $url);
         $url = preg_replace('#storage/app/public/#i', 'storage/', $url);
+        // Fix: .../laravel/storage/app/public/... -> .../laravel/storage/...
+        $url = preg_replace('#/laravel/storage/app/public/#i', '/laravel/storage/', $url);
+        $url = preg_replace('#laravel/storage/app/public/#i', 'laravel/storage/', $url);
         return $url;
     }
 
