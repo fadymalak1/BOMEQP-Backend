@@ -535,66 +535,65 @@ class CertificateGenerationService
     private function replaceTemplateVariables(string $html, array $data): string
     {
         $imageVariables = ['training_center_logo', 'acc_logo', 'qr_code'];
-
-        // First, remove elements (divs and imgs) that contain variables with null values
+    
+        // Remove elements with null/empty values
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
                 $variablePattern = preg_quote('{{' . $key . '}}', '/');
                 $variablePatternSpaced = preg_quote('{{ ' . $key . ' }}', '/');
                 $varRegex = '(?:' . $variablePattern . '|' . $variablePatternSpaced . ')';
-
-                // Remove divs containing the variable
                 $html = preg_replace('/<div[^>]*>[\s\S]*?' . $varRegex . '[\s\S]*?<\/div>/i', '', $html);
-                // Remove img tags that contain this variable (e.g. <img src="{{variable}}">)
                 $html = preg_replace('/<img[^>]*' . $varRegex . '[^>]*\/?>/i', '', $html);
             }
         }
-
-        // Then, replace remaining variables with actual values
+    
+        // Replace variables with actual values
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
                 continue;
             }
-
-            // For image variables: convert URL to base64 data URI so DomPDF can render (avoids remote fetch issues)
-            if (in_array($key, $imageVariables) && is_string($value) && (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/'))) {
+    
+            if (in_array($key, $imageVariables) && is_string($value) &&
+                (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/'))) {
+                // Convert to base64 — do NOT htmlspecialchars the data URI
                 $dataUri = $this->urlToDataUri($value);
-                $safeValue = $dataUri ?: htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+                $replacement = $dataUri ?: htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
             } else {
-                $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+                $replacement = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
             }
-
-            $patterns = ['/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i'];
-            foreach ($patterns as $pattern) {
-                $html = preg_replace($pattern, $safeValue, $html);
-            }
-
-            if ($key === 'verification_code') {
-                $variations = [
-                    'verificationCode',
-                    'VerificationCode',
-                    'VERIFICATION_CODE',
-                    'verification-code',
-                    'Verification-Code',
-                ];
-                
-                foreach ($variations as $variation) {
-                    $variationPattern = '/\{\{\s*' . preg_quote($variation, '/') . '\s*\}\}/i';
-                    $html = preg_replace($variationPattern, $safeValue, $html);
-                }
-                
-                // Log replacement for debugging
-                Log::info('Replacing verification_code variable', [
-                    'original_value' => $value,
-                    'safe_value' => $safeValue,
-                    'variations_checked' => $variations,
-                ]);
-            }
+    
+            $pattern = '/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i';
+            $html = preg_replace($pattern, addcslashes($replacement, '\\$'), $html);
         }
-
-        // Clean up any empty lines or extra whitespace
+    
+        // ✅ NEW: Convert CSS background-image remote URLs to base64
+        $html = preg_replace_callback(
+            '/background-image\s*:\s*url\s*\(\s*[\'"]?(https?:\/\/[^\'"\)\s]+)[\'"]?\s*\)/i',
+            function (array $matches) {
+                $dataUri = $this->urlToDataUri($matches[1]);
+                if ($dataUri) {
+                    return 'background-image: url(\'' . $dataUri . '\')';
+                }
+                return $matches[0];
+            },
+            $html
+        );
+    
+        // ✅ NEW: Convert any remaining remote <img src="..."> URLs to base64
+        $html = preg_replace_callback(
+            '/<img([^>]*)\ssrc\s*=\s*[\'"]?(https?:\/\/[^\'"\s>]+)[\'"]?([^>]*)>/i',
+            function (array $matches) {
+                $dataUri = $this->urlToDataUri($matches[2]);
+                if ($dataUri) {
+                    return '<img' . $matches[1] . ' src="' . $dataUri . '"' . $matches[3] . '>';
+                }
+                return $matches[0];
+            },
+            $html
+        );
+    
         $html = preg_replace('/\n\s*\n/', "\n", $html);
-
+    
         return $html;
     }
 
