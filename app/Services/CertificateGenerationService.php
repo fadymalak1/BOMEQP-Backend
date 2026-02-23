@@ -10,9 +10,10 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class CertificateGenerationService
 {
-    /**
-     * Generate a certificate image/PDF from a template
-     */
+    // =========================================================================
+    // PUBLIC API
+    // =========================================================================
+
     public function generate(CertificateTemplate $template, array $data, string $outputFormat = 'png'): array
     {
         try {
@@ -26,7 +27,7 @@ class CertificateGenerationService
                 return ['success' => false, 'message' => 'Template missing background image or configuration'];
             }
 
-            $backgroundImagePath = $this->getImagePath($template->background_image_url);
+            $backgroundImagePath = $this->downloadToLocalTemp($template->background_image_url);
             if (!$backgroundImagePath) {
                 return ['success' => false, 'message' => 'Failed to load background image'];
             }
@@ -36,11 +37,7 @@ class CertificateGenerationService
                 return ['success' => false, 'message' => 'Invalid background image format'];
             }
 
-            $width    = $imageInfo[0];
-            $height   = $imageInfo[1];
-            $mimeType = $imageInfo['mime'];
-
-            $image = $this->createImageResource($backgroundImagePath, $mimeType);
+            $image = $this->createImageResource($backgroundImagePath, $imageInfo['mime']);
             if (!$image) {
                 return ['success' => false, 'message' => 'Failed to create image resource'];
             }
@@ -49,50 +46,94 @@ class CertificateGenerationService
             $elements = is_array($config) && isset($config['elements']) ? $config['elements'] : $config;
             $elements = is_array($elements) ? $elements : [];
 
-            $this->applyPlaceholders($image, $elements, $data, $width, $height);
+            $this->applyPlaceholders($image, $elements, $data, $imageInfo[0], $imageInfo[1]);
 
-            $outputPath = $this->saveCertificate($image, $template, $data, $outputFormat, $width, $height);
+            $outputPath = $this->saveCertificate($image, $template, $data, $outputFormat, $imageInfo[0], $imageInfo[1]);
 
             imagedestroy($image);
-            if ($backgroundImagePath && file_exists($backgroundImagePath) && strpos($backgroundImagePath, sys_get_temp_dir()) === 0) {
-                @unlink($backgroundImagePath);
-            }
+            $this->cleanupTemp($backgroundImagePath);
 
             if ($outputPath) {
-                return [
-                    'success'  => true,
-                    'file_path' => $outputPath,
-                    'file_url'  => $this->getCertificateApiUrl($outputPath),
-                ];
+                return ['success' => true, 'file_path' => $outputPath, 'file_url' => $this->getCertificateApiUrl($outputPath)];
             }
 
             return ['success' => false, 'message' => 'Failed to save certificate'];
 
         } catch (\Exception $e) {
-            Log::error('Certificate generation error', [
-                'template_id' => $template->id,
-                'error'       => $e->getMessage(),
-                'trace'       => $e->getTraceAsString(),
-            ]);
+            Log::error('Certificate generation error', ['template_id' => $template->id, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return ['success' => false, 'message' => 'Certificate generation failed: ' . $e->getMessage()];
         }
     }
 
-    // -------------------------------------------------------------------------
-    // PDF GENERATION (primary path)
-    // -------------------------------------------------------------------------
+    public function generateTrainingCenterCertificate(CertificateTemplate $template, $trainingCenter, $acc, ?string $verificationCode = null): array
+    {
+        $data = [
+            'training_center_name'                => $trainingCenter->name ?? '',
+            'training_center_legal_name'          => $trainingCenter->legal_name ?? '',
+            'training_center_email'               => $trainingCenter->email ?? '',
+            'training_center_country'             => $trainingCenter->country ?? '',
+            'training_center_city'                => $trainingCenter->city ?? '',
+            'training_center_registration_number' => $trainingCenter->registration_number ?? '',
+            'acc_name'                            => $acc->name ?? '',
+            'acc_legal_name'                      => $acc->legal_name ?? '',
+            'acc_registration_number'             => $acc->registration_number ?? '',
+            'acc_country'                         => $acc->country ?? '',
+            'issue_date'                          => now()->format('Y-m-d'),
+            'issue_date_formatted'                => now()->format('F j, Y'),
+            // Pass raw logo_url values directly — toDataUri() handles all URL formats
+            'training_center_logo'                => $trainingCenter->logo_url ?? null,
+            'acc_logo'                            => $acc->logo_url ?? null,
+        ];
 
-    /**
-     * Generate PDF from template_html.
-     *
-     * FIX SUMMARY
-     * -----------
-     * 1. ALL images (logos, QR) are resolved to base64 data-URIs **before** any
-     *    variable substitution so nothing slips through un-embedded.
-     * 2. QR code is generated locally with a pure-PHP library (BaconQrCode /
-     *    endroid/qr-code) when available; otherwise fetched remotely and embedded.
-     * 3. No dependency on DomPDF remote loading or file:// chroot tricks.
-     */
+        if ($verificationCode) {
+            $data['verification_code'] = $verificationCode;
+            $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
+        }
+
+        return $this->generate($template, $data, 'pdf');
+    }
+
+    public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null): array
+    {
+        $data = [
+            'instructor_name'              => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
+            'instructor_first_name'        => $instructor->first_name ?? '',
+            'instructor_last_name'         => $instructor->last_name ?? '',
+            'instructor_email'             => $instructor->email ?? '',
+            'instructor_id_number'         => $instructor->id_number ?? '',
+            'instructor_country'           => $instructor->country ?? '',
+            'instructor_city'              => $instructor->city ?? '',
+            'course_name'                  => $course->name ?? '',
+            'course_name_ar'               => $course->name_ar ?? '',
+            'course_code'                  => $course->code ?? '',
+            'acc_name'                     => $acc->name ?? '',
+            'acc_legal_name'               => $acc->legal_name ?? '',
+            'acc_registration_number'      => $acc->registration_number ?? '',
+            'acc_country'                  => $acc->country ?? '',
+            'issue_date'                   => now()->format('Y-m-d'),
+            'issue_date_formatted'         => now()->format('F j, Y'),
+            'expiry_date'                  => now()->addYears(3)->format('Y-m-d'),
+            'training_center_logo'         => $instructor->trainingCenter?->logo_url ?? null,
+            'acc_logo'                     => $acc->logo_url ?? null,
+        ];
+
+        if ($verificationCode) {
+            $data['verification_code'] = $verificationCode;
+            $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
+        }
+
+        return $this->generate($template, $data, 'pdf');
+    }
+
+    public function generatePdf(CertificateTemplate $template, array $data): array
+    {
+        return $this->generate($template, $data, 'pdf');
+    }
+
+    // =========================================================================
+    // PDF GENERATION
+    // =========================================================================
+
     private function generatePdfFromBlade(CertificateTemplate $template, array $data): array
     {
         try {
@@ -101,61 +142,41 @@ class CertificateGenerationService
             }
 
             // ------------------------------------------------------------------
-            // STEP 1 – Pre-resolve every image value to a base64 data-URI so
-            //          DomPDF never has to fetch anything remotely.
+            // Pre-convert ALL image values to base64 data-URIs BEFORE touching HTML.
+            // This is the only reliable way to make DomPDF render images:
+            //   - No remote fetching needed by DomPDF
+            //   - No chroot/file:// path issues
+            //   - Works for both <img src> and CSS background-image
             // ------------------------------------------------------------------
             $imageKeys = ['training_center_logo', 'acc_logo', 'qr_code',
                           'training_center_logo_url', 'acc_logo_url', 'qr_code_url'];
 
             foreach ($imageKeys as $key) {
-                if (!empty($data[$key])) {
+                if (!empty($data[$key]) && !str_starts_with((string)$data[$key], 'data:')) {
                     $uri = $this->toDataUri($data[$key]);
                     if ($uri) {
                         $data[$key] = $uri;
+                        Log::info("Certificate: embedded image for '{$key}'", ['length' => strlen($uri)]);
                     } else {
-                        // Mark as empty so the element-removal logic hides it cleanly
-                        Log::warning("Could not embed image for key '{$key}'", ['value' => $data[$key]]);
-                        $data[$key] = '';
+                        Log::error("Certificate: FAILED to embed image for '{$key}'", ['value' => $data[$key]]);
+                        $data[$key] = ''; // hide element rather than show broken box
                     }
                 }
             }
 
-            // Also pre-resolve qr_code if it was not provided but verification_code was
-            // (generateTrainingCenterCertificate / generateInstructorCertificate handle
-            //  this already, but guard here too)
+            // Generate QR from verification_code if qr_code not already set
             if (empty($data['qr_code']) && !empty($data['verification_code'])) {
-                $qrUrl = $this->getQrCodeUrl($data['verification_code']);
-                $uri   = $this->toDataUri($qrUrl);
+                $uri = $this->toDataUri($this->getQrCodeUrl($data['verification_code']));
                 $data['qr_code'] = $uri ?: '';
             }
 
-            // Log verification_code presence for debugging
-            if (isset($data['verification_code'])) {
-                Log::info('Certificate generation – verification_code present', [
-                    'template_id'       => $template->id,
-                    'verification_code' => $data['verification_code'],
-                ]);
-            } else {
-                Log::warning('Certificate generation – verification_code missing', [
-                    'template_id' => $template->id,
-                    'data_keys'   => array_keys($data),
-                ]);
-            }
-
-            // ------------------------------------------------------------------
-            // STEP 2 – Replace template variables (images already data-URIs)
-            // ------------------------------------------------------------------
+            // Replace template variables
             $html = $this->replaceTemplateVariables($template->template_html, $data);
 
-            // ------------------------------------------------------------------
-            // STEP 3 – Embed any remaining remote image URLs that appear in the
-            //          HTML (background-image CSS, stray <img src>, etc.)
-            // ------------------------------------------------------------------
+            // Embed any remaining hardcoded image URLs in the template HTML itself
             $html = $this->embedRemainingRemoteImages($html);
 
-            // ------------------------------------------------------------------
-            // STEP 4 – Page size
-            // ------------------------------------------------------------------
+            // Page dimensions
             $orientation = $this->normalizeOrientation($template->orientation ?? 'landscape');
             $dimensions  = $this->getPageDimensions($orientation);
             $widthPt     = ($dimensions['width'] / 96) * 72;
@@ -163,30 +184,21 @@ class CertificateGenerationService
 
             $pageCss = sprintf('@page { size: %spt %spt; margin: 0; }', round($widthPt, 2), round($heightPt, 2));
             if (preg_match('/<style[^>]*>/i', $html, $m, PREG_OFFSET_CAPTURE)) {
-                $insertPos = $m[0][1] + strlen($m[0][0]);
-                $html = substr_replace($html, "\n" . $pageCss . "\n", $insertPos, 0);
+                $html = substr_replace($html, "\n" . $pageCss . "\n", $m[0][1] + strlen($m[0][0]), 0);
             } elseif (stripos($html, '<head>') !== false) {
                 $html = preg_replace('/<head>/i', "<head>\n<style>{$pageCss}</style>", $html, 1);
             } else {
                 $html = "<head><style>{$pageCss}</style></head>" . $html;
             }
 
-            // ------------------------------------------------------------------
-            // STEP 5 – Render PDF
-            //          isRemoteEnabled = false is safer now that everything is
-            //          embedded, but we leave it true as a last-resort fallback.
-            // ------------------------------------------------------------------
             $pdf = Pdf::loadHTML($html)
                 ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
                 ->setOption('isHtml5ParserEnabled', true)
-                ->setOption('isRemoteEnabled', true)
+                ->setOption('isRemoteEnabled', false)   // everything is embedded – no remote needed
                 ->setOption('fontDir', storage_path('fonts'))
                 ->setOption('fontCache', storage_path('fonts'))
                 ->setOption('defaultFont', 'serif');
 
-            // ------------------------------------------------------------------
-            // STEP 6 – Save
-            // ------------------------------------------------------------------
             $directory = 'certificates/' . $template->id;
             if (!Storage::disk('public')->exists($directory)) {
                 Storage::disk('public')->makeDirectory($directory);
@@ -194,226 +206,241 @@ class CertificateGenerationService
 
             $fileName = Str::random(40) . '.pdf';
             $filePath = $directory . '/' . $fileName;
-            $fullPath = Storage::disk('public')->path($filePath);
+            $pdf->save(Storage::disk('public')->path($filePath));
 
-            $pdf->save($fullPath);
-
-            return [
-                'success'  => true,
-                'file_path' => $filePath,
-                'file_url'  => $this->getCertificateApiUrl($filePath),
-            ];
+            return ['success' => true, 'file_path' => $filePath, 'file_url' => $this->getCertificateApiUrl($filePath)];
 
         } catch (\Exception $e) {
-            Log::error('PDF generation error', [
-                'template_id' => $template->id,
-                'error'       => $e->getMessage(),
-                'trace'       => $e->getTraceAsString(),
-            ]);
+            Log::error('PDF generation error', ['template_id' => $template->id, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return ['success' => false, 'message' => 'PDF generation failed: ' . $e->getMessage()];
         }
     }
 
-    // -------------------------------------------------------------------------
-    // IMAGE → BASE64 DATA-URI  (the single, authoritative conversion method)
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // IMAGE → BASE64 DATA-URI  (the single authoritative conversion method)
+    // =========================================================================
 
     /**
-     * Convert any image source (URL, storage path, existing data-URI) to a
-     * base64 data-URI that DomPDF can render without network access.
+     * Convert any image source to a base64 data-URI.
      *
-     * Returns null on failure so the caller can decide how to handle it.
+     * Handles ALL URL/path formats used by this application:
+     *   https://app.bomeqp.com/laravel/storage/app/public/accs/13/logo/file.png
+     *   https://app.bomeqp.com/storage/logos/file.png
+     *   /storage/logos/file.png
+     *   logos/file.png
+     *   data:image/png;base64,...   (pass-through)
+     *   https://api.qrserver.com/... (external, fetched via HTTP)
      */
     private function toDataUri(string $source): ?string
     {
-        // Already a data-URI – nothing to do
         if (str_starts_with($source, 'data:')) {
-            return $source;
+            return $source; // already embedded
         }
 
-        // ------------------------------------------------------------------
-        // Try to resolve to a local file first (fastest, most reliable)
-        // ------------------------------------------------------------------
-        $localPath = $this->resolveToLocalPath($source);
-        if ($localPath && file_exists($localPath) && is_readable($localPath)) {
+        Log::info('toDataUri: start', ['source' => $source]);
+
+        // Strategy 1: resolve to a local filesystem path and read bytes directly.
+        // This is the most reliable approach — no network, no permissions issues.
+        $localPath = $this->urlToAbsolutePath($source);
+        if ($localPath) {
             $bytes = @file_get_contents($localPath);
             if ($bytes && strlen($bytes) > 50) {
                 $mime = $this->detectMime($localPath, $bytes);
+                Log::info('toDataUri: success via local path', ['path' => $localPath, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
         }
 
-        // ------------------------------------------------------------------
-        // Fall back to HTTP fetch for external URLs (e.g. QR code API)
-        // ------------------------------------------------------------------
-        $fetchUrl = $source;
-        if (str_starts_with($source, '/') && !str_starts_with($source, '//')) {
-            $fetchUrl = url($source);
-        }
-
-        if (filter_var($fetchUrl, FILTER_VALIDATE_URL)) {
+        // Strategy 2: HTTP fetch (for truly external URLs like QR code API).
+        $fetchUrl = $this->toAbsoluteUrl($source);
+        if ($fetchUrl) {
+            Log::info('toDataUri: trying HTTP fetch', ['url' => $fetchUrl]);
             $bytes = $this->httpFetch($fetchUrl);
             if ($bytes && strlen($bytes) > 50) {
                 $mime = $this->detectMimeFromBytes($bytes);
+                Log::info('toDataUri: success via HTTP', ['url' => $fetchUrl, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
         }
 
-        Log::warning('toDataUri: could not convert image', ['source' => substr($source, 0, 200)]);
+        Log::error('toDataUri: ALL strategies failed', ['source' => $source]);
         return null;
     }
 
     /**
-     * Detect MIME type preferring file-based check, falling back to bytes.
-     */
-    private function detectMime(string $filePath, string $bytes): string
-    {
-        if (function_exists('finfo_file')) {
-            $finfo = new \finfo(FILEINFO_MIME_TYPE);
-            $mime  = @$finfo->file($filePath);
-            if ($mime && str_starts_with($mime, 'image/')) {
-                return $mime;
-            }
-        }
-        return $this->detectMimeFromBytes($bytes);
-    }
-
-    /**
-     * Detect MIME type from raw bytes (magic bytes).
-     */
-    private function detectMimeFromBytes(string $bytes): string
-    {
-        if (function_exists('finfo_buffer')) {
-            $finfo = new \finfo(FILEINFO_MIME_TYPE);
-            $mime  = @$finfo->buffer($bytes);
-            if ($mime && str_starts_with($mime, 'image/')) {
-                return $mime;
-            }
-        }
-        // Fallback: inspect magic bytes
-        if (substr($bytes, 0, 8) === "\x89PNG\r\n\x1a\n") return 'image/png';
-        if (substr($bytes, 0, 3) === "\xFF\xD8\xFF")      return 'image/jpeg';
-        if (substr($bytes, 0, 6) === 'GIF87a' || substr($bytes, 0, 6) === 'GIF89a') return 'image/gif';
-        if (substr($bytes, 0, 4) === 'RIFF' && substr($bytes, 8, 4) === 'WEBP') return 'image/webp';
-        return 'image/png'; // safe default
-    }
-
-    /**
-     * HTTP GET with timeout and SSL leniency.
-     */
-    private function httpFetch(string $url): ?string
-    {
-        $ctx  = stream_context_create([
-            'http' => ['timeout' => 15, 'follow_location' => true, 'user_agent' => 'Mozilla/5.0'],
-            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
-        ]);
-        $data = @file_get_contents($url, false, $ctx);
-        return ($data !== false && strlen($data) > 50) ? $data : null;
-    }
-
-    // -------------------------------------------------------------------------
-    // LOCAL PATH RESOLUTION
-    // -------------------------------------------------------------------------
-
-    /**
-     * Resolve a URL or path to a local filesystem path, or return null.
+     * THE KEY METHOD: Convert any URL format used by this app to an absolute filesystem path.
      *
-     * This replaces the old getImagePath() + urlToLocalPath() tandem with one
-     * clean method. No temp-dir copying needed because we read bytes directly.
+     * Known URL formats in the DB / passed by callers:
+     *   https://app.bomeqp.com/laravel/storage/app/public/accs/13/logo/file.png
+     *   https://app.bomeqp.com/storage/logos/file.png
+     *   http://localhost/storage/logos/file.png
+     *   /storage/logos/file.png
+     *   /laravel/storage/app/public/logos/file.png
+     *   logos/file.png    (relative, stored in DB)
+     *   storage/logos/file.png
+     *
+     * All of these ultimately resolve to a file under storage/app/public/ on disk.
      */
-    private function resolveToLocalPath(string $source): ?string
+    private function urlToAbsolutePath(string $source): ?string
     {
-        $source = $this->fixStorageUrl($source);
+        // Strip scheme + host (any host — handles APP_URL mismatches)
+        $path = $this->stripSchemeAndHost($source);
 
-        // Already a local absolute path
-        if (str_starts_with($source, '/') && !str_starts_with($source, '//') && file_exists($source)) {
+        // Normalise known path prefix variants to a canonical relative key
+        // e.g. /laravel/storage/app/public/accs/... → accs/...
+        //      /storage/accs/...                    → accs/...
+        //      storage/accs/...                     → accs/...
+        $relative = $this->normaliseToRelative($path);
+
+        if ($relative === null) {
+            // Could not derive a relative path — maybe it's already a relative path
+            // like "logos/file.png" stored directly in DB
+            if (!str_contains($source, '://') && !str_starts_with($source, '/')) {
+                $relative = ltrim($source, '/');
+            }
+        }
+
+        if ($relative === null) {
+            Log::warning('urlToAbsolutePath: could not derive relative path', ['source' => $source]);
+            return null;
+        }
+
+        // Try all disk locations where the file could live
+        $candidates = [
+            Storage::disk('public')->path($relative),          // storage/app/public/<relative>
+            storage_path('app/public/' . $relative),          // same, explicit
+            public_path('storage/' . $relative),              // public/storage/<relative> (symlink)
+            base_path('public/storage/' . $relative),         // same via base_path
+        ];
+
+        foreach ($candidates as $candidate) {
+            $candidate = $this->normalisePath($candidate);
+            if (file_exists($candidate) && is_readable($candidate)) {
+                Log::info('urlToAbsolutePath: found', ['path' => $candidate]);
+                return $candidate;
+            }
+        }
+
+        Log::warning('urlToAbsolutePath: not found in any location', [
+            'source'     => $source,
+            'relative'   => $relative,
+            'tried'      => $candidates,
+        ]);
+        return null;
+    }
+
+    /**
+     * Strip the URL scheme and host, returning just the path portion.
+     * Works regardless of what the actual APP_URL is configured as.
+     *
+     * "https://app.bomeqp.com/laravel/storage/app/public/accs/13/file.png"
+     *   → "/laravel/storage/app/public/accs/13/file.png"
+     *
+     * "/storage/logos/file.png" → "/storage/logos/file.png" (unchanged)
+     */
+    private function stripSchemeAndHost(string $url): string
+    {
+        if (preg_match('#^https?://[^/]+(/.*)?$#i', $url, $m)) {
+            return $m[1] ?? '/';
+        }
+        return $url; // already a path
+    }
+
+    /**
+     * Normalise a URL path to a relative key suitable for passing to
+     * Storage::disk('public')->path($relative).
+     *
+     * Returns null if the path cannot be mapped to the storage disk.
+     */
+    private function normaliseToRelative(string $path): ?string
+    {
+        // Remove leading slash for easier matching
+        $p = ltrim($path, '/');
+
+        // Pattern: laravel/storage/app/public/<relative>
+        if (preg_match('#^laravel/storage/app/public/(.+)$#i', $p, $m)) {
+            return $m[1];
+        }
+
+        // Pattern: storage/app/public/<relative>
+        if (preg_match('#^storage/app/public/(.+)$#i', $p, $m)) {
+            return $m[1];
+        }
+
+        // Pattern: laravel/storage/<relative>  (app/public already stripped)
+        if (preg_match('#^laravel/storage/(.+)$#i', $p, $m)) {
+            return $m[1];
+        }
+
+        // Pattern: storage/<relative>
+        if (preg_match('#^storage/(.+)$#i', $p, $m)) {
+            return $m[1];
+        }
+
+        // If it already looks like a direct relative path to a file (has extension, no "storage" prefix)
+        if (preg_match('#^[a-zA-Z0-9_\-/]+\.[a-zA-Z]{2,5}$#', $p)) {
+            return $p;
+        }
+
+        return null;
+    }
+
+    /**
+     * Make a source string into an absolute HTTPS URL for HTTP fetching.
+     * Returns null for paths that are clearly local-only.
+     */
+    private function toAbsoluteUrl(string $source): ?string
+    {
+        if (filter_var($source, FILTER_VALIDATE_URL)) {
             return $source;
         }
-
-        // Strip the public storage base URL
-        $storageBaseUrl = rtrim(Storage::disk('public')->url(''), '/');
-        if (str_starts_with($source, $storageBaseUrl . '/') || $source === $storageBaseUrl) {
-            $relative = ltrim(substr($source, strlen($storageBaseUrl)), '/');
-            $path     = Storage::disk('public')->path($relative);
-            if (file_exists($path)) {
-                return $path;
-            }
+        if (str_starts_with($source, '/') && !str_starts_with($source, '//')) {
+            return rtrim(config('app.url', ''), '/') . $source;
         }
-
-        // Match /storage/... or /laravel/storage/... patterns
-        if (preg_match('#/(?:laravel/)?storage/(.+)$#', $source, $m)) {
-            $relative = preg_replace('#^app/public/#i', '', $m[1]);
-            $path     = Storage::disk('public')->path($relative);
-            if (file_exists($path)) {
-                return $path;
-            }
-        }
-
-        // Absolute URL to the same app host → try to map to public disk
-        $appUrl = rtrim(config('app.url', ''), '/');
-        if ($appUrl && str_starts_with($source, $appUrl)) {
-            $relative = ltrim(substr($source, strlen($appUrl)), '/');
-            // Strip leading "storage/" so we look in public disk root
-            $relative = preg_replace('#^storage/#i', '', $relative);
-            $path     = Storage::disk('public')->path($relative);
-            if (file_exists($path)) {
-                return $path;
-            }
-        }
-
-        return null; // caller will fall back to HTTP fetch
+        return null;
     }
 
-    /**
-     * Fix malformed storage URLs (app/public double-prefix, etc.)
-     */
-    private function fixStorageUrl(string $url): string
+    private function normalisePath(string $path): string
     {
-        $url = preg_replace('#/storage/app/public/#i', '/storage/', $url);
-        $url = preg_replace('#storage/app/public/#i',  'storage/', $url);
-        $url = preg_replace('#/laravel/storage/app/public/#i', '/laravel/storage/', $url);
-        $url = preg_replace('#laravel/storage/app/public/#i',  'laravel/storage/', $url);
-        return $url;
+        return str_replace(['\\', '//'], ['/', '/'], $path);
     }
 
-    // -------------------------------------------------------------------------
-    // TEMPLATE VARIABLE REPLACEMENT
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // TEMPLATE HTML PROCESSING
+    // =========================================================================
 
     /**
      * Replace {{variables}} in template HTML.
      *
-     * Image values should already be data-URIs at this point (pre-processed in
-     * generatePdfFromBlade). This method just does plain htmlspecialchars
-     * substitution for all keys and removes elements whose value is empty/null.
+     * Image values are already data-URIs at this point. The key rule:
+     * data-URIs must NOT be passed through htmlspecialchars() — they are
+     * binary-safe already and encoding would break them.
+     *
+     * Also handles the DomPDF limitation where data-URIs inside CSS
+     * background-image url() break — those are converted to <img> tags.
      */
     private function replaceTemplateVariables(string $html, array $data): string
     {
-        // Remove elements (div / img) containing variables with null/empty values
+        // Remove divs/imgs whose variable value is null/empty
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
-                $varRegex = '(?:\{\{\s*' . preg_quote($key, '/') . '\s*\}\})';
-                $html = preg_replace('/<div[^>]*>[\s\S]*?' . $varRegex . '[\s\S]*?<\/div>/i', '', $html);
-                $html = preg_replace('/<img[^>]*' . $varRegex . '[^>]*\/?>/i', '', $html);
+                $varRe = '(?:\{\{\s*' . preg_quote($key, '/') . '\s*\}\})';
+                $html  = preg_replace('/<div[^>]*>[\s\S]*?' . $varRe . '[\s\S]*?<\/div>/i', '', $html);
+                $html  = preg_replace('/<img[^>]*' . $varRe . '[^>]*\/?>/i', '', $html);
             }
         }
 
-        // Replace remaining variables
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
                 continue;
             }
 
-            // Data-URIs must NOT be HTML-encoded (they are safe and encoding breaks them)
-            if (is_string($value) && str_starts_with($value, 'data:')) {
-                $safeValue = $value; // already safe for src="..." attributes
-            } else {
-                $safeValue = htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
-            }
+            $isDataUri = is_string($value) && str_starts_with($value, 'data:');
+            $safeValue = $isDataUri ? $value : htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 
-            $html = preg_replace('/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i', $safeValue, $html);
+            $pattern = '/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i';
+            $html    = preg_replace($pattern, $safeValue, $html);
 
-            // Also handle camelCase / UPPER variants of verification_code
             if ($key === 'verification_code') {
                 foreach (['verificationCode', 'VerificationCode', 'VERIFICATION_CODE', 'verification-code'] as $alt) {
                     $html = preg_replace('/\{\{\s*' . preg_quote($alt, '/') . '\s*\}\}/i', $safeValue, $html);
@@ -421,41 +448,66 @@ class CertificateGenerationService
             }
         }
 
+        // FIX: DomPDF cannot render data-URIs inside CSS background-image: url(data:...)
+        // Convert any such pattern to an absolutely-positioned <img> overlay instead.
+        $html = $this->convertBackgroundDataUrisToImg($html);
+
         $html = preg_replace('/\n\s*\n/', "\n", $html);
         return $html;
     }
 
     /**
-     * Embed any remaining remote image URLs in the HTML as base64 data-URIs.
+     * DomPDF has a known bug: it ignores or corrupts data-URIs in CSS
+     * background-image: url(data:...) rules.
      *
-     * This is a safety net for images that were already in the template HTML
-     * itself (not coming from template variables), e.g. static logos hardcoded
-     * in the template markup.
+     * This method finds elements using such backgrounds and injects an <img>
+     * child element instead, which DomPDF handles correctly.
+     */
+    private function convertBackgroundDataUrisToImg(string $html): string
+    {
+        // Match: background-image: url(data:image/...;base64,...) or background: url(...)
+        // Replace with an absolutely-positioned img inside the same element
+        $html = preg_replace_callback(
+            '/(<(?:div|span|td|section)[^>]*style\s*=\s*["\'][^"\']*background(?:-image)?\s*:\s*url\s*\(\s*)(data:image\/[^)]+)(\s*\)[^"\']*["\'][^>]*>)/i',
+            function ($m) {
+                // Inject an img tag right after the opening tag as the first child
+                $dataUri = $m[2];
+                $imgTag  = '<img src="' . $dataUri . '" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;" />';
+                // Remove the data-URI from the background-image to avoid confusion
+                $openTag = preg_replace('/background(?:-image)?\s*:\s*url\s*\([^)]+\)\s*;?/i', '', $m[1] . 'X' . $m[3]);
+                $openTag = substr($openTag, 0, -1); // remove the trailing X placeholder
+                return $openTag . $imgTag;
+            },
+            $html
+        );
+        return $html;
+    }
+
+    /**
+     * Embed any hardcoded remote image URLs that appear in the template HTML
+     * itself (i.e. not coming from {{variables}}), e.g. static logos or
+     * decorative images baked into the template markup.
      */
     private function embedRemainingRemoteImages(string $html): string
     {
-        // CSS url(...) – skip data: and file:// (already embedded)
+        // CSS url('...') — skip already-embedded data: URIs
         $html = preg_replace_callback(
             '/url\s*\(\s*["\']?([^"\')\s]+)["\']?\s*\)/i',
             function ($m) {
                 $url = trim($m[1]);
-                if (empty($url) || str_starts_with($url, 'data:') || str_starts_with($url, 'file://')) {
-                    return $m[0];
-                }
+                if (empty($url) || str_starts_with($url, 'data:')) return $m[0];
                 $uri = $this->toDataUri($url);
                 return $uri ? 'url(' . $uri . ')' : $m[0];
             },
             $html
         );
 
-        // <img src="..."> – skip data: and file://
+        // <img src="...">
         $html = preg_replace_callback(
             '/<img([^>]*)\ssrc\s*=\s*["\']([^"\']+)["\']([^>]*)>/i',
             function ($m) {
                 $url = trim($m[2]);
-                if (empty($url) || str_starts_with($url, 'data:') || str_starts_with($url, 'file://')) {
-                    return $m[0];
-                }
+                if (empty($url) || str_starts_with($url, 'data:')) return $m[0];
                 $uri = $this->toDataUri($url);
                 $src = $uri ?: htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
                 return '<img' . $m[1] . ' src="' . $src . '"' . $m[3] . '>';
@@ -466,24 +518,22 @@ class CertificateGenerationService
         return $html;
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // PNG / JPG GENERATION (GD path)
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
-    private function getImagePath(string $imageUrl): ?string
+    private function downloadToLocalTemp(string $url): ?string
     {
-        $path = $this->resolveToLocalPath($imageUrl);
-        if ($path) {
-            return $path;
-        }
-        if (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-            $bytes = $this->httpFetch($imageUrl);
+        $path = $this->urlToAbsolutePath($url);
+        if ($path) return $path;
+
+        $fetchUrl = $this->toAbsoluteUrl($url);
+        if ($fetchUrl) {
+            $bytes = $this->httpFetch($fetchUrl);
             if ($bytes) {
-                $ext      = pathinfo(parse_url($imageUrl, PHP_URL_PATH), PATHINFO_EXTENSION) ?: 'tmp';
+                $ext      = pathinfo(parse_url($fetchUrl, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION) ?: 'tmp';
                 $tempPath = sys_get_temp_dir() . '/' . Str::random(20) . '.' . $ext;
-                if (file_put_contents($tempPath, $bytes)) {
-                    return $tempPath;
-                }
+                if (file_put_contents($tempPath, $bytes)) return $tempPath;
             }
         }
         return null;
@@ -492,27 +542,21 @@ class CertificateGenerationService
     private function createImageResource(string $filePath, string $mimeType)
     {
         switch ($mimeType) {
-            case 'image/jpeg':
-            case 'image/jpg':
-                return imagecreatefromjpeg($filePath);
+            case 'image/jpeg': case 'image/jpg': return imagecreatefromjpeg($filePath);
             case 'image/png':
                 $img = imagecreatefrompng($filePath);
                 imagealphablending($img, true);
                 imagesavealpha($img, true);
                 return $img;
-            case 'image/gif':
-                return imagecreatefromgif($filePath);
-            default:
-                return null;
+            case 'image/gif': return imagecreatefromgif($filePath);
+            default: return null;
         }
     }
 
     private function applyPlaceholders($image, array $elements, array $data, int $imageWidth, int $imageHeight): void
     {
         foreach ($elements as $placeholder) {
-            if (!isset($placeholder['variable'])) {
-                continue;
-            }
+            if (!isset($placeholder['variable'])) continue;
 
             $type     = $placeholder['type'] ?? 'text';
             $variable = $placeholder['variable'];
@@ -530,30 +574,21 @@ class CertificateGenerationService
                 continue;
             }
 
-            if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
-                $text = $data[trim($matches[1])] ?? $variable;
-            } else {
-                $text = $variable;
-            }
-
+            $text       = preg_match('/\{\{([^}]+)\}\}/', $variable, $m) ? ($data[trim($m[1])] ?? $variable) : $variable;
             $fontSize   = (int)($placeholder['font_size'] ?? $placeholder['fontSize'] ?? 24);
             $colorHex   = $placeholder['color'] ?? '#000000';
             $fontFamily = $placeholder['font_family'] ?? $placeholder['fontFamily'] ?? 'Arial';
             $textAlign  = $placeholder['text_align'] ?? $placeholder['textAlign'] ?? 'left';
+            $color      = $this->hexToRgb($colorHex);
+            $textColor  = imagecolorallocate($image, $color['r'], $color['g'], $color['b']);
+            $fontPath   = $this->getFontPath($fontFamily);
 
-            $color     = $this->hexToRgb($colorHex);
-            $textColor = imagecolorallocate($image, $color['r'], $color['g'], $color['b']);
-            $fontPath  = $this->getFontPath($fontFamily);
-
-            if ($fontPath && function_exists('imagettftext') && function_exists('imagettfbbox')) {
+            if ($fontPath && function_exists('imagettftext')) {
                 $bbox = @imagettfbbox($fontSize, 0, $fontPath, $text);
                 if ($bbox !== false) {
-                    $textWidth = abs($bbox[4] - $bbox[0]);
-                    if ($textAlign === 'center') {
-                        $x -= $textWidth / 2;
-                    } elseif ($textAlign === 'right') {
-                        $x -= $textWidth;
-                    }
+                    $tw = abs($bbox[4] - $bbox[0]);
+                    if ($textAlign === 'center') $x -= $tw / 2;
+                    elseif ($textAlign === 'right') $x -= $tw;
                 }
                 imagettftext($image, $fontSize, 0, (int)$x, (int)$y, $textColor, $fontPath, $text);
             } else {
@@ -564,7 +599,7 @@ class CertificateGenerationService
 
     private function overlayImage($destImage, string $imageUrl, int $x, int $y, int $width, int $height): void
     {
-        $srcPath = $this->getImagePath($imageUrl);
+        $srcPath = $this->downloadToLocalTemp($imageUrl);
         if (!$srcPath) return;
         $info = @getimagesize($srcPath);
         if (!$info) return;
@@ -576,9 +611,7 @@ class CertificateGenerationService
             imagecopyresized($destImage, $srcImage, $x, $y, 0, 0, $width, $height, imagesx($srcImage), imagesy($srcImage));
         }
         imagedestroy($srcImage);
-        if (strpos($srcPath, sys_get_temp_dir()) === 0 && file_exists($srcPath)) {
-            @unlink($srcPath);
-        }
+        $this->cleanupTemp($srcPath);
     }
 
     private function saveCertificate($image, CertificateTemplate $template, array $data, string $format, int $width, int $height): ?string
@@ -589,39 +622,28 @@ class CertificateGenerationService
         }
 
         if ($format === 'pdf') {
-            $tempPng   = sys_get_temp_dir() . '/' . Str::random(40) . '.png';
+            $tempPng  = sys_get_temp_dir() . '/' . Str::random(40) . '.png';
             imagepng($image, $tempPng, 9);
-            $bytes     = file_get_contents($tempPng);
-            $b64       = base64_encode($bytes);
-            $widthPt   = ($width / 96) * 72;
-            $heightPt  = ($height / 96) * 72;
-
-            $html = '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-            <style>*{margin:0;padding:0;box-sizing:border-box;}body{margin:0;padding:0;}
-            img{width:' . $widthPt . 'pt;height:' . $heightPt . 'pt;display:block;}</style></head>
-            <body><img src="data:image/png;base64,' . $b64 . '" /></body></html>';
-
-            $pdf = Pdf::loadHTML($html)
-                ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
-                ->setOption('isHtml5ParserEnabled', true)
-                ->setOption('isRemoteEnabled', false)
-                ->setOption('fontDir', storage_path('fonts'))
-                ->setOption('fontCache', storage_path('fonts'))
-                ->setOption('defaultFont', 'serif');
-
+            $b64      = base64_encode(file_get_contents($tempPng));
+            $widthPt  = ($width / 96) * 72;
+            $heightPt = ($height / 96) * 72;
+            $html     = '<!DOCTYPE html><html><head><meta charset="utf-8"/><style>*{margin:0;padding:0;}img{width:' . $widthPt . 'pt;height:' . $heightPt . 'pt;display:block;}</style></head><body><img src="data:image/png;base64,' . $b64 . '"/></body></html>';
+            $pdf      = Pdf::loadHTML($html)->setPaper([0, 0, $widthPt, $heightPt], 'portrait')->setOption('isRemoteEnabled', false);
             $fileName = Str::random(40) . '.pdf';
             $filePath = $directory . '/' . $fileName;
             $pdf->save(Storage::disk('public')->path($filePath));
             @unlink($tempPng);
             return $filePath;
+        }
 
-        } elseif ($format === 'png') {
+        if ($format === 'png') {
             $fileName = Str::random(40) . '.png';
             $filePath = $directory . '/' . $fileName;
             imagepng($image, Storage::disk('public')->path($filePath), 9);
             return $filePath;
+        }
 
-        } elseif (in_array($format, ['jpg', 'jpeg'])) {
+        if (in_array($format, ['jpg', 'jpeg'])) {
             $fileName = Str::random(40) . '.jpg';
             $filePath = $directory . '/' . $fileName;
             imagejpeg($image, Storage::disk('public')->path($filePath), 95);
@@ -631,85 +653,56 @@ class CertificateGenerationService
         return null;
     }
 
-    // -------------------------------------------------------------------------
-    // PUBLIC CONVENIENCE METHODS
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // MIME / HTTP HELPERS
+    // =========================================================================
 
-    public function generateTrainingCenterCertificate(CertificateTemplate $template, $trainingCenter, $acc, ?string $verificationCode = null): array
+    private function detectMime(string $filePath, string $bytes): string
     {
-        $data = [
-            'training_center_name'                => $trainingCenter->name ?? '',
-            'training_center_legal_name'          => $trainingCenter->legal_name ?? '',
-            'training_center_email'               => $trainingCenter->email ?? '',
-            'training_center_country'             => $trainingCenter->country ?? '',
-            'training_center_city'                => $trainingCenter->city ?? '',
-            'training_center_registration_number' => $trainingCenter->registration_number ?? '',
-            'acc_name'                            => $acc->name ?? '',
-            'acc_legal_name'                      => $acc->legal_name ?? '',
-            'acc_registration_number'             => $acc->registration_number ?? '',
-            'acc_country'                         => $acc->country ?? '',
-            'issue_date'                          => now()->format('Y-m-d'),
-            'issue_date_formatted'                => now()->format('F j, Y'),
-            'training_center_logo'                => $this->resolveLogoUrl($trainingCenter->logo_url ?? null),
-            'acc_logo'                            => $this->resolveLogoUrl($acc->logo_url ?? null),
-        ];
-
-        if ($verificationCode) {
-            $data['verification_code'] = $verificationCode;
-            $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
+        if (function_exists('finfo_file')) {
+            $mime = @(new \finfo(FILEINFO_MIME_TYPE))->file($filePath);
+            if ($mime && str_starts_with($mime, 'image/')) return $mime;
         }
-
-        return $this->generate($template, $data, 'pdf');
+        return $this->detectMimeFromBytes($bytes);
     }
 
-    public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null): array
+    private function detectMimeFromBytes(string $bytes): string
     {
-        $data = [
-            'instructor_name'       => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
-            'instructor_first_name' => $instructor->first_name ?? '',
-            'instructor_last_name'  => $instructor->last_name ?? '',
-            'instructor_email'      => $instructor->email ?? '',
-            'instructor_id_number'  => $instructor->id_number ?? '',
-            'instructor_country'    => $instructor->country ?? '',
-            'instructor_city'       => $instructor->city ?? '',
-            'course_name'           => $course->name ?? '',
-            'course_name_ar'        => $course->name_ar ?? '',
-            'course_code'           => $course->code ?? '',
-            'acc_name'              => $acc->name ?? '',
-            'acc_legal_name'        => $acc->legal_name ?? '',
-            'acc_registration_number' => $acc->registration_number ?? '',
-            'acc_country'           => $acc->country ?? '',
-            'issue_date'            => now()->format('Y-m-d'),
-            'issue_date_formatted'  => now()->format('F j, Y'),
-            'expiry_date'           => now()->addYears(3)->format('Y-m-d'),
-            'training_center_logo'  => $this->resolveLogoUrl($instructor->trainingCenter?->logo_url ?? null),
-            'acc_logo'              => $this->resolveLogoUrl($acc->logo_url ?? null),
-        ];
-
-        if ($verificationCode) {
-            $data['verification_code'] = $verificationCode;
-            $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
+        if (function_exists('finfo_buffer')) {
+            $mime = @(new \finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
+            if ($mime && str_starts_with($mime, 'image/')) return $mime;
         }
-
-        return $this->generate($template, $data, 'pdf');
+        if (substr($bytes, 0, 8) === "\x89PNG\r\n\x1a\n") return 'image/png';
+        if (substr($bytes, 0, 3) === "\xFF\xD8\xFF")      return 'image/jpeg';
+        if (substr($bytes, 0, 6) === 'GIF87a' || substr($bytes, 0, 6) === 'GIF89a') return 'image/gif';
+        if (substr($bytes, 0, 4) === 'RIFF' && substr($bytes, 8, 4) === 'WEBP') return 'image/webp';
+        return 'image/png';
     }
 
-    public function generatePdf(CertificateTemplate $template, array $data): array
+    private function httpFetch(string $url): ?string
     {
-        return $this->generate($template, $data, 'pdf');
+        $ctx  = stream_context_create([
+            'http' => ['timeout' => 15, 'follow_location' => true, 'user_agent' => 'Mozilla/5.0'],
+            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
+        ]);
+        $data = @file_get_contents($url, false, $ctx);
+        return ($data !== false && strlen($data) > 50) ? $data : null;
     }
 
-    // -------------------------------------------------------------------------
-    // HELPERS
-    // -------------------------------------------------------------------------
+    private function cleanupTemp(string $path): void
+    {
+        if ($path && strpos($path, sys_get_temp_dir()) === 0 && file_exists($path)) {
+            @unlink($path);
+        }
+    }
+
+    // =========================================================================
+    // MISC HELPERS
+    // =========================================================================
 
     private function normalizeTemplateData(array $data): array
     {
-        $mapping = [
-            'training_center_logo_url' => 'training_center_logo',
-            'acc_logo_url'             => 'acc_logo',
-            'qr_code_url'              => 'qr_code',
-        ];
+        $mapping = ['training_center_logo_url' => 'training_center_logo', 'acc_logo_url' => 'acc_logo', 'qr_code_url' => 'qr_code'];
         foreach ($mapping as $apiKey => $templateKey) {
             if (isset($data[$apiKey]) && !isset($data[$templateKey])) {
                 $data[$templateKey] = $data[$apiKey];
@@ -720,28 +713,20 @@ class CertificateGenerationService
 
     private function normalizeOrientation(?string $orientation): string
     {
-        $o = strtolower(trim((string) $orientation));
+        $o = strtolower(trim((string)$orientation));
         return in_array($o, ['portrait', 'landscape']) ? $o : 'landscape';
     }
 
     private function getPageDimensions(string $orientation): array
     {
-        return $orientation === 'portrait'
-            ? ['width' => 848,  'height' => 1200]
-            : ['width' => 1200, 'height' => 848];
+        return $orientation === 'portrait' ? ['width' => 848, 'height' => 1200] : ['width' => 1200, 'height' => 848];
     }
 
     private function hexToRgb(string $hex): array
     {
         $hex = ltrim($hex, '#');
-        if (strlen($hex) === 3) {
-            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
-        }
-        return [
-            'r' => hexdec(substr($hex, 0, 2)),
-            'g' => hexdec(substr($hex, 2, 2)),
-            'b' => hexdec(substr($hex, 4, 2)),
-        ];
+        if (strlen($hex) === 3) $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+        return ['r' => hexdec(substr($hex, 0, 2)), 'g' => hexdec(substr($hex, 2, 2)), 'b' => hexdec(substr($hex, 4, 2))];
     }
 
     private function getCertificateApiUrl(string $filePath): string
@@ -749,20 +734,10 @@ class CertificateGenerationService
         return url('/api/storage/' . $filePath);
     }
 
-    private function resolveLogoUrl(?string $url): ?string
-    {
-        if (!$url) return null;
-        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-            return $url;
-        }
-        return url($url);
-    }
-
     private function getQrCodeUrl(string $verificationCode): string
     {
-        $verifyUrl = url('/api/certificates/verify/' . $verificationCode);
         return 'https://api.qrserver.com/v1/create-qr-code/?' . http_build_query([
-            'data'   => $verifyUrl,
+            'data'   => url('/api/certificates/verify/' . $verificationCode),
             'size'   => '200x200',
             'format' => 'png',
         ]);
@@ -771,105 +746,39 @@ class CertificateGenerationService
     private function getFontPath(string $fontFamily): ?string
     {
         $projectFontDir = resource_path('fonts');
-        $projectFonts   = [
-            'Arial'          => ['arial.ttf', 'Arial.ttf'],
-            'Helvetica'      => ['arial.ttf', 'helvetica.ttf', 'Arial.ttf'],
-            'Times New Roman'=> ['times.ttf', 'Times.ttf', 'times-new-roman.ttf'],
-            'Courier New'    => ['courier.ttf', 'cour.ttf'],
-            'Courier'        => ['courier.ttf', 'cour.ttf'],
-            'Verdana'        => ['verdana.ttf', 'Verdana.ttf'],
-            'Georgia'        => ['georgia.ttf', 'Georgia.ttf'],
-            'Tahoma'         => ['tahoma.ttf', 'Tahoma.ttf'],
-            'Trebuchet MS'   => ['trebuchet.ttf', 'trebuc.ttf'],
-            'Impact'         => ['impact.ttf', 'Impact.ttf'],
+        $fonts = [
+            'Arial'           => ['arial.ttf', 'Arial.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
+            'Helvetica'       => ['arial.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
+            'Times New Roman' => ['times.ttf', 'Times.ttf', 'LiberationSerif-Regular.ttf', 'DejaVuSerif.ttf'],
+            'Courier New'     => ['courier.ttf', 'cour.ttf', 'LiberationMono-Regular.ttf', 'DejaVuSansMono.ttf'],
+            'Verdana'         => ['verdana.ttf', 'Verdana.ttf', 'DejaVuSans.ttf'],
+            'Georgia'         => ['georgia.ttf', 'Georgia.ttf', 'LiberationSerif-Regular.ttf'],
+            'Tahoma'          => ['tahoma.ttf', 'Tahoma.ttf', 'DejaVuSans.ttf'],
+            'Trebuchet MS'    => ['trebuchet.ttf', 'trebuc.ttf', 'DejaVuSans.ttf'],
+            'Impact'          => ['impact.ttf', 'Impact.ttf', 'DejaVuSans-Bold.ttf'],
         ];
 
-        if (isset($projectFonts[$fontFamily]) && is_dir($projectFontDir)) {
-            foreach ($projectFonts[$fontFamily] as $file) {
-                $path = $projectFontDir . '/' . $file;
-                if (file_exists($path)) return $path;
-            }
-        }
-
-        $sysDirs  = [
+        $searchDirs = array_filter([
+            $projectFontDir,
             '/usr/share/fonts/truetype/liberation/',
             '/usr/share/fonts/truetype/dejavu/',
             '/usr/share/fonts/TTF/',
             '/usr/share/fonts/truetype/',
-            '/usr/local/lib/X11/fonts/TTF/',
             storage_path('fonts/'),
-        ];
-        $sysFonts = [
-            'Arial'          => ['arial.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
-            'Helvetica'      => ['arial.ttf', 'LiberationSans-Regular.ttf', 'DejaVuSans.ttf'],
-            'Times New Roman'=> ['times.ttf', 'LiberationSerif-Regular.ttf', 'DejaVuSerif.ttf'],
-            'Courier New'    => ['courier.ttf', 'LiberationMono-Regular.ttf', 'DejaVuSansMono.ttf'],
-            'Verdana'        => ['verdana.ttf', 'DejaVuSans.ttf'],
-            'Georgia'        => ['georgia.ttf', 'LiberationSerif-Regular.ttf'],
-            'Tahoma'         => ['tahoma.ttf', 'DejaVuSans.ttf'],
-            'Impact'         => ['impact.ttf', 'DejaVuSans-Bold.ttf'],
-        ];
+            'C:\\Windows\\Fonts\\',
+            '/System/Library/Fonts/Supplemental/',
+        ], 'is_dir');
 
-        if (isset($sysFonts[$fontFamily])) {
-            foreach ($sysDirs as $dir) {
-                if (!is_dir($dir)) continue;
-                foreach ($sysFonts[$fontFamily] as $file) {
-                    $path = rtrim($dir, '/') . '/' . $file;
-                    if (file_exists($path) && is_readable($path)) return $path;
-                }
+        $fileList = $fonts[$fontFamily] ?? [strtolower(str_replace(' ', '', $fontFamily)) . '.ttf'];
+
+        foreach ($searchDirs as $dir) {
+            foreach ($fileList as $file) {
+                $path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $file;
+                if (file_exists($path) && is_readable($path)) return $path;
             }
-        }
-
-        $winFonts = [
-            'Arial' => 'C:\\Windows\\Fonts\\arial.ttf',
-            'Times New Roman' => 'C:\\Windows\\Fonts\\times.ttf',
-            'Courier New' => 'C:\\Windows\\Fonts\\cour.ttf',
-            'Verdana' => 'C:\\Windows\\Fonts\\verdana.ttf',
-            'Georgia' => 'C:\\Windows\\Fonts\\georgia.ttf',
-            'Tahoma' => 'C:\\Windows\\Fonts\\tahoma.ttf',
-            'Impact' => 'C:\\Windows\\Fonts\\impact.ttf',
-        ];
-        if (isset($winFonts[$fontFamily]) && file_exists($winFonts[$fontFamily])) {
-            return $winFonts[$fontFamily];
-        }
-
-        $macFonts = [
-            'Arial' => '/System/Library/Fonts/Supplemental/Arial.ttf',
-            'Times New Roman' => '/System/Library/Fonts/Supplemental/Times New Roman.ttf',
-            'Verdana' => '/System/Library/Fonts/Supplemental/Verdana.ttf',
-            'Georgia' => '/System/Library/Fonts/Supplemental/Georgia.ttf',
-        ];
-        if (isset($macFonts[$fontFamily]) && file_exists($macFonts[$fontFamily])) {
-            return $macFonts[$fontFamily];
         }
 
         Log::warning('Font not found', ['font_family' => $fontFamily]);
         return null;
-    }
-
-    // Kept for backwards compatibility (used by legacy PNG path)
-    private function processConfigJson(array $config, array $data, float $widthPt, float $heightPt): array
-    {
-        $textElements = [];
-        foreach ($config as $placeholder) {
-            if (!isset($placeholder['variable'])) continue;
-            $variable = $placeholder['variable'];
-            if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
-                $text = $data[trim($matches[1])] ?? $variable;
-            } else {
-                $text = $variable;
-            }
-            $fontSizePx = (int)($placeholder['font_size'] ?? $placeholder['fontSize'] ?? 24);
-            $textElements[] = [
-                'text'        => $text,
-                'x_pt'        => (float)($placeholder['x'] ?? 0.5) * $widthPt,
-                'y_pt'        => (float)($placeholder['y'] ?? 0.5) * $heightPt,
-                'font_family' => $placeholder['font_family'] ?? $placeholder['fontFamily'] ?? 'Arial',
-                'font_size'   => $fontSizePx * 0.75,
-                'color'       => $placeholder['color'] ?? '#000000',
-                'text_align'  => $placeholder['text_align'] ?? $placeholder['textAlign'] ?? 'left',
-            ];
-        }
-        return $textElements;
     }
 }
