@@ -296,6 +296,18 @@ class CertificateGenerationService
     }
 
     /**
+     * Normalize orientation string from frontend/DB to portrait|landscape
+     */
+    private function normalizeOrientation(?string $orientation): string
+    {
+        $o = strtolower(trim((string) $orientation));
+        if ($o === 'portrait' || $o === 'landscape') {
+            return $o;
+        }
+        return 'landscape';
+    }
+
+    /**
      * Get page dimensions based on orientation
      * Landscape: 1200x848px, Portrait: 848x1200px
      */
@@ -484,29 +496,22 @@ class CertificateGenerationService
             // DomPDF fails to load remote images; embedding ensures they render
             $html = $this->embedImageUrlsInHtml($html);
 
-            // Get page dimensions from orientation (landscape: 1200x848, portrait: 848x1200)
-            $dimensions = $this->getPageDimensions($template->orientation ?? 'landscape');
+            // Use template orientation only (do not override from HTML so frontend/DB setting wins)
+            $orientation = $this->normalizeOrientation($template->orientation ?? 'landscape');
+            $dimensions = $this->getPageDimensions($orientation);
             $width = $dimensions['width'];
             $height = $dimensions['height'];
 
-            // Try to extract dimensions from HTML (override if template specifies)
-            if (preg_match('/width:\s*(\d+)px/i', $html, $widthMatch)) {
-                $width = (int)$widthMatch[1];
-            }
-            if (preg_match('/height:\s*(\d+)px/i', $html, $heightMatch)) {
-                $height = (int)$heightMatch[1];
-            }
-
-            // Convert dimensions from pixels to points (PDF uses points: 1 inch = 72 points, assuming 96 DPI)
+            // Convert dimensions from pixels to points (PDF: 1 inch = 72 points, 96 DPI)
             $widthPt = ($width / 96) * 72;
             $heightPt = ($height / 96) * 72;
 
-            // Use orientation for PDF paper
-            $orientation = $template->orientation ?? 'landscape';
+            // Inject @page so DomPDF respects size (reinforces setPaper)
+            $html = $this->injectPdfPageSize($html, $widthPt, $heightPt);
 
-            // Generate PDF using DomPDF directly from HTML
+            // Custom size: pass dimensions in order; use 'portrait' so DomPDF does not swap them
             $pdf = Pdf::loadHTML($html)
-                ->setPaper([0, 0, $widthPt, $heightPt], $orientation)
+                ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
                 ->setOption('isHtml5ParserEnabled', true)
                 ->setOption('isRemoteEnabled', true)
                 ->setOption('fontDir', storage_path('fonts'))
@@ -578,9 +583,15 @@ class CertificateGenerationService
             }
 
             // For image variables: convert URL to base64 data URI so DomPDF can render (avoids remote fetch issues)
-            if (in_array($key, $imageVariables) && is_string($value) && (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/'))) {
-                $dataUri = $this->urlToDataUri($value);
-                $safeValue = $dataUri ?: htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+            if (in_array($key, $imageVariables) && is_string($value)) {
+                if (str_starts_with($value, 'data:')) {
+                    $safeValue = $value; // already embedded
+                } elseif (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/')) {
+                    $dataUri = $this->urlToDataUri($value);
+                    $safeValue = $dataUri ?: $value; // keep URL if conversion failed so embedImageUrlsInHtml can try
+                } else {
+                    $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+                }
             } else {
                 $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
             }
@@ -951,6 +962,7 @@ class CertificateGenerationService
     private function urlToDataUri(string $url): ?string
     {
         try {
+            $url = $this->fixStorageUrl($url);
             // Try local path first (storage URLs, relative paths)
             $localPath = $this->getImagePath($url);
             if ($localPath && file_exists($localPath)) {
