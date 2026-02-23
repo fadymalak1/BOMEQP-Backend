@@ -122,10 +122,20 @@ class CertificateGenerationService
     private function getImagePath(string $imageUrl): ?string
     {
         // If it's a local storage URL, convert to path
-        if (strpos($imageUrl, Storage::disk('public')->url('')) === 0) {
-            $relativePath = str_replace(Storage::disk('public')->url(''), '', $imageUrl);
+        $storageBaseUrl = rtrim(Storage::disk('public')->url(''), '/');
+        if (str_starts_with($imageUrl, $storageBaseUrl . '/') || $imageUrl === $storageBaseUrl) {
+            $relativePath = preg_replace('#^' . preg_quote($storageBaseUrl, '#') . '/?#', '', $imageUrl);
+            $relativePath = ltrim($relativePath, '/');
             $fullPath = Storage::disk('public')->path($relativePath);
-            
+            if (file_exists($fullPath)) {
+                return $fullPath;
+            }
+        }
+
+        // Extract path from URL like .../storage/certificate-templates/7/file.jpg or .../laravel/storage/...
+        if (preg_match('#/(?:storage/|laravel/storage/)(.+)$#', $imageUrl, $m)) {
+            $relativePath = $m[1];
+            $fullPath = Storage::disk('public')->path($relativePath);
             if (file_exists($fullPath)) {
                 return $fullPath;
             }
@@ -133,11 +143,16 @@ class CertificateGenerationService
 
         // If it's a full URL, download it
         if (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-            $tempPath = sys_get_temp_dir() . '/' . Str::random(20) . '.tmp';
-            $imageData = @file_get_contents($imageUrl);
-            
-            if ($imageData && file_put_contents($tempPath, $imageData)) {
-                return $tempPath;
+            $context = stream_context_create([
+                'http' => ['timeout' => 10, 'follow_location' => true],
+                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+            ]);
+            $imageData = @file_get_contents($imageUrl, false, $context);
+            if ($imageData) {
+                $tempPath = sys_get_temp_dir() . '/' . Str::random(20) . '.tmp';
+                if (file_put_contents($tempPath, $imageData)) {
+                    return $tempPath;
+                }
             }
         }
 
@@ -463,6 +478,10 @@ class CertificateGenerationService
             // Replace variables in template_html
             $html = $this->replaceTemplateVariables($template->template_html, $data);
 
+            // Convert all image URLs (background-image, img src, etc.) to base64 data URIs
+            // DomPDF fails to load remote images; embedding ensures they render
+            $html = $this->embedImageUrlsInHtml($html);
+
             // Get page dimensions from orientation (landscape: 1200x848, portrait: 848x1200)
             $dimensions = $this->getPageDimensions($template->orientation ?? 'landscape');
             $width = $dimensions['width'];
@@ -535,65 +554,66 @@ class CertificateGenerationService
     private function replaceTemplateVariables(string $html, array $data): string
     {
         $imageVariables = ['training_center_logo', 'acc_logo', 'qr_code'];
-    
-        // Remove elements with null/empty values
+
+        // First, remove elements (divs and imgs) that contain variables with null values
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
                 $variablePattern = preg_quote('{{' . $key . '}}', '/');
                 $variablePatternSpaced = preg_quote('{{ ' . $key . ' }}', '/');
                 $varRegex = '(?:' . $variablePattern . '|' . $variablePatternSpaced . ')';
+
+                // Remove divs containing the variable
                 $html = preg_replace('/<div[^>]*>[\s\S]*?' . $varRegex . '[\s\S]*?<\/div>/i', '', $html);
+                // Remove img tags that contain this variable (e.g. <img src="{{variable}}">)
                 $html = preg_replace('/<img[^>]*' . $varRegex . '[^>]*\/?>/i', '', $html);
             }
         }
-    
-        // Replace variables with actual values
+
+        // Then, replace remaining variables with actual values
         foreach ($data as $key => $value) {
             if ($value === null || $value === '') {
                 continue;
             }
-    
-            if (in_array($key, $imageVariables) && is_string($value) &&
-                (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/'))) {
-                // Convert to base64 — do NOT htmlspecialchars the data URI
+
+            // For image variables: convert URL to base64 data URI so DomPDF can render (avoids remote fetch issues)
+            if (in_array($key, $imageVariables) && is_string($value) && (str_starts_with($value, 'http://') || str_starts_with($value, 'https://') || str_starts_with($value, '/'))) {
                 $dataUri = $this->urlToDataUri($value);
-                $replacement = $dataUri ?: htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+                $safeValue = $dataUri ?: htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
             } else {
-                $replacement = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+                $safeValue = htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
             }
-    
-            $pattern = '/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i';
-            $html = preg_replace($pattern, addcslashes($replacement, '\\$'), $html);
+
+            $patterns = ['/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i'];
+            foreach ($patterns as $pattern) {
+                $html = preg_replace($pattern, $safeValue, $html);
+            }
+
+            if ($key === 'verification_code') {
+                $variations = [
+                    'verificationCode',
+                    'VerificationCode',
+                    'VERIFICATION_CODE',
+                    'verification-code',
+                    'Verification-Code',
+                ];
+                
+                foreach ($variations as $variation) {
+                    $variationPattern = '/\{\{\s*' . preg_quote($variation, '/') . '\s*\}\}/i';
+                    $html = preg_replace($variationPattern, $safeValue, $html);
+                }
+                
+                // Log replacement for debugging
+                Log::info('Replacing verification_code variable', [
+                    'original_value' => $value,
+                    'safe_value' => $safeValue,
+                    'variations_checked' => $variations,
+                ]);
+            }
         }
-    
-        // ✅ NEW: Convert CSS background-image remote URLs to base64
-        $html = preg_replace_callback(
-            '/background-image\s*:\s*url\s*\(\s*[\'"]?(https?:\/\/[^\'"\)\s]+)[\'"]?\s*\)/i',
-            function (array $matches) {
-                $dataUri = $this->urlToDataUri($matches[1]);
-                if ($dataUri) {
-                    return 'background-image: url(\'' . $dataUri . '\')';
-                }
-                return $matches[0];
-            },
-            $html
-        );
-    
-        // ✅ NEW: Convert any remaining remote <img src="..."> URLs to base64
-        $html = preg_replace_callback(
-            '/<img([^>]*)\ssrc\s*=\s*[\'"]?(https?:\/\/[^\'"\s>]+)[\'"]?([^>]*)>/i',
-            function (array $matches) {
-                $dataUri = $this->urlToDataUri($matches[2]);
-                if ($dataUri) {
-                    return '<img' . $matches[1] . ' src="' . $dataUri . '"' . $matches[3] . '>';
-                }
-                return $matches[0];
-            },
-            $html
-        );
-    
+
+        // Clean up any empty lines or extra whitespace
         $html = preg_replace('/\n\s*\n/', "\n", $html);
-    
+
         return $html;
     }
 
@@ -866,6 +886,57 @@ class CertificateGenerationService
         }
 
         return $this->generate($template, $data, 'pdf');
+    }
+
+    /**
+     * Find all image URLs in HTML (background-image, img src) and convert to base64 data URIs
+     * Fixes DomPDF failing to load remote images
+     */
+    private function embedImageUrlsInHtml(string $html): string
+    {
+        // Match url('...') or url("...") in CSS (handles background-image, etc.)
+        $html = preg_replace_callback(
+            '/url\s*\(\s*["\']?([^"\')\s]+)["\']?\s*\)/i',
+            function ($matches) {
+                $url = trim($matches[1]);
+                if (empty($url) || str_starts_with($url, 'data:')) {
+                    return $matches[0];
+                }
+                $url = $this->fixStorageUrl($url);
+                $dataUri = $this->urlToDataUri($url);
+                return $dataUri ? 'url(' . $dataUri . ')' : $matches[0];
+            },
+            $html
+        );
+
+        // Match img src="..." or src='...'
+        $html = preg_replace_callback(
+            '/<img([^>]*)\ssrc\s*=\s*["\']([^"\']+)["\']([^>]*)>/i',
+            function ($matches) {
+                $url = trim($matches[2]);
+                if (empty($url) || str_starts_with($url, 'data:')) {
+                    return $matches[0];
+                }
+                $url = $this->fixStorageUrl($url);
+                $dataUri = $this->urlToDataUri($url);
+                $src = $dataUri ?: $url;
+                return '<img' . $matches[1] . ' src="' . $src . '"' . $matches[3] . '>';
+            },
+            $html
+        );
+
+        return $html;
+    }
+
+    /**
+     * Fix malformed storage URLs (e.g. storage/app/public -> storage)
+     */
+    private function fixStorageUrl(string $url): string
+    {
+        // Fix: .../storage/app/public/... -> .../storage/... (Laravel public symlink)
+        $url = preg_replace('#/storage/app/public/#i', '/storage/', $url);
+        $url = preg_replace('#storage/app/public/#i', 'storage/', $url);
+        return $url;
     }
 
     /**
