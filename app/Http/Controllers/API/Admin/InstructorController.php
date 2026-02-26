@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\API\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ACC;
+use App\Models\Course;
 use App\Models\Instructor;
 use App\Models\InstructorAccAuthorization;
+use App\Models\InstructorCourseAuthorization;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
@@ -465,6 +468,137 @@ class InstructorController extends Controller
             'total' => $authorizations->total(),
             'last_page' => $authorizations->lastPage(),
         ], 200);
+    }
+
+    #[OA\Put(
+        path: "/admin/instructors/{instructorId}/courses",
+        summary: "Update authorized courses for an instructor (Admin)",
+        description: "Add or remove course authorizations for an instructor under a specific ACC. The group admin can grant or revoke access to any courses belonging to the specified ACC. Requires an approved authorization to exist between the instructor and the ACC.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "instructorId", in: "path", required: true, schema: new OA\Schema(type: "integer"), description: "Instructor ID")
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["acc_id"],
+                properties: [
+                    new OA\Property(property: "acc_id", type: "integer", description: "The ACC under which to manage course authorizations", example: 1),
+                    new OA\Property(property: "add_course_ids", type: "array", items: new OA\Items(type: "integer"), description: "Course IDs to grant access to", example: [1, 2]),
+                    new OA\Property(property: "remove_course_ids", type: "array", items: new OA\Items(type: "integer"), description: "Course IDs to revoke", example: [3]),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Courses updated successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Instructor courses updated successfully"),
+                        new OA\Property(property: "added", type: "integer", example: 2),
+                        new OA\Property(property: "removed", type: "integer", example: 1),
+                        new OA\Property(property: "authorized_courses", type: "array", items: new OA\Items(type: "object")),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "No approved authorization between instructor and ACC"),
+            new OA\Response(response: 404, description: "Instructor or ACC not found"),
+            new OA\Response(response: 422, description: "Validation error or invalid course IDs"),
+        ]
+    )]
+    public function updateCourses(Request $request, int $instructorId)
+    {
+        $instructor = Instructor::find($instructorId);
+        if (!$instructor) {
+            return response()->json(['message' => 'Instructor not found'], 404);
+        }
+
+        $request->validate([
+            'acc_id'            => 'required|integer|exists:accs,id',
+            'add_course_ids'    => 'sometimes|array',
+            'add_course_ids.*'  => 'integer|exists:courses,id',
+            'remove_course_ids'   => 'sometimes|array',
+            'remove_course_ids.*' => 'integer|exists:courses,id',
+        ]);
+
+        $acc = ACC::find($request->acc_id);
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        // An approved authorization must exist between the instructor and the ACC
+        $hasApprovedAuth = InstructorAccAuthorization::where('acc_id', $acc->id)
+            ->where('instructor_id', $instructorId)
+            ->where('status', 'approved')
+            ->exists();
+
+        if (!$hasApprovedAuth) {
+            return response()->json([
+                'message' => 'No approved authorization exists between this instructor and the specified ACC',
+            ], 403);
+        }
+
+        $addIds    = array_unique((array) $request->input('add_course_ids', []));
+        $removeIds = array_unique((array) $request->input('remove_course_ids', []));
+
+        if (empty($addIds) && empty($removeIds)) {
+            return response()->json(['message' => 'No course IDs provided. Supply add_course_ids and/or remove_course_ids.'], 422);
+        }
+
+        // Validate all course IDs belong to the specified ACC
+        $allIds     = array_unique(array_merge($addIds, $removeIds));
+        $validCount = Course::whereIn('id', $allIds)->where('acc_id', $acc->id)->count();
+        if ($validCount !== count($allIds)) {
+            return response()->json([
+                'message' => 'One or more course IDs are invalid or do not belong to the specified ACC',
+            ], 422);
+        }
+
+        $adminUser = $request->user();
+        $added     = 0;
+        $removed   = 0;
+
+        // Grant access (upsert to active)
+        foreach ($addIds as $courseId) {
+            InstructorCourseAuthorization::updateOrCreate(
+                ['instructor_id' => $instructorId, 'course_id' => $courseId, 'acc_id' => $acc->id],
+                ['status' => 'active', 'authorized_at' => now(), 'authorized_by' => $adminUser->id]
+            );
+            $added++;
+        }
+
+        // Revoke access (set to revoked)
+        if (!empty($removeIds)) {
+            $removed = InstructorCourseAuthorization::where('instructor_id', $instructorId)
+                ->where('acc_id', $acc->id)
+                ->whereIn('course_id', $removeIds)
+                ->where('status', 'active')
+                ->update(['status' => 'revoked']);
+        }
+
+        // Return current active authorizations under this ACC
+        $authorizedCourses = InstructorCourseAuthorization::with('course:id,name,name_ar,code')
+            ->where('instructor_id', $instructorId)
+            ->where('acc_id', $acc->id)
+            ->where('status', 'active')
+            ->get()
+            ->map(fn($a) => [
+                'course_id'     => $a->course_id,
+                'name'          => $a->course?->name,
+                'name_ar'       => $a->course?->name_ar,
+                'code'          => $a->course?->code,
+                'authorized_at' => $a->authorized_at,
+            ]);
+
+        return response()->json([
+            'message'            => 'Instructor courses updated successfully',
+            'added'              => $added,
+            'removed'            => $removed,
+            'authorized_courses' => $authorizedCourses,
+        ]);
     }
 }
 
