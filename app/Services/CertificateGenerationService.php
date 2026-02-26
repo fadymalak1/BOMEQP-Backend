@@ -168,29 +168,27 @@ class CertificateGenerationService
             }
 
             // ------------------------------------------------------------------
-            // STEP 5 – Append card page when include_card is enabled
-            // Card dimensions: landscape credit-card ratio 3.375 × 2.125 inches
-            // at 96 dpi ≈ 964 × 610 px → converted to points
+            // STEP 5 – Append card page when include_card is enabled.
+            // The card is injected as a <div> inside the SAME HTML document so
+            // DomPDF produces exactly one extra page (page 2), not two.
             // ------------------------------------------------------------------
             if ($template->include_card) {
-                $cardHtml = $this->buildCardHtml($template, $data);
-                if ($cardHtml !== null) {
-                    // Card page: landscape business-card size
-                    $cardWidthPt  = round((3.375 * 96 / 96) * 72, 2);   // 243 pt
-                    $cardHeightPt = round((2.125 * 96 / 96) * 72, 2);   // 153 pt
-
-                    // Use full page size matching the certificate for consistent viewer
-                    // so we scale the card to fill the same page size, centred
-                    $cardPageCss = sprintf(
-                        '@page card { size: %spt %spt; margin: 0; } .card-page { page: card; width: %spt; height: %spt; position: relative; overflow: hidden; }',
-                        round($widthPt, 2),
-                        round($heightPt, 2),
+                $cardDiv = $this->buildCardDiv($template, $data, $widthPt, $heightPt);
+                if ($cardDiv !== null) {
+                    // Inject card CSS once into the existing <head>
+                    $cardCss = sprintf(
+                        '.card-page{page-break-before:always;width:%spt;height:%spt;position:relative;overflow:hidden;margin:0;padding:0;}',
                         round($widthPt, 2),
                         round($heightPt, 2)
                     );
+                    $html = $this->injectCss($html, $cardCss);
 
-                    $cardHtml = $this->injectCss($cardHtml, $cardPageCss . "\n.card-page { page-break-before: always; }");
-                    $html    .= $cardHtml;
+                    // Append card <div> before </body> (or at the end)
+                    if (stripos($html, '</body>') !== false) {
+                        $html = str_ireplace('</body>', $cardDiv . '</body>', $html);
+                    } else {
+                        $html .= $cardDiv;
+                    }
                 }
             }
 
@@ -240,22 +238,35 @@ class CertificateGenerationService
     // -------------------------------------------------------------------------
 
     /**
-     * Build the HTML for the card page (page 2 of the PDF).
+     * Build the card page as a single <div> to be injected into the main HTML document.
+     * Returning a <div> (not a full document) prevents DomPDF from inserting an extra
+     * blank page between the certificate and the card.
      *
      * Priority:
-     *  1. card_template_html  – full custom HTML (same variable substitution as certificate)
+     *  1. card_template_html  – full custom HTML stripped to body content
      *  2. card_background_image_url + card_config_json – auto-rendered layout
      *  3. card_background_image_url only – full-bleed background image page
      *
      * Returns null when no card content is configured.
      */
-    private function buildCardHtml(CertificateTemplate $template, array $data): ?string
+    private function buildCardDiv(CertificateTemplate $template, array $data, float $widthPt, float $heightPt): ?string
     {
-        // ── Path 1: custom HTML ───────────────────────────────────────────────
+        // ── Path 1: custom HTML – extract body content and wrap in card div ───
         if (!empty($template->card_template_html)) {
             $html = $this->replaceTemplateVariables($template->card_template_html, $data);
             $html = $this->embedRemainingRemoteImages($html);
-            return $html;
+            // Extract body content so we don't nest full documents
+            if (preg_match('/<body[^>]*>(.*)<\/body>/is', $html, $m)) {
+                $bodyContent = $m[1];
+            } else {
+                $bodyContent = $html;
+            }
+            return sprintf(
+                '<div class="card-page" style="width:%spt;height:%spt;position:relative;overflow:hidden;">%s</div>',
+                round($widthPt, 2),
+                round($heightPt, 2),
+                $bodyContent
+            );
         }
 
         // ── Path 2 & 3: background image (+ optional config overlay) ─────────
@@ -268,7 +279,9 @@ class CertificateGenerationService
         // Build overlay elements from card_config_json
         $overlayHtml = '';
         $config   = $template->card_config_json;
-        $elements = is_array($config) && isset($config['elements']) ? $config['elements'] : (is_array($config) ? $config : []);
+        $elements = is_array($config) && isset($config['elements'])
+            ? $config['elements']
+            : (is_array($config) ? $config : []);
 
         foreach ($elements as $el) {
             $type = $el['type'] ?? 'text';
@@ -277,48 +290,62 @@ class CertificateGenerationService
             $w    = round((float)($el['width']  ?? 0.3) * 100, 4);
             $h    = round((float)($el['height'] ?? 0.1) * 100, 4);
 
+            // Resolve {{variable}} placeholder from $data
             $variable = $el['variable'] ?? '';
-            // Resolve variable placeholder
             if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
-                $value = $data[trim($matches[1])] ?? '';
+                $key   = trim($matches[1]);
+                $value = $data[$key] ?? '';
             } else {
+                // No braces — treat as literal key name
                 $value = $data[$variable] ?? $variable;
             }
 
-            $style = sprintf(
-                'position:absolute;left:%s%%;top:%s%%;',
-                $x, $y
-            );
+            $style = sprintf('position:absolute;left:%s%%;top:%s%%;', $x, $y);
 
             if ($type === 'image') {
-                $imgUri = $this->toDataUri((string) $value) ?? '';
+                // Value may already be a data-URI (pre-resolved in Step 1 of generatePdfFromBlade)
+                $imgUri = str_starts_with((string) $value, 'data:')
+                    ? (string) $value
+                    : ($this->toDataUri((string) $value) ?? '');
                 if ($imgUri) {
                     $style .= sprintf('width:%s%%;height:%s%%;', $w, $h);
-                    $overlayHtml .= sprintf('<img src="%s" style="%s object-fit:contain;" />', $imgUri, $style);
+                    $overlayHtml .= sprintf(
+                        '<img src="%s" style="%s object-fit:contain;" />',
+                        $imgUri,
+                        $style
+                    );
                 }
             } else {
-                $fontSize   = (int)($el['font_size'] ?? $el['fontSize'] ?? 14);
-                $fontFamily = htmlspecialchars($el['font_family'] ?? $el['fontFamily'] ?? 'serif');
-                $color      = htmlspecialchars($el['color'] ?? '#000000');
-                $align      = htmlspecialchars($el['text_align'] ?? $el['textAlign'] ?? 'left');
-                $weight     = htmlspecialchars($el['font_weight'] ?? $el['fontWeight'] ?? 'normal');
+                $fontSize   = (int)($el['font_size']   ?? $el['fontSize']   ?? 14);
+                $fontFamily = $el['font_family'] ?? $el['fontFamily'] ?? 'serif';
+                $color      = $el['color']      ?? '#000000';
+                $align      = $el['text_align'] ?? $el['textAlign']  ?? 'left';
+                $weight     = $el['font_weight'] ?? $el['fontWeight'] ?? 'normal';
                 $style .= sprintf(
                     'font-size:%spx;font-family:%s;color:%s;text-align:%s;font-weight:%s;white-space:nowrap;',
-                    $fontSize, $fontFamily, $color, $align, $weight
+                    $fontSize,
+                    htmlspecialchars($fontFamily, ENT_QUOTES),
+                    htmlspecialchars($color,      ENT_QUOTES),
+                    htmlspecialchars($align,      ENT_QUOTES),
+                    htmlspecialchars($weight,     ENT_QUOTES)
                 );
-                $overlayHtml .= sprintf('<div style="%s">%s</div>', $style, htmlspecialchars((string) $value));
+                // Do NOT htmlspecialchars the value — it may contain already-safe text from $data
+                $overlayHtml .= sprintf(
+                    '<div style="%s">%s</div>',
+                    $style,
+                    htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+                );
             }
         }
 
         $bgStyle = $bgUri
-            ? sprintf('background-image:url(\'%s\');background-size:cover;background-position:center;', $bgUri)
+            ? sprintf("background-image:url('%s');background-size:cover;background-position:center;", $bgUri)
             : 'background:#ffffff;';
 
         return sprintf(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>
-            <div class="card-page" style="width:100%%;height:100%%;position:relative;overflow:hidden;%s">
-                %s
-            </div></body></html>',
+            '<div class="card-page" style="width:%spt;height:%spt;position:relative;overflow:hidden;%s">%s</div>',
+            round($widthPt, 2),
+            round($heightPt, 2),
             $bgStyle,
             $overlayHtml
         );
@@ -819,6 +846,7 @@ class CertificateGenerationService
 
         if ($verificationCode) {
             $data['verification_code'] = $verificationCode;
+            $data['serial_number']     = $verificationCode;
             $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
         }
 
@@ -828,29 +856,32 @@ class CertificateGenerationService
     public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null): array
     {
         $data = [
-            'instructor_name'       => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
-            'instructor_first_name' => $instructor->first_name ?? '',
-            'instructor_last_name'  => $instructor->last_name ?? '',
-            'instructor_email'      => $instructor->email ?? '',
-            'instructor_id_number'  => $instructor->id_number ?? '',
-            'instructor_country'    => $instructor->country ?? '',
-            'instructor_city'       => $instructor->city ?? '',
-            'course_name'           => $course->name ?? '',
-            'course_name_ar'        => $course->name_ar ?? '',
-            'course_code'           => $course->code ?? '',
-            'acc_name'              => $acc->name ?? '',
-            'acc_legal_name'        => $acc->legal_name ?? '',
+            'instructor_name'         => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
+            'instructor_first_name'   => $instructor->first_name ?? '',
+            'instructor_last_name'    => $instructor->last_name ?? '',
+            'instructor_email'        => $instructor->email ?? '',
+            'instructor_id_number'    => $instructor->id_number ?? '',
+            'instructor_country'      => $instructor->country ?? '',
+            'instructor_city'         => $instructor->city ?? '',
+            'instructor_photo'        => $this->resolveLogoUrl($instructor->photo_url ?? $instructor->profile_photo_url ?? null),
+            'course_name'             => $course->name ?? '',
+            'course_name_ar'          => $course->name_ar ?? '',
+            'course_code'             => $course->code ?? '',
+            'training_center_name'    => $instructor->trainingCenter?->name ?? '',
+            'acc_name'                => $acc->name ?? '',
+            'acc_legal_name'          => $acc->legal_name ?? '',
             'acc_registration_number' => $acc->registration_number ?? '',
-            'acc_country'           => $acc->country ?? '',
-            'issue_date'            => now()->format('Y-m-d'),
-            'issue_date_formatted'  => now()->format('F j, Y'),
-            'expiry_date'           => now()->addYears(3)->format('Y-m-d'),
-            'training_center_logo'  => $this->resolveLogoUrl($instructor->trainingCenter?->logo_url ?? null),
-            'acc_logo'              => $this->resolveLogoUrl($acc->logo_url ?? null),
+            'acc_country'             => $acc->country ?? '',
+            'issue_date'              => now()->format('Y-m-d'),
+            'issue_date_formatted'    => now()->format('F j, Y'),
+            'expiry_date'             => now()->addYears(3)->format('Y-m-d'),
+            'training_center_logo'    => $this->resolveLogoUrl($instructor->trainingCenter?->logo_url ?? null),
+            'acc_logo'                => $this->resolveLogoUrl($acc->logo_url ?? null),
         ];
 
         if ($verificationCode) {
             $data['verification_code'] = $verificationCode;
+            $data['serial_number']     = $verificationCode;
             $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
         }
 

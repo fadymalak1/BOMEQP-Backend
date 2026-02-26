@@ -13,7 +13,8 @@ The card visually resembles a wallet-sized ID card (see reference image) and dis
   - `card_template_html` — full custom HTML for the card page (highest priority).
   - `card_background_image_url` — background image; overlaid with elements from `card_config_json`.
   - `card_config_json` — designer configuration (elements with coordinates and styling).
-- The **`include_card`** boolean field on a certificate template acts as the per-template switch:
+- The **`include_card`** boolean fie
+ld on a certificate template acts as the per-template switch:
   - `true` → the generated PDF for that template will have **2 pages** (page 1: certificate, page 2: card).
   - `false` (default) → single-page PDF, card is ignored even if a card design exists.
 - `include_card` can be toggled on `store`, `update`, and `PUT /card` endpoints.
