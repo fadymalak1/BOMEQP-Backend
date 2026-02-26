@@ -18,6 +18,8 @@ class TrainingCenter extends Model
         'registration_number',
         'country',
         'city',
+        'latitude',
+        'longitude',
         'address',
         'phone',
         'email',
@@ -76,6 +78,8 @@ class TrainingCenter extends Model
     protected function casts(): array
     {
         return [
+            'latitude' => 'float',
+            'longitude' => 'float',
             'referred_by_group' => 'boolean',
             'mailing_same_as_physical' => 'boolean',
             'has_secondary_contact' => 'boolean',
