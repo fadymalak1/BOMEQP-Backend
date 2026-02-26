@@ -350,7 +350,7 @@ class InstructorManagementService
                     'code' => 422
                 ];
             }
-        } else {
+        } elseif ($request->has('course_ids') && !empty($request->course_ids)) {
             // Validate that all course_ids belong to the selected ACC
             $accCourses = \App\Models\Course::where('acc_id', $request->acc_id)
                 ->whereIn('id', $request->course_ids)
@@ -368,6 +368,7 @@ class InstructorManagementService
 
             $courseIds = $request->course_ids;
         }
+        // else: neither provided — general authorization request with no courses
 
         // Check if there's already a pending authorization request for this instructor, ACC, and same category/courses
         $existingAuthorizations = InstructorAccAuthorization::where('instructor_id', $instructor->id)
