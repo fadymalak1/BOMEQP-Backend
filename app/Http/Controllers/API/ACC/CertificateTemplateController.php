@@ -720,24 +720,31 @@ new OA\Property(
 
     #[OA\Get(
         path: "/acc/card-template",
-        summary: "Get ACC card template",
-        description: "Returns the single card template belonging to the authenticated ACC, or null if none exists yet.",
+        summary: "Get all card templates for this ACC",
+        description: "Returns all certificate templates belonging to the authenticated ACC that have a card design configured (card_template_html or card_background_image_url is set). Multiple certificate templates can each have their own card.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         responses: [
             new OA\Response(
                 response: 200,
-                description: "Card template retrieved",
+                description: "Card templates retrieved",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "card_template", type: "object", nullable: true, properties: [
-                            new OA\Property(property: "id", type: "integer"),
-                            new OA\Property(property: "name", type: "string"),
-                            new OA\Property(property: "card_template_html", type: "string", nullable: true),
-                            new OA\Property(property: "card_background_image_url", type: "string", nullable: true),
-                            new OA\Property(property: "card_config_json", type: "object", nullable: true),
-                            new OA\Property(property: "status", type: "string"),
-                        ])
+                        new OA\Property(
+                            property: "card_templates",
+                            type: "array",
+                            items: new OA\Items(
+                                properties: [
+                                    new OA\Property(property: "id", type: "integer"),
+                                    new OA\Property(property: "name", type: "string"),
+                                    new OA\Property(property: "include_card", type: "boolean"),
+                                    new OA\Property(property: "card_template_html", type: "string", nullable: true),
+                                    new OA\Property(property: "card_background_image_url", type: "string", nullable: true),
+                                    new OA\Property(property: "card_config_json", type: "object", nullable: true),
+                                    new OA\Property(property: "status", type: "string"),
+                                ]
+                            )
+                        )
                     ]
                 )
             ),
@@ -754,22 +761,22 @@ new OA\Property(
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $cardTemplate = CertificateTemplate::where('acc_id', $acc->id)
-            ->whereNotNull('card_template_html')
-            ->orWhere(function ($q) use ($acc) {
-                $q->where('acc_id', $acc->id)->whereNotNull('card_background_image_url');
+        $cardTemplates = CertificateTemplate::where('acc_id', $acc->id)
+            ->where(function ($q) {
+                $q->whereNotNull('card_template_html')
+                  ->orWhereNotNull('card_background_image_url');
             })
-            ->select(['id', 'name', 'card_template_html', 'card_background_image_url', 'card_config_json', 'status'])
+            ->select(['id', 'name', 'include_card', 'card_template_html', 'card_background_image_url', 'card_config_json', 'status'])
             ->orderBy('updated_at', 'desc')
-            ->first();
+            ->get();
 
-        return response()->json(['card_template' => $cardTemplate]);
+        return response()->json(['card_templates' => $cardTemplates]);
     }
 
     #[OA\Put(
         path: "/acc/certificate-templates/{id}/card",
         summary: "Create or update card template on a certificate template",
-        description: "Save the card design (HTML template or config) onto an existing certificate template. Only one card design is allowed per ACC — if a different template already has a card, this request will be rejected. The 'include_card' flag controls whether this template's PDF output will contain a 2nd page (the card).",
+        description: "Save the card design (HTML template or config) onto an existing certificate template. Multiple certificate templates can each have their own card design. The 'include_card' flag controls whether this specific template's PDF output will contain a 2nd page (the card).",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
@@ -790,7 +797,6 @@ new OA\Property(
             new OA\Response(response: 200, description: "Card template saved successfully"),
             new OA\Response(response: 401, description: "Unauthenticated"),
             new OA\Response(response: 404, description: "Template not found"),
-            new OA\Response(response: 409, description: "Another template in this ACC already has a card design"),
             new OA\Response(response: 422, description: "Validation error")
         ]
     )]
@@ -811,23 +817,6 @@ new OA\Property(
             'card_config_json'   => 'nullable',
             'name'               => 'sometimes|string|max:255',
         ]);
-
-        // One card per ACC: ensure no other template in this ACC owns the card design
-        $conflicting = CertificateTemplate::where('acc_id', $acc->id)
-            ->where('id', '!=', $template->id)
-            ->where(function ($q) {
-                $q->whereNotNull('card_template_html')
-                  ->orWhereNotNull('card_background_image_url');
-            })
-            ->first();
-
-        if ($conflicting) {
-            return response()->json([
-                'message'                => 'Your ACC already has a card template on another certificate template. Each ACC can have only one card design.',
-                'existing_template_id'   => $conflicting->id,
-                'existing_template_name' => $conflicting->name,
-            ], 409);
-        }
 
         $updateData = [];
 
@@ -859,7 +848,7 @@ new OA\Property(
     #[OA\Post(
         path: "/acc/certificate-templates/{id}/upload-card-background",
         summary: "Upload background image for the card page",
-        description: "Upload a JPG/PNG background image used as the card page background. Max 10 MB.",
+        description: "Upload a JPG/PNG background image used as the card page background for this certificate template. Max 10 MB. Automatically sets include_card to true.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
@@ -880,7 +869,6 @@ new OA\Property(
             new OA\Response(response: 200, description: "Card background image uploaded successfully"),
             new OA\Response(response: 401, description: "Unauthenticated"),
             new OA\Response(response: 404, description: "Template not found"),
-            new OA\Response(response: 409, description: "Another template in this ACC already has a card design"),
             new OA\Response(response: 422, description: "Validation error")
         ]
     )]
@@ -894,23 +882,6 @@ new OA\Property(
         }
 
         $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
-
-        // One card per ACC guard
-        $conflicting = CertificateTemplate::where('acc_id', $acc->id)
-            ->where('id', '!=', $template->id)
-            ->where(function ($q) {
-                $q->whereNotNull('card_template_html')
-                  ->orWhereNotNull('card_background_image_url');
-            })
-            ->first();
-
-        if ($conflicting) {
-            return response()->json([
-                'message'                => 'Your ACC already has a card template on another certificate template. Each ACC can have only one card design.',
-                'existing_template_id'   => $conflicting->id,
-                'existing_template_name' => $conflicting->name,
-            ], 409);
-        }
 
         $request->validate([
             'card_background_image' => 'required|image|mimetypes:image/jpeg,image/png|max:10240',
