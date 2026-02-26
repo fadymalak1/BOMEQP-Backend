@@ -147,6 +147,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'show']);
         Route::put('/instructors/{id}', [App\Http\Controllers\API\Admin\InstructorController::class, 'update']);
         Route::put('/instructors/{instructorId}/courses', [App\Http\Controllers\API\Admin\InstructorController::class, 'updateCourses']);
+        Route::get('/instructors/{instructorId}/available-courses', [App\Http\Controllers\API\Admin\InstructorController::class, 'availableCourses']);
         
         // Instructor Authorization Commission Management
         Route::get('/instructor-authorizations/pending-commission', [App\Http\Controllers\API\Admin\InstructorController::class, 'pendingCommissionRequests']);
@@ -214,6 +215,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/instructors/requests/{id}/return', [App\Http\Controllers\API\ACC\InstructorController::class, 'return']);
         Route::get('/instructors', [App\Http\Controllers\API\ACC\InstructorController::class, 'index']);
         Route::put('/instructors/{instructorId}/courses', [App\Http\Controllers\API\ACC\InstructorController::class, 'updateCourses']);
+        Route::get('/instructors/{instructorId}/available-courses', [App\Http\Controllers\API\ACC\InstructorController::class, 'availableCourses']);
 
         // Courses
         Route::apiResource('courses', App\Http\Controllers\API\ACC\CourseController::class);

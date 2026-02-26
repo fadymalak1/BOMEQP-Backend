@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ACC;
+use App\Models\Category;
 use App\Models\Course;
 use App\Models\Instructor;
 use App\Models\InstructorAccAuthorization;
@@ -598,6 +599,131 @@ class InstructorController extends Controller
             'added'              => $added,
             'removed'            => $removed,
             'authorized_courses' => $authorizedCourses,
+        ]);
+    }
+
+    #[OA\Get(
+        path: "/admin/instructors/{instructorId}/available-courses",
+        summary: "Get all courses for an ACC grouped by category/subcategory with instructor authorization status",
+        description: "Returns all active courses for a given ACC, grouped into categories and subcategories. Each course carries an `is_authorized` flag showing whether the instructor currently has an active authorization to teach it. Pass `acc_id` as a query parameter to specify the ACC.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "instructorId", in: "path", required: true, schema: new OA\Schema(type: "integer"), description: "Instructor ID"),
+            new OA\Parameter(name: "acc_id", in: "query", required: true, schema: new OA\Schema(type: "integer"), description: "ACC ID whose course catalogue to load"),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Course catalogue with instructor authorization flags",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "instructor", type: "object"),
+                        new OA\Property(property: "acc", type: "object"),
+                        new OA\Property(property: "categories", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(property: "summary", type: "object", properties: [
+                            new OA\Property(property: "total_courses", type: "integer"),
+                            new OA\Property(property: "authorized_courses", type: "integer"),
+                        ]),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Instructor or ACC not found"),
+            new OA\Response(response: 422, description: "acc_id is required"),
+        ]
+    )]
+    public function availableCourses(Request $request, int $instructorId)
+    {
+        $request->validate([
+            'acc_id' => 'required|integer|exists:accs,id',
+        ]);
+
+        $instructor = Instructor::find($instructorId);
+        if (!$instructor) {
+            return response()->json(['message' => 'Instructor not found'], 404);
+        }
+
+        $acc = ACC::find($request->acc_id);
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        // Collect course IDs the instructor is already authorized to teach under this ACC
+        $authorizedCourseIds = InstructorCourseAuthorization::where('instructor_id', $instructorId)
+            ->where('acc_id', $acc->id)
+            ->where('status', 'active')
+            ->pluck('course_id')
+            ->flip(); // hash set for O(1) lookup
+
+        // Load all active courses for this ACC with their subcategory → category chain
+        $courses = Course::with('subCategory.category')
+            ->where('acc_id', $acc->id)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+
+        // Group into categories → subcategories → courses
+        $categoriesMap = [];
+        foreach ($courses as $course) {
+            $subCat  = $course->subCategory;
+            $cat     = $subCat?->category;
+
+            $catId    = $cat?->id    ?? 0;
+            $subCatId = $subCat?->id ?? 0;
+
+            if (!isset($categoriesMap[$catId])) {
+                $categoriesMap[$catId] = [
+                    'id'             => $cat?->id,
+                    'name'           => $cat?->name,
+                    'name_ar'        => $cat?->name_ar ?? null,
+                    'icon_url'       => $cat?->icon_url ?? null,
+                    'sub_categories' => [],
+                ];
+            }
+
+            if (!isset($categoriesMap[$catId]['sub_categories'][$subCatId])) {
+                $categoriesMap[$catId]['sub_categories'][$subCatId] = [
+                    'id'      => $subCat?->id,
+                    'name'    => $subCat?->name,
+                    'name_ar' => $subCat?->name_ar ?? null,
+                    'courses' => [],
+                ];
+            }
+
+            $categoriesMap[$catId]['sub_categories'][$subCatId]['courses'][] = [
+                'id'                => $course->id,
+                'name'              => $course->name,
+                'name_ar'           => $course->name_ar,
+                'code'              => $course->code,
+                'level'             => $course->level,
+                'duration_hours'    => $course->duration_hours,
+                'assessor_required' => $course->assessor_required,
+                'is_authorized'     => isset($authorizedCourseIds[$course->id]),
+            ];
+        }
+
+        $categories = array_values(array_map(function ($cat) {
+            $cat['sub_categories'] = array_values($cat['sub_categories']);
+            return $cat;
+        }, $categoriesMap));
+
+        return response()->json([
+            'instructor' => [
+                'id'          => $instructor->id,
+                'name'        => trim($instructor->first_name . ' ' . $instructor->last_name),
+                'email'       => $instructor->email,
+                'is_assessor' => $instructor->is_assessor,
+            ],
+            'acc' => [
+                'id'   => $acc->id,
+                'name' => $acc->name,
+            ],
+            'categories' => $categories,
+            'summary'    => [
+                'total_courses'      => $courses->count(),
+                'authorized_courses' => $authorizedCourseIds->count(),
+            ],
         ]);
     }
 }
