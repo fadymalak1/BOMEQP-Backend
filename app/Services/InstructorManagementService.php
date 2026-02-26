@@ -326,15 +326,6 @@ class InstructorManagementService
             ];
         }
 
-        // Validate that either sub_category_id or course_ids is provided
-        if (!$request->has('sub_category_id') && !$request->has('course_ids')) {
-            return [
-                'success' => false,
-                'message' => 'Either sub_category_id or course_ids must be provided',
-                'code' => 422
-            ];
-        }
-
         if ($request->has('sub_category_id') && $request->has('course_ids')) {
             return [
                 'success' => false,
@@ -343,7 +334,7 @@ class InstructorManagementService
             ];
         }
 
-        // Get course IDs based on selection type
+        // Get course IDs based on selection type (both are optional)
         $courseIds = [];
         if ($request->has('sub_category_id')) {
             $courseIds = \App\Models\Course::where('sub_category_id', $request->sub_category_id)
@@ -826,45 +817,23 @@ class InstructorManagementService
     }
 
     /**
-     * Generate and send instructor certificates for each authorized course
-     * 
+     * Generate and send a single instructor certificate email after authorization + payment.
+     *
+     * Rules:
+     * - If the instructor already has ANY certificate in the database (for this ACC), the email
+     *   was already sent at some point — do NOT send again.
+     * - Otherwise, generate one PDF certificate (using the first eligible course as the template
+     *   subject) and send ONE email listing all newly-authorized courses, then persist a
+     *   certificate record for every new course so future calls are skipped.
+     *
      * @param InstructorAccAuthorization $authorization
-     * @param \App\Models\ACC $acc
+     * @param \App\Models\ACC            $acc
      * @return void
      */
     private function generateAndSendInstructorCertificates($authorization, $acc): void
     {
         try {
-            // Get instructor certificate template
-            $certificateTemplate = \App\Models\CertificateTemplate::where('acc_id', $acc->id)
-                ->where('template_type', 'instructor')
-                ->where('status', 'active')
-                ->first();
-
-            if (!$certificateTemplate) {
-                Log::info('No active instructor certificate template found for ACC', [
-                    'acc_id' => $acc->id,
-                    'authorization_id' => $authorization->id,
-                ]);
-                return;
-            }
-
-            // Get all authorized courses for this instructor and ACC
-            $authorizedCourses = \App\Models\InstructorCourseAuthorization::where('instructor_id', $authorization->instructor_id)
-                ->where('acc_id', $authorization->acc_id)
-                ->where('status', 'active')
-                ->with('course')
-                ->get();
-
-            if ($authorizedCourses->isEmpty()) {
-                Log::info('No authorized courses found for instructor certificate generation', [
-                    'instructor_id' => $authorization->instructor_id,
-                    'acc_id' => $authorization->acc_id,
-                ]);
-                return;
-            }
-
-            // Load instructor
+            // ── Guard: skip if instructor already received a certificate email for this ACC ──
             $authorization->load('instructor');
             $instructor = $authorization->instructor;
 
@@ -875,137 +844,158 @@ class InstructorManagementService
                 return;
             }
 
-            // Generate certificate for each course
+            $alreadySent = \App\Models\Certificate::where('instructor_id', $instructor->id)
+                ->whereHas('course', function ($q) use ($acc) {
+                    $q->where('acc_id', $acc->id);
+                })
+                ->exists();
+
+            if ($alreadySent) {
+                Log::info('Instructor certificate email already sent before — skipping', [
+                    'instructor_id' => $instructor->id,
+                    'acc_id'        => $acc->id,
+                ]);
+                return;
+            }
+
+            // ── Fetch active certificate template ──
+            $certificateTemplate = \App\Models\CertificateTemplate::where('acc_id', $acc->id)
+                ->where('template_type', 'instructor')
+                ->where('status', 'active')
+                ->first();
+
+            if (!$certificateTemplate) {
+                Log::info('No active instructor certificate template found for ACC', [
+                    'acc_id'           => $acc->id,
+                    'authorization_id' => $authorization->id,
+                ]);
+                return;
+            }
+
+            // ── Collect all newly-authorized courses (no certificate yet) ──
+            $authorizedCourses = \App\Models\InstructorCourseAuthorization::where('instructor_id', $authorization->instructor_id)
+                ->where('acc_id', $authorization->acc_id)
+                ->where('status', 'active')
+                ->with('course')
+                ->get()
+                ->filter(fn($ca) => $ca->course !== null);
+
+            if ($authorizedCourses->isEmpty()) {
+                Log::info('No authorized courses found for instructor certificate generation', [
+                    'instructor_id' => $authorization->instructor_id,
+                    'acc_id'        => $authorization->acc_id,
+                ]);
+                return;
+            }
+
+            // ── Generate ONE certificate PDF (using the first course) ──
             $certificateService = new \App\Services\CertificateGenerationService();
-            
+            $firstCourseAuth    = $authorizedCourses->first();
+
+            $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
+            while (\App\Models\Certificate::where('verification_code', $verificationCode)->exists()) {
+                $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
+            }
+
+            $result = $certificateService->generateInstructorCertificate(
+                $certificateTemplate,
+                $instructor,
+                $firstCourseAuth->course,
+                $acc,
+                $verificationCode
+            );
+
+            if (!$result['success'] || !isset($result['file_path'])) {
+                Log::warning('Failed to generate instructor certificate PDF', [
+                    'instructor_id' => $instructor->id,
+                    'error'         => $result['message'] ?? 'Unknown error',
+                ]);
+                return;
+            }
+
+            $pdfPath = Storage::disk('public')->path($result['file_path']);
+            $pdfUrl  = $result['file_url'] ?? Storage::disk('public')->url($result['file_path']);
+
+            if (!file_exists($pdfPath)) {
+                Log::warning('Certificate PDF file does not exist after generation', [
+                    'instructor_id' => $instructor->id,
+                    'pdf_path'      => $pdfPath,
+                ]);
+                return;
+            }
+
+            // ── Send ONE email with all course names listed ──
+            $instructorFullName = trim($instructor->first_name . ' ' . $instructor->last_name);
+            $courseNames        = $authorizedCourses->map(fn($ca) => $ca->course->name)->values()->all();
+
+            try {
+                $mail = new \App\Mail\InstructorCertificateMail(
+                    $instructorFullName,
+                    $courseNames,
+                    $acc->name,
+                    $pdfPath
+                );
+                $mail->onConnection('sync');
+                Mail::to($instructor->email)->send($mail);
+
+                Log::info('Single instructor certificate email sent', [
+                    'instructor_id' => $instructor->id,
+                    'email'         => $instructor->email,
+                    'courses_count' => count($courseNames),
+                    'courses'       => $courseNames,
+                ]);
+            } catch (\Exception $mailException) {
+                Log::error('Failed to send instructor certificate email', [
+                    'instructor_id' => $instructor->id,
+                    'email'         => $instructor->email,
+                    'error'         => $mailException->getMessage(),
+                    'trace'         => $mailException->getTraceAsString(),
+                ]);
+                return;
+            }
+
+            // ── Persist a certificate record for every authorized course ──
             foreach ($authorizedCourses as $courseAuth) {
-                if (!$courseAuth->course) {
-                    continue;
-                }
-
                 try {
-                    // Check if certificate already exists for this instructor and course
-                    // If a certificate exists, it means the email was already sent before
-                    $existingCertificate = \App\Models\Certificate::where('instructor_id', $instructor->id)
-                        ->where('course_id', $courseAuth->course->id)
-                        ->where('training_center_id', $instructor->training_center_id)
-                        ->first();
+                    do {
+                        $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
+                    } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
 
-                    if ($existingCertificate) {
-                        Log::info('Instructor certificate already exists for this course, skipping email', [
-                            'instructor_id' => $instructor->id,
-                            'course_id' => $courseAuth->course->id,
-                            'course_name' => $courseAuth->course->name,
-                            'existing_certificate_id' => $existingCertificate->id,
-                            'message' => 'Email was already sent for this instructor and course combination',
-                        ]);
-                        continue; // Skip this course - don't send email again
-                    }
-
-                    // Generate verification code for the certificate
-                    $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
-                    
-                    // Ensure verification code is unique
-                    while (\App\Models\Certificate::where('verification_code', $verificationCode)->exists()) {
-                        $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
-                    }
-
-                    $result = $certificateService->generateInstructorCertificate(
-                        $certificateTemplate,
-                        $instructor,
-                        $courseAuth->course,
-                        $acc,
-                        $verificationCode
-                    );
-
-                    if ($result['success'] && isset($result['file_path'])) {
-                        $pdfPath = Storage::disk('public')->path($result['file_path']);
-                        $pdfUrl = $result['file_url'] ?? Storage::disk('public')->url($result['file_path']);
-                        
-                        if (file_exists($pdfPath)) {
-                            // Send email with certificate immediately (not queued)
-                            try {
-                                $mail = new \App\Mail\InstructorCertificateMail(
-                                    trim($instructor->first_name . ' ' . $instructor->last_name),
-                                    $courseAuth->course->name,
-                                    $acc->name,
-                                    $pdfPath
-                                );
-                                
-                                // Force send immediately by setting connection to sync
-                                // This bypasses the queue even if ShouldQueue is implemented
-                                $mail->onConnection('sync');
-                                Mail::to($instructor->email)->send($mail);
-
-                                // Generate certificate number (same format as CertificateController)
-                                do {
-                                    $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
-                                } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
-
-                                // Save certificate to database after successful email send
-                                $instructorFullName = trim($instructor->first_name . ' ' . $instructor->last_name);
-                                \App\Models\Certificate::create([
-                                    'certificate_number' => $certificateNumber,
-                                    'course_id' => $courseAuth->course->id,
-                                    'training_center_id' => $instructor->training_center_id,
-                                    'instructor_id' => $instructor->id,
-                                    'type' => 'instructor', // This is always an instructor certificate
-                                    'trainee_name' => $instructorFullName,
-                                    'trainee_id_number' => $instructor->id_number,
-                                    'issue_date' => now()->toDateString(),
-                                    'expiry_date' => null, // Instructor certificates don't expire
-                                    'template_id' => $certificateTemplate->id,
-                                    'certificate_pdf_url' => $pdfUrl,
-                                    'verification_code' => $verificationCode,
-                                    'status' => 'valid',
-                                ]);
-
-                                Log::info('Instructor certificate generated, sent, and saved to database', [
-                                    'instructor_id' => $instructor->id,
-                                    'course_id' => $courseAuth->course->id,
-                                    'course_name' => $courseAuth->course->name,
-                                    'email' => $instructor->email,
-                                    'pdf_path' => $pdfPath,
-                                    'verification_code' => $verificationCode,
-                                    'certificate_number' => $certificateNumber,
-                                ]);
-                            } catch (\Exception $mailException) {
-                                Log::error('Failed to send instructor certificate email', [
-                                    'instructor_id' => $instructor->id,
-                                    'course_id' => $courseAuth->course->id,
-                                    'email' => $instructor->email,
-                                    'pdf_path' => $pdfPath,
-                                    'error' => $mailException->getMessage(),
-                                    'trace' => $mailException->getTraceAsString(),
-                                ]);
-                            }
-                        } else {
-                            Log::warning('Certificate PDF file does not exist', [
-                                'instructor_id' => $instructor->id,
-                                'course_id' => $courseAuth->course->id,
-                                'pdf_path' => $pdfPath,
-                            ]);
-                        }
-                    } else {
-                        Log::warning('Failed to generate instructor certificate', [
-                            'instructor_id' => $instructor->id,
-                            'course_id' => $courseAuth->course->id,
-                            'error' => $result['message'] ?? 'Unknown error',
-                        ]);
-                    }
+                    \App\Models\Certificate::create([
+                        'certificate_number'  => $certificateNumber,
+                        'course_id'           => $courseAuth->course->id,
+                        'training_center_id'  => $instructor->training_center_id,
+                        'instructor_id'       => $instructor->id,
+                        'type'                => 'instructor',
+                        'trainee_name'        => $instructorFullName,
+                        'trainee_id_number'   => $instructor->id_number,
+                        'issue_date'          => now()->toDateString(),
+                        'expiry_date'         => null,
+                        'template_id'         => $certificateTemplate->id,
+                        'certificate_pdf_url' => $pdfUrl,
+                        'verification_code'   => $courseAuth->course->id === $firstCourseAuth->course->id
+                                                    ? $verificationCode
+                                                    : ('VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10))),
+                        'status'              => 'valid',
+                    ]);
                 } catch (\Exception $e) {
-                    Log::error('Error generating/sending instructor certificate for course', [
+                    Log::error('Failed to save certificate record for course', [
                         'instructor_id' => $instructor->id,
-                        'course_id' => $courseAuth->course->id,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
+                        'course_id'     => $courseAuth->course->id,
+                        'error'         => $e->getMessage(),
                     ]);
                 }
             }
+
+            Log::info('Instructor certificates saved to database', [
+                'instructor_id' => $instructor->id,
+                'courses_count' => count($courseNames),
+            ]);
+
         } catch (\Exception $e) {
             Log::error('Failed to generate and send instructor certificates', [
                 'authorization_id' => $authorization->id,
-                'error' => $e->getMessage(),
+                'error'            => $e->getMessage(),
             ]);
         }
     }

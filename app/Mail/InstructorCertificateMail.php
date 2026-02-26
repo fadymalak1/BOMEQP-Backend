@@ -12,18 +12,21 @@ class InstructorCertificateMail extends Mailable implements ShouldQueue
     use Queueable, SerializesModels;
 
     public $instructorName;
-    public $courseName;
     public $accName;
     public $certificatePdfPath;
+    public $courseNames;
 
     /**
-     * Create a new message instance.
+     * @param string       $instructorName
+     * @param array|string $courseNames       One or more course names
+     * @param string       $accName
+     * @param string       $certificatePdfPath  Path to the single certificate PDF
      */
-    public function __construct($instructorName, $courseName, $accName, $certificatePdfPath)
+    public function __construct($instructorName, $courseNames, $accName, $certificatePdfPath)
     {
-        $this->instructorName = $instructorName;
-        $this->courseName = $courseName;
-        $this->accName = $accName;
+        $this->instructorName    = $instructorName;
+        $this->courseNames       = is_array($courseNames) ? $courseNames : [$courseNames];
+        $this->accName           = $accName;
         $this->certificatePdfPath = $certificatePdfPath;
     }
 
@@ -32,18 +35,20 @@ class InstructorCertificateMail extends Mailable implements ShouldQueue
      */
     public function build()
     {
-        return $this->subject('Congratulations! Your Instructor Authorization Certificate - ' . $this->courseName . ' - ' . config('app.name'))
-                    ->view('emails.instructor-certificate')
-                    ->attach($this->certificatePdfPath, [
-                        'as' => 'instructor_authorization_certificate_' . str_replace(' ', '_', $this->courseName) . '.pdf',
-                        'mime' => 'application/pdf',
-                    ])
-                    ->with([
-                        'instructorName' => $this->instructorName,
-                        'courseName' => $this->courseName,
-                        'accName' => $this->accName,
-                        'appName' => config('app.name'),
-                    ]);
+        $mail = $this->subject('Congratulations! Your Instructor Authorization Certificate - ' . config('app.name'))
+                     ->view('emails.instructor-certificate')
+                     ->attach($this->certificatePdfPath, [
+                         'as'   => 'instructor_authorization_certificate.pdf',
+                         'mime' => 'application/pdf',
+                     ])
+                     ->with([
+                         'instructorName' => $this->instructorName,
+                         'courseNames'    => $this->courseNames,
+                         'accName'        => $this->accName,
+                         'appName'        => config('app.name'),
+                     ]);
+
+        return $mail;
     }
 }
 

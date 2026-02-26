@@ -28,11 +28,22 @@
         .message {
             margin-bottom: 20px;
         }
-        .course-name {
-            font-size: 18px;
-            font-weight: bold;
-            color: #2196F3;
+        .course-list {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 12px 16px;
             margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .course-list ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .course-list ul li {
+            font-size: 16px;
+            font-weight: bold;
+            color: #1565C0;
+            margin: 4px 0;
         }
         .footer {
             text-align: center;
@@ -48,24 +59,29 @@
     </div>
     <div class="content">
         <p>Dear {{ $instructorName }},</p>
-        
+
         <div class="message">
-            <p>We are pleased to inform you that you have been successfully authorized by <strong>{{ $accName }}</strong> to teach the following course:</p>
-            
-            <div class="course-name">{{ $courseName }}</div>
-            
-            <p>Your authorization certificate has been attached to this email. This certificate confirms that you are authorized to teach <strong>{{ $courseName }}</strong> with {{ $accName }}.</p>
-            
+            <p>We are pleased to inform you that you have been successfully authorized by <strong>{{ $accName }}</strong> to teach the following {{ count($courseNames) === 1 ? 'course' : 'courses' }}:</p>
+
+            <div class="course-list">
+                <ul>
+                    @foreach ($courseNames as $name)
+                        <li>{{ $name }}</li>
+                    @endforeach
+                </ul>
+            </div>
+
+            <p>Your authorization certificate has been attached to this email. This certificate confirms your authorization to teach with <strong>{{ $accName }}</strong>.</p>
+
             <p>We congratulate you on this achievement and wish you success in your teaching endeavors.</p>
         </div>
-        
+
         <p>Best regards,<br>
         <strong>{{ $appName }}</strong></p>
     </div>
-    
+
     <div class="footer">
         <p>This is an automated email. Please do not reply to this message.</p>
     </div>
 </body>
 </html>
-

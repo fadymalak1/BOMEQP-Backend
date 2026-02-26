@@ -549,7 +549,7 @@ class InstructorController extends Controller
     #[OA\Post(
         path: "/training-center/instructors/{id}/request-authorization",
         summary: "Request instructor authorization",
-        description: "Request authorization for an instructor to teach courses from an ACC. You can either select a sub-category (all courses in that sub-category) or select specific courses.",
+        description: "Request authorization for an instructor from an ACC. Optionally select a sub-category (all courses in that sub-category) or specific courses. Both fields are optional — you can submit a general authorization request without specifying any courses.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -581,7 +581,7 @@ class InstructorController extends Controller
             ),
             new OA\Response(response: 401, description: "Unauthenticated"),
             new OA\Response(response: 404, description: "Instructor or ACC not found"),
-            new OA\Response(response: 422, description: "Validation error - either sub_category_id or course_ids must be provided, but not both")
+            new OA\Response(response: 422, description: "Validation error - sub_category_id and course_ids cannot both be provided at the same time")
         ]
     )]
     public function requestAuthorization(Request $request, $id)
