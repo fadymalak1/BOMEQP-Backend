@@ -128,6 +128,7 @@ class CertificateTemplateController extends Controller
             'name' => 'required|string|max:255',
             'template_html' => 'nullable|string',
             'config_json' => 'nullable',
+            'include_card' => 'sometimes|boolean',
             'status' => 'required|in:active,inactive',
         ]);
 
@@ -282,6 +283,7 @@ class CertificateTemplateController extends Controller
             'name' => $request->name,
             'template_html' => $request->template_html,
             'config_json' => $configJson,
+            'include_card' => (bool) $request->get('include_card', false),
             'status' => $request->status,
         ]);
 
@@ -382,6 +384,7 @@ new OA\Property(
             'template_html' => 'nullable|string',
             'status' => 'sometimes|in:active,inactive',
             'config_json' => 'nullable',
+            'include_card' => 'sometimes|boolean',
         ]);
 
         // Only allow course_ids updates for course templates
@@ -511,7 +514,7 @@ new OA\Property(
 
         // Update other fields (config_json can be object with elements or array)
         $updateData = [];
-        foreach (['name', 'template_html', 'status', 'orientation', 'config_json'] as $key) {
+        foreach (['name', 'template_html', 'status', 'orientation', 'config_json', 'include_card'] as $key) {
             if ($request->has($key)) {
                 $value = $request->input($key);
                 if ($key === 'config_json' && is_string($value)) {
@@ -704,6 +707,344 @@ new OA\Property(
 
         return response()->json([
             'message' => 'Template configuration updated successfully',
+            'template' => $template->fresh(),
+        ]);
+    }
+
+    // =========================================================================
+    // CARD TEMPLATE ENDPOINTS
+    // Each ACC can have at most ONE card template, stored on the certificate
+    // template record itself (card_* columns). The "include_card" toggle on a
+    // template drives whether the generated PDF has a 2nd page (the card).
+    // =========================================================================
+
+    #[OA\Get(
+        path: "/acc/card-template",
+        summary: "Get ACC card template",
+        description: "Returns the single card template belonging to the authenticated ACC, or null if none exists yet.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Card template retrieved",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "card_template", type: "object", nullable: true, properties: [
+                            new OA\Property(property: "id", type: "integer"),
+                            new OA\Property(property: "name", type: "string"),
+                            new OA\Property(property: "card_template_html", type: "string", nullable: true),
+                            new OA\Property(property: "card_background_image_url", type: "string", nullable: true),
+                            new OA\Property(property: "card_config_json", type: "object", nullable: true),
+                            new OA\Property(property: "status", type: "string"),
+                        ])
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
+    public function getCardTemplate(Request $request)
+    {
+        $user = $request->user();
+        $acc  = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $cardTemplate = CertificateTemplate::where('acc_id', $acc->id)
+            ->whereNotNull('card_template_html')
+            ->orWhere(function ($q) use ($acc) {
+                $q->where('acc_id', $acc->id)->whereNotNull('card_background_image_url');
+            })
+            ->select(['id', 'name', 'card_template_html', 'card_background_image_url', 'card_config_json', 'status'])
+            ->orderBy('updated_at', 'desc')
+            ->first();
+
+        return response()->json(['card_template' => $cardTemplate]);
+    }
+
+    #[OA\Put(
+        path: "/acc/certificate-templates/{id}/card",
+        summary: "Create or update card template on a certificate template",
+        description: "Save the card design (HTML template or config) onto an existing certificate template. Only one card design is allowed per ACC — if a different template already has a card, this request will be rejected. The 'include_card' flag controls whether this template's PDF output will contain a 2nd page (the card).",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: "include_card", type: "boolean", example: true, description: "Toggle: when true the generated PDF will have a 2nd page (the card)"),
+                    new OA\Property(property: "card_template_html", type: "string", nullable: true, description: "Full HTML for the card page"),
+                    new OA\Property(property: "card_config_json", type: "object", nullable: true, description: "Designer config (elements array) for the card"),
+                    new OA\Property(property: "name", type: "string", nullable: true, description: "Optional — update the template name at the same time"),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Card template saved successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Template not found"),
+            new OA\Response(response: 409, description: "Another template in this ACC already has a card design"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
+    public function upsertCardTemplate(Request $request, $id)
+    {
+        $user = $request->user();
+        $acc  = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+
+        $request->validate([
+            'include_card'       => 'sometimes|boolean',
+            'card_template_html' => 'nullable|string',
+            'card_config_json'   => 'nullable',
+            'name'               => 'sometimes|string|max:255',
+        ]);
+
+        // One card per ACC: ensure no other template in this ACC owns the card design
+        $conflicting = CertificateTemplate::where('acc_id', $acc->id)
+            ->where('id', '!=', $template->id)
+            ->where(function ($q) {
+                $q->whereNotNull('card_template_html')
+                  ->orWhereNotNull('card_background_image_url');
+            })
+            ->first();
+
+        if ($conflicting) {
+            return response()->json([
+                'message'                => 'Your ACC already has a card template on another certificate template. Each ACC can have only one card design.',
+                'existing_template_id'   => $conflicting->id,
+                'existing_template_name' => $conflicting->name,
+            ], 409);
+        }
+
+        $updateData = [];
+
+        if ($request->has('include_card')) {
+            $updateData['include_card'] = (bool) $request->include_card;
+        }
+        if ($request->has('card_template_html')) {
+            $updateData['card_template_html'] = $request->card_template_html;
+        }
+        if ($request->has('card_config_json')) {
+            $val = $request->card_config_json;
+            if (is_string($val)) {
+                $val = json_decode($val, true) ?: null;
+            }
+            $updateData['card_config_json'] = $val;
+        }
+        if ($request->has('name')) {
+            $updateData['name'] = $request->name;
+        }
+
+        $template->update($updateData);
+
+        return response()->json([
+            'message'  => 'Card template saved successfully',
+            'template' => $template->fresh(['category', 'courses']),
+        ]);
+    }
+
+    #[OA\Post(
+        path: "/acc/certificate-templates/{id}/upload-card-background",
+        summary: "Upload background image for the card page",
+        description: "Upload a JPG/PNG background image used as the card page background. Max 10 MB.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: "card_background_image", type: "string", format: "binary")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Card background image uploaded successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Template not found"),
+            new OA\Response(response: 409, description: "Another template in this ACC already has a card design"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
+    public function uploadCardBackgroundImage(Request $request, $id)
+    {
+        $user = $request->user();
+        $acc  = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+
+        // One card per ACC guard
+        $conflicting = CertificateTemplate::where('acc_id', $acc->id)
+            ->where('id', '!=', $template->id)
+            ->where(function ($q) {
+                $q->whereNotNull('card_template_html')
+                  ->orWhereNotNull('card_background_image_url');
+            })
+            ->first();
+
+        if ($conflicting) {
+            return response()->json([
+                'message'                => 'Your ACC already has a card template on another certificate template. Each ACC can have only one card design.',
+                'existing_template_id'   => $conflicting->id,
+                'existing_template_name' => $conflicting->name,
+            ], 409);
+        }
+
+        $request->validate([
+            'card_background_image' => 'required|image|mimetypes:image/jpeg,image/png|max:10240',
+        ]);
+
+        try {
+            $file = $request->file('card_background_image');
+
+            // Delete old card background if exists
+            if ($template->card_background_image_url) {
+                $this->deleteBackgroundImage($template->card_background_image_url);
+            }
+
+            $directory = 'certificate-templates/' . $template->id . '/card';
+            if (!Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->makeDirectory($directory);
+            }
+
+            $fileName = time() . '_' . $template->id . '_card_background.' . $file->getClientOriginalExtension();
+            $filePath = $file->storeAs($directory, $fileName, 'public');
+            $fileUrl  = Storage::disk('public')->url($filePath);
+
+            $template->update([
+                'card_background_image_url' => $fileUrl,
+                'include_card'              => true,
+            ]);
+
+            return response()->json([
+                'message'                    => 'Card background image uploaded successfully',
+                'card_background_image_url'  => $fileUrl,
+                'template'                   => $template->fresh(),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error uploading card background image', [
+                'template_id' => $id,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to upload card background image',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    #[OA\Put(
+        path: "/acc/certificate-templates/{id}/card-config",
+        summary: "Update card template configuration",
+        description: "Update the card designer configuration (card_config_json) with placeholders, coordinates, and styling. Same element schema as the certificate config.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["card_config_json"],
+                properties: [
+                    new OA\Property(
+                        property: "card_config_json",
+                        description: "Object with 'elements' array or direct array. Each element: id, type (text|image), variable, x, y, width, height (required for images), font_family, font_size, color, text_align"
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: "Card configuration updated successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Template not found"),
+            new OA\Response(response: 422, description: "Validation error")
+        ]
+    )]
+    public function updateCardConfig(Request $request, $id)
+    {
+        $user = $request->user();
+        $acc  = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+
+        $configJson = $request->card_config_json;
+        if (is_string($configJson)) {
+            $configJson = json_decode($configJson, true);
+        }
+
+        $elements = isset($configJson['elements']) ? $configJson['elements'] : $configJson;
+        if (!is_array($elements)) {
+            return response()->json([
+                'message' => 'card_config_json must be an object with elements array or an array of elements',
+                'errors'  => ['card_config_json' => ['Invalid structure']],
+            ], 422);
+        }
+
+        foreach ($elements as $i => $el) {
+            $type = $el['type'] ?? 'text';
+            if (!in_array($type, ['text', 'image'])) {
+                return response()->json([
+                    'message' => "Element {$i}: type must be 'text' or 'image'",
+                    'errors'  => ['card_config_json' => ["Invalid type at index {$i}"]],
+                ], 422);
+            }
+            if (empty($el['variable'])) {
+                return response()->json([
+                    'message' => "Element {$i}: variable is required",
+                    'errors'  => ['card_config_json' => ["Missing variable at index {$i}"]],
+                ], 422);
+            }
+            $x = $el['x'] ?? null;
+            $y = $el['y'] ?? null;
+            if ($x === null || $y === null || $x < 0 || $x > 1 || $y < 0 || $y > 1) {
+                return response()->json([
+                    'message' => "Element {$i}: x and y must be between 0 and 1",
+                    'errors'  => ['card_config_json' => ["Invalid coordinates at index {$i}"]],
+                ], 422);
+            }
+            if ($type === 'image') {
+                if (!isset($el['width']) || !isset($el['height']) || $el['width'] < 0 || $el['width'] > 1 || $el['height'] < 0 || $el['height'] > 1) {
+                    return response()->json([
+                        'message' => "Element {$i}: width and height (0-1) are required for image elements",
+                        'errors'  => ['card_config_json' => ["Invalid dimensions at index {$i}"]],
+                    ], 422);
+                }
+            }
+        }
+
+        $template->update(['card_config_json' => ['elements' => $elements]]);
+
+        return response()->json([
+            'message'  => 'Card configuration updated successfully',
             'template' => $template->fresh(),
         ]);
     }

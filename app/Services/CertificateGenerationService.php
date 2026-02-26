@@ -105,7 +105,8 @@ class CertificateGenerationService
             //          DomPDF never has to fetch anything remotely.
             // ------------------------------------------------------------------
             $imageKeys = ['training_center_logo', 'acc_logo', 'qr_code',
-                          'training_center_logo_url', 'acc_logo_url', 'qr_code_url'];
+                          'training_center_logo_url', 'acc_logo_url', 'qr_code_url',
+                          'instructor_photo'];
 
             foreach ($imageKeys as $key) {
                 if (!empty($data[$key])) {
@@ -113,7 +114,6 @@ class CertificateGenerationService
                     if ($uri) {
                         $data[$key] = $uri;
                     } else {
-                        // Mark as empty so the element-removal logic hides it cleanly
                         Log::warning("Could not embed image for key '{$key}'", ['value' => $data[$key]]);
                         $data[$key] = '';
                     }
@@ -121,15 +121,12 @@ class CertificateGenerationService
             }
 
             // Also pre-resolve qr_code if it was not provided but verification_code was
-            // (generateTrainingCenterCertificate / generateInstructorCertificate handle
-            //  this already, but guard here too)
             if (empty($data['qr_code']) && !empty($data['verification_code'])) {
                 $qrUrl = $this->getQrCodeUrl($data['verification_code']);
                 $uri   = $this->toDataUri($qrUrl);
                 $data['qr_code'] = $uri ?: '';
             }
 
-            // Log verification_code presence for debugging
             if (isset($data['verification_code'])) {
                 Log::info('Certificate generation – verification_code present', [
                     'template_id'       => $template->id,
@@ -148,13 +145,12 @@ class CertificateGenerationService
             $html = $this->replaceTemplateVariables($template->template_html, $data);
 
             // ------------------------------------------------------------------
-            // STEP 3 – Embed any remaining remote image URLs that appear in the
-            //          HTML (background-image CSS, stray <img src>, etc.)
+            // STEP 3 – Embed any remaining remote image URLs
             // ------------------------------------------------------------------
             $html = $this->embedRemainingRemoteImages($html);
 
             // ------------------------------------------------------------------
-            // STEP 4 – Page size
+            // STEP 4 – Page size (certificate page)
             // ------------------------------------------------------------------
             $orientation = $this->normalizeOrientation($template->orientation ?? 'landscape');
             $dimensions  = $this->getPageDimensions($orientation);
@@ -172,9 +168,34 @@ class CertificateGenerationService
             }
 
             // ------------------------------------------------------------------
-            // STEP 5 – Render PDF
-            //          isRemoteEnabled = false is safer now that everything is
-            //          embedded, but we leave it true as a last-resort fallback.
+            // STEP 5 – Append card page when include_card is enabled
+            // Card dimensions: landscape credit-card ratio 3.375 × 2.125 inches
+            // at 96 dpi ≈ 964 × 610 px → converted to points
+            // ------------------------------------------------------------------
+            if ($template->include_card) {
+                $cardHtml = $this->buildCardHtml($template, $data);
+                if ($cardHtml !== null) {
+                    // Card page: landscape business-card size
+                    $cardWidthPt  = round((3.375 * 96 / 96) * 72, 2);   // 243 pt
+                    $cardHeightPt = round((2.125 * 96 / 96) * 72, 2);   // 153 pt
+
+                    // Use full page size matching the certificate for consistent viewer
+                    // so we scale the card to fill the same page size, centred
+                    $cardPageCss = sprintf(
+                        '@page card { size: %spt %spt; margin: 0; } .card-page { page: card; width: %spt; height: %spt; position: relative; overflow: hidden; }',
+                        round($widthPt, 2),
+                        round($heightPt, 2),
+                        round($widthPt, 2),
+                        round($heightPt, 2)
+                    );
+
+                    $cardHtml = $this->injectCss($cardHtml, $cardPageCss . "\n.card-page { page-break-before: always; }");
+                    $html    .= $cardHtml;
+                }
+            }
+
+            // ------------------------------------------------------------------
+            // STEP 6 – Render PDF
             // ------------------------------------------------------------------
             $pdf = Pdf::loadHTML($html)
                 ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
@@ -185,7 +206,7 @@ class CertificateGenerationService
                 ->setOption('defaultFont', 'serif');
 
             // ------------------------------------------------------------------
-            // STEP 6 – Save
+            // STEP 7 – Save
             // ------------------------------------------------------------------
             $directory = 'certificates/' . $template->id;
             if (!Storage::disk('public')->exists($directory)) {
@@ -212,6 +233,110 @@ class CertificateGenerationService
             ]);
             return ['success' => false, 'message' => 'PDF generation failed: ' . $e->getMessage()];
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // CARD PAGE BUILDER
+    // -------------------------------------------------------------------------
+
+    /**
+     * Build the HTML for the card page (page 2 of the PDF).
+     *
+     * Priority:
+     *  1. card_template_html  – full custom HTML (same variable substitution as certificate)
+     *  2. card_background_image_url + card_config_json – auto-rendered layout
+     *  3. card_background_image_url only – full-bleed background image page
+     *
+     * Returns null when no card content is configured.
+     */
+    private function buildCardHtml(CertificateTemplate $template, array $data): ?string
+    {
+        // ── Path 1: custom HTML ───────────────────────────────────────────────
+        if (!empty($template->card_template_html)) {
+            $html = $this->replaceTemplateVariables($template->card_template_html, $data);
+            $html = $this->embedRemainingRemoteImages($html);
+            return $html;
+        }
+
+        // ── Path 2 & 3: background image (+ optional config overlay) ─────────
+        if (empty($template->card_background_image_url)) {
+            return null;
+        }
+
+        $bgUri = $this->toDataUri($template->card_background_image_url) ?? '';
+
+        // Build overlay elements from card_config_json
+        $overlayHtml = '';
+        $config   = $template->card_config_json;
+        $elements = is_array($config) && isset($config['elements']) ? $config['elements'] : (is_array($config) ? $config : []);
+
+        foreach ($elements as $el) {
+            $type = $el['type'] ?? 'text';
+            $x    = round((float)($el['x'] ?? 0) * 100, 4);
+            $y    = round((float)($el['y'] ?? 0) * 100, 4);
+            $w    = round((float)($el['width']  ?? 0.3) * 100, 4);
+            $h    = round((float)($el['height'] ?? 0.1) * 100, 4);
+
+            $variable = $el['variable'] ?? '';
+            // Resolve variable placeholder
+            if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
+                $value = $data[trim($matches[1])] ?? '';
+            } else {
+                $value = $data[$variable] ?? $variable;
+            }
+
+            $style = sprintf(
+                'position:absolute;left:%s%%;top:%s%%;',
+                $x, $y
+            );
+
+            if ($type === 'image') {
+                $imgUri = $this->toDataUri((string) $value) ?? '';
+                if ($imgUri) {
+                    $style .= sprintf('width:%s%%;height:%s%%;', $w, $h);
+                    $overlayHtml .= sprintf('<img src="%s" style="%s object-fit:contain;" />', $imgUri, $style);
+                }
+            } else {
+                $fontSize   = (int)($el['font_size'] ?? $el['fontSize'] ?? 14);
+                $fontFamily = htmlspecialchars($el['font_family'] ?? $el['fontFamily'] ?? 'serif');
+                $color      = htmlspecialchars($el['color'] ?? '#000000');
+                $align      = htmlspecialchars($el['text_align'] ?? $el['textAlign'] ?? 'left');
+                $weight     = htmlspecialchars($el['font_weight'] ?? $el['fontWeight'] ?? 'normal');
+                $style .= sprintf(
+                    'font-size:%spx;font-family:%s;color:%s;text-align:%s;font-weight:%s;white-space:nowrap;',
+                    $fontSize, $fontFamily, $color, $align, $weight
+                );
+                $overlayHtml .= sprintf('<div style="%s">%s</div>', $style, htmlspecialchars((string) $value));
+            }
+        }
+
+        $bgStyle = $bgUri
+            ? sprintf('background-image:url(\'%s\');background-size:cover;background-position:center;', $bgUri)
+            : 'background:#ffffff;';
+
+        return sprintf(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>
+            <div class="card-page" style="width:100%%;height:100%%;position:relative;overflow:hidden;%s">
+                %s
+            </div></body></html>',
+            $bgStyle,
+            $overlayHtml
+        );
+    }
+
+    /**
+     * Inject CSS into an HTML string (inserts into existing <style> or adds <head>).
+     */
+    private function injectCss(string $html, string $css): string
+    {
+        if (preg_match('/<style[^>]*>/i', $html, $m, PREG_OFFSET_CAPTURE)) {
+            $pos = $m[0][1] + strlen($m[0][0]);
+            return substr_replace($html, "\n" . $css . "\n", $pos, 0);
+        }
+        if (stripos($html, '<head>') !== false) {
+            return preg_replace('/<head>/i', "<head>\n<style>{$css}</style>", $html, 1);
+        }
+        return "<head><style>{$css}</style></head>" . $html;
     }
 
     // -------------------------------------------------------------------------

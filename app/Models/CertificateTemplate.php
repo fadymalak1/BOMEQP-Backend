@@ -27,6 +27,10 @@ class CertificateTemplate extends Model
         'signature_positions',
         'config_json',
         'status',
+        'include_card',
+        'card_template_html',
+        'card_background_image_url',
+        'card_config_json',
     ];
 
     protected function casts(): array
@@ -35,7 +39,9 @@ class CertificateTemplate extends Model
             'logo_positions' => 'array',
             'signature_positions' => 'array',
             'config_json' => 'array',
+            'card_config_json' => 'array',
             'is_group_admin_template' => 'boolean',
+            'include_card' => 'boolean',
         ];
     }
 

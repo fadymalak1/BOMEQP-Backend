@@ -237,6 +237,11 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         // Certificate Templates
         Route::post('/certificate-templates/{id}/upload-background', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'uploadBackgroundImage']);
         Route::put('/certificate-templates/{id}/config', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'updateConfig']);
+        // Card template routes (must be before the apiResource wildcard)
+        Route::get('/card-template', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'getCardTemplate']);
+        Route::put('/certificate-templates/{id}/card', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'upsertCardTemplate']);
+        Route::post('/certificate-templates/{id}/upload-card-background', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'uploadCardBackgroundImage']);
+        Route::put('/certificate-templates/{id}/card-config', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'updateCardConfig']);
         Route::apiResource('certificate-templates', App\Http\Controllers\API\ACC\CertificateTemplateController::class);
 
         // Discount Codes
