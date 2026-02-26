@@ -370,6 +370,21 @@ class InstructorManagementService
         }
         // else: neither provided — general authorization request with no courses
 
+        // Block if instructor is already approved with this ACC
+        $approvedAuthorization = InstructorAccAuthorization::where('instructor_id', $instructor->id)
+            ->where('acc_id', $request->acc_id)
+            ->where('status', 'approved')
+            ->first();
+
+        if ($approvedAuthorization) {
+            return [
+                'success' => false,
+                'message' => 'Instructor is already authorized with this ACC.',
+                'code' => 409,
+                'existing_authorization_id' => $approvedAuthorization->id,
+            ];
+        }
+
         // Check if there's already a pending authorization request for this instructor, ACC, and same category/courses
         $existingAuthorizations = InstructorAccAuthorization::where('instructor_id', $instructor->id)
             ->where('acc_id', $request->acc_id)
