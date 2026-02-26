@@ -14,6 +14,8 @@ class CertificateTemplate extends Model
 
     protected $fillable = [
         'acc_id',
+        'created_by',
+        'is_group_admin_template',
         'template_type',
         'orientation',
         'category_id',
@@ -33,12 +35,18 @@ class CertificateTemplate extends Model
             'logo_positions' => 'array',
             'signature_positions' => 'array',
             'config_json' => 'array',
+            'is_group_admin_template' => 'boolean',
         ];
     }
 
     public function acc(): BelongsTo
     {
         return $this->belongsTo(ACC::class, 'acc_id');
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function category(): BelongsTo

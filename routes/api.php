@@ -143,6 +143,15 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
             Route::delete('/{id}', [App\Http\Controllers\API\StripeSettingController::class, 'destroy']);
         });
 
+        // Certificate Templates (Group Admin)
+        Route::get('/certificate-templates', [App\Http\Controllers\API\Admin\CertificateTemplateController::class, 'index']);
+        Route::post('/certificate-templates', [App\Http\Controllers\API\Admin\CertificateTemplateController::class, 'store']);
+        Route::get('/certificate-templates/{id}', [App\Http\Controllers\API\Admin\CertificateTemplateController::class, 'show']);
+        Route::put('/certificate-templates/{id}', [App\Http\Controllers\API\Admin\CertificateTemplateController::class, 'update']);
+        Route::post('/certificate-templates/{id}/upload-background', [App\Http\Controllers\API\Admin\CertificateTemplateController::class, 'uploadBackgroundImage']);
+        Route::put('/certificate-templates/{id}/config', [App\Http\Controllers\API\Admin\CertificateTemplateController::class, 'updateConfig']);
+        Route::delete('/certificate-templates/{id}', [App\Http\Controllers\API\Admin\CertificateTemplateController::class, 'destroy']);
+
         // Instructors Management
         // NOTE: specific sub-resource routes must come before the plain {id} wildcard
         Route::get('/instructors', [App\Http\Controllers\API\Admin\InstructorController::class, 'index']);

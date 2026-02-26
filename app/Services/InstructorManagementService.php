@@ -6,6 +6,8 @@ use App\Models\Instructor;
 use App\Models\InstructorAccAuthorization;
 use App\Models\TrainingCenter;
 use App\Models\User;
+use App\Mail\InstructorCertificateMail;
+use App\Mail\InstructorGroupCertificateMail;
 use App\Mail\InstructorCredentialsMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -765,7 +767,11 @@ class InstructorManagementService
                 $this->generateAndSendInstructorCertificates($authorization, $acc);
             }
 
+            // Check if the instructor now qualifies for the group-admin achievement certificate
+            // (authorized by ≥ 3 ACCs). Runs after the DB commit so the new authorization is visible.
             DB::commit();
+
+            $this->checkAndSendGroupAdminCertificate($authorization->instructor_id);
 
             // Send notifications
             try {
@@ -1012,6 +1018,191 @@ class InstructorManagementService
             Log::error('Failed to generate and send instructor certificates', [
                 'authorization_id' => $authorization->id,
                 'error'            => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Check if the instructor now has ≥ 3 approved ACC authorizations.
+     * If so, and the group-admin achievement certificate has not yet been sent,
+     * generate it using the active group-admin instructor template and email it.
+     *
+     * Call this after every successful ACC authorization approval.
+     *
+     * @param int $instructorId
+     */
+    public function checkAndSendGroupAdminCertificate(int $instructorId): void
+    {
+        try {
+            $instructor = Instructor::with('trainingCenter')->find($instructorId);
+            if (!$instructor) {
+                Log::warning('checkAndSendGroupAdminCertificate: instructor not found', ['instructor_id' => $instructorId]);
+                return;
+            }
+
+            // Count distinct approved ACC authorizations
+            $approvedAccCount = InstructorAccAuthorization::where('instructor_id', $instructorId)
+                ->where('status', 'approved')
+                ->distinct('acc_id')
+                ->count('acc_id');
+
+            if ($approvedAccCount < 3) {
+                Log::info('checkAndSendGroupAdminCertificate: not enough ACCs yet', [
+                    'instructor_id'     => $instructorId,
+                    'approved_acc_count' => $approvedAccCount,
+                ]);
+                return;
+            }
+
+            // Guard: skip if group-admin certificate was already sent
+            $alreadySent = \App\Models\Certificate::where('instructor_id', $instructorId)
+                ->whereHas('template', function ($q) {
+                    $q->where('is_group_admin_template', true);
+                })
+                ->exists();
+
+            if ($alreadySent) {
+                Log::info('checkAndSendGroupAdminCertificate: certificate already sent', [
+                    'instructor_id' => $instructorId,
+                ]);
+                return;
+            }
+
+            // Find the active group-admin instructor template
+            $template = \App\Models\CertificateTemplate::where('is_group_admin_template', true)
+                ->where('template_type', 'instructor')
+                ->where('status', 'active')
+                ->first();
+
+            if (!$template) {
+                Log::info('checkAndSendGroupAdminCertificate: no active group admin instructor template found', [
+                    'instructor_id' => $instructorId,
+                ]);
+                return;
+            }
+
+            // Collect names of all approved ACCs
+            $approvedAuthorizations = InstructorAccAuthorization::where('instructor_id', $instructorId)
+                ->where('status', 'approved')
+                ->with('acc:id,name')
+                ->get();
+
+            $accNames = $approvedAuthorizations
+                ->pluck('acc.name')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            // Generate the certificate PDF (use first ACC for template variables, list all in email)
+            $firstAcc           = $approvedAuthorizations->first()?->acc;
+            $certificateService = new CertificateGenerationService();
+
+            $verificationCode = 'VERIFY-' . strtoupper(Str::random(10));
+            while (\App\Models\Certificate::where('verification_code', $verificationCode)->exists()) {
+                $verificationCode = 'VERIFY-' . strtoupper(Str::random(10));
+            }
+
+            // Build a minimal "course" stub with just name/code so the template can render
+            // even when the cert is not course-specific (group admin cert represents the achievement)
+            $coursePlaceholder = (object) [
+                'name'    => 'Multi-ACC Authorization Achievement',
+                'name_ar' => '',
+                'code'    => 'MULTI-ACC',
+            ];
+
+            $result = $certificateService->generateInstructorCertificate(
+                $template,
+                $instructor,
+                $coursePlaceholder,
+                $firstAcc ?? (object) ['name' => '', 'legal_name' => '', 'registration_number' => '', 'country' => '', 'logo_url' => null],
+                $verificationCode
+            );
+
+            if (!$result['success'] || !isset($result['file_path'])) {
+                Log::warning('checkAndSendGroupAdminCertificate: PDF generation failed', [
+                    'instructor_id' => $instructorId,
+                    'error'         => $result['message'] ?? 'Unknown error',
+                ]);
+                return;
+            }
+
+            $pdfPath = Storage::disk('public')->path($result['file_path']);
+            $pdfUrl  = $result['file_url'] ?? Storage::disk('public')->url($result['file_path']);
+
+            if (!file_exists($pdfPath)) {
+                Log::warning('checkAndSendGroupAdminCertificate: PDF file missing after generation', [
+                    'instructor_id' => $instructorId,
+                    'pdf_path'      => $pdfPath,
+                ]);
+                return;
+            }
+
+            // Send the email
+            $instructorFullName = trim($instructor->first_name . ' ' . $instructor->last_name);
+            try {
+                $mail = new InstructorGroupCertificateMail($instructorFullName, $accNames, $pdfPath);
+                $mail->onConnection('sync');
+                Mail::to($instructor->email)->send($mail);
+
+                Log::info('Group admin achievement certificate email sent', [
+                    'instructor_id' => $instructorId,
+                    'email'         => $instructor->email,
+                    'acc_count'     => count($accNames),
+                ]);
+            } catch (\Exception $mailException) {
+                Log::error('checkAndSendGroupAdminCertificate: mail send failed', [
+                    'instructor_id' => $instructorId,
+                    'error'         => $mailException->getMessage(),
+                ]);
+                return;
+            }
+
+            // Persist a single certificate record for the achievement
+            do {
+                $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
+            } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
+
+            \App\Models\Certificate::create([
+                'certificate_number'  => $certificateNumber,
+                'course_id'           => null,
+                'training_center_id'  => $instructor->training_center_id,
+                'instructor_id'       => $instructor->id,
+                'type'                => 'instructor',
+                'trainee_name'        => $instructorFullName,
+                'trainee_id_number'   => $instructor->id_number,
+                'issue_date'          => now()->toDateString(),
+                'expiry_date'         => null,
+                'template_id'         => $template->id,
+                'certificate_pdf_url' => $pdfUrl,
+                'verification_code'   => $verificationCode,
+                'status'              => 'valid',
+            ]);
+
+            // Notify the instructor in-app about their achievement certificate
+            $instructorUser = User::where('email', $instructor->email)->first();
+            if ($instructorUser) {
+                $accCount = count($accNames);
+                $this->notificationService->send(
+                    $instructorUser->id,
+                    'group_admin_certificate_awarded',
+                    'Achievement Certificate Awarded',
+                    "Congratulations! You have been authorized by {$accCount} accreditation bodies. Your achievement certificate has been sent to your email.",
+                    [
+                        'certificate_number' => $certificateNumber,
+                        'acc_count'          => $accCount,
+                        'acc_names'          => $accNames,
+                    ]
+                );
+            }
+
+            Log::info('Group admin certificate saved to database', ['instructor_id' => $instructorId]);
+
+        } catch (\Exception $e) {
+            Log::error('checkAndSendGroupAdminCertificate: unexpected error', [
+                'instructor_id' => $instructorId,
+                'error'         => $e->getMessage(),
+                'trace'         => $e->getTraceAsString(),
             ]);
         }
     }
