@@ -95,170 +95,177 @@ class TrainingCenterController extends Controller
      * Coordinates are country-level centroids used only as a fallback when the TC has no
      * explicit latitude/longitude set.
      */
+    /**
+     * Maps country identifiers (full names AND ISO-2 codes) to region + centroid coordinates.
+     * Keys are stored uppercased so lookups are O(1) via array_key_exists after strtoupper().
+     */
     private function getCountryData(): array
     {
-        return [
-            // USA / CANADA
-            'United States'              => ['region' => 'USA/CANADA',          'lat' => 37.0902,   'lng' => -95.7129],
-            'USA'                        => ['region' => 'USA/CANADA',          'lat' => 37.0902,   'lng' => -95.7129],
-            'US'                         => ['region' => 'USA/CANADA',          'lat' => 37.0902,   'lng' => -95.7129],
-            'Canada'                     => ['region' => 'USA/CANADA',          'lat' => 56.1304,   'lng' => -106.3468],
+        $entries = [
+            // ── USA / CANADA ─────────────────────────────────────────────────────────
+            ['keys' => ['United States', 'USA', 'US'],  'region' => 'USA/CANADA',         'lat' => 37.0902,  'lng' => -95.7129],
+            ['keys' => ['Canada', 'CA'],                'region' => 'USA/CANADA',         'lat' => 56.1304,  'lng' => -106.3468],
 
-            // LATIN AMERICA
-            'Mexico'                     => ['region' => 'LATIN AMERICA',       'lat' => 23.6345,   'lng' => -102.5528],
-            'Brazil'                     => ['region' => 'LATIN AMERICA',       'lat' => -14.2350,  'lng' => -51.9253],
-            'Argentina'                  => ['region' => 'LATIN AMERICA',       'lat' => -38.4161,  'lng' => -63.6167],
-            'Colombia'                   => ['region' => 'LATIN AMERICA',       'lat' => 4.5709,    'lng' => -74.2973],
-            'Chile'                      => ['region' => 'LATIN AMERICA',       'lat' => -35.6751,  'lng' => -71.5430],
-            'Peru'                       => ['region' => 'LATIN AMERICA',       'lat' => -9.1900,   'lng' => -75.0152],
-            'Venezuela'                  => ['region' => 'LATIN AMERICA',       'lat' => 6.4238,    'lng' => -66.5897],
-            'Ecuador'                    => ['region' => 'LATIN AMERICA',       'lat' => -1.8312,   'lng' => -78.1834],
-            'Bolivia'                    => ['region' => 'LATIN AMERICA',       'lat' => -16.2902,  'lng' => -63.5887],
-            'Paraguay'                   => ['region' => 'LATIN AMERICA',       'lat' => -23.4425,  'lng' => -58.4438],
-            'Uruguay'                    => ['region' => 'LATIN AMERICA',       'lat' => -32.5228,  'lng' => -55.7658],
-            'Guatemala'                  => ['region' => 'LATIN AMERICA',       'lat' => 15.7835,   'lng' => -90.2308],
-            'Honduras'                   => ['region' => 'LATIN AMERICA',       'lat' => 15.2000,   'lng' => -86.2419],
-            'El Salvador'                => ['region' => 'LATIN AMERICA',       'lat' => 13.7942,   'lng' => -88.8965],
-            'Nicaragua'                  => ['region' => 'LATIN AMERICA',       'lat' => 12.8654,   'lng' => -85.2072],
-            'Costa Rica'                 => ['region' => 'LATIN AMERICA',       'lat' => 9.7489,    'lng' => -83.7534],
-            'Panama'                     => ['region' => 'LATIN AMERICA',       'lat' => 8.5380,    'lng' => -80.7821],
-            'Cuba'                       => ['region' => 'LATIN AMERICA',       'lat' => 21.5218,   'lng' => -77.7812],
-            'Dominican Republic'         => ['region' => 'LATIN AMERICA',       'lat' => 18.7357,   'lng' => -70.1627],
-            'Haiti'                      => ['region' => 'LATIN AMERICA',       'lat' => 18.9712,   'lng' => -72.2852],
-            'Jamaica'                    => ['region' => 'LATIN AMERICA',       'lat' => 18.1096,   'lng' => -77.2975],
-            'Trinidad and Tobago'        => ['region' => 'LATIN AMERICA',       'lat' => 10.6918,   'lng' => -61.2225],
+            // ── LATIN AMERICA ─────────────────────────────────────────────────────────
+            ['keys' => ['Mexico', 'MX'],                'region' => 'LATIN AMERICA',      'lat' => 23.6345,  'lng' => -102.5528],
+            ['keys' => ['Brazil', 'BR'],                'region' => 'LATIN AMERICA',      'lat' => -14.2350, 'lng' => -51.9253],
+            ['keys' => ['Argentina', 'AR'],             'region' => 'LATIN AMERICA',      'lat' => -38.4161, 'lng' => -63.6167],
+            ['keys' => ['Colombia', 'CO'],              'region' => 'LATIN AMERICA',      'lat' => 4.5709,   'lng' => -74.2973],
+            ['keys' => ['Chile', 'CL'],                 'region' => 'LATIN AMERICA',      'lat' => -35.6751, 'lng' => -71.5430],
+            ['keys' => ['Peru', 'PE'],                  'region' => 'LATIN AMERICA',      'lat' => -9.1900,  'lng' => -75.0152],
+            ['keys' => ['Venezuela', 'VE'],             'region' => 'LATIN AMERICA',      'lat' => 6.4238,   'lng' => -66.5897],
+            ['keys' => ['Ecuador', 'EC'],               'region' => 'LATIN AMERICA',      'lat' => -1.8312,  'lng' => -78.1834],
+            ['keys' => ['Bolivia', 'BO'],               'region' => 'LATIN AMERICA',      'lat' => -16.2902, 'lng' => -63.5887],
+            ['keys' => ['Paraguay', 'PY'],              'region' => 'LATIN AMERICA',      'lat' => -23.4425, 'lng' => -58.4438],
+            ['keys' => ['Uruguay', 'UY'],               'region' => 'LATIN AMERICA',      'lat' => -32.5228, 'lng' => -55.7658],
+            ['keys' => ['Guatemala', 'GT'],             'region' => 'LATIN AMERICA',      'lat' => 15.7835,  'lng' => -90.2308],
+            ['keys' => ['Honduras', 'HN'],              'region' => 'LATIN AMERICA',      'lat' => 15.2000,  'lng' => -86.2419],
+            ['keys' => ['El Salvador', 'SV'],           'region' => 'LATIN AMERICA',      'lat' => 13.7942,  'lng' => -88.8965],
+            ['keys' => ['Nicaragua', 'NI'],             'region' => 'LATIN AMERICA',      'lat' => 12.8654,  'lng' => -85.2072],
+            ['keys' => ['Costa Rica', 'CR'],            'region' => 'LATIN AMERICA',      'lat' => 9.7489,   'lng' => -83.7534],
+            ['keys' => ['Panama', 'PA'],                'region' => 'LATIN AMERICA',      'lat' => 8.5380,   'lng' => -80.7821],
+            ['keys' => ['Cuba', 'CU'],                  'region' => 'LATIN AMERICA',      'lat' => 21.5218,  'lng' => -77.7812],
+            ['keys' => ['Dominican Republic', 'DO'],    'region' => 'LATIN AMERICA',      'lat' => 18.7357,  'lng' => -70.1627],
+            ['keys' => ['Haiti', 'HT'],                 'region' => 'LATIN AMERICA',      'lat' => 18.9712,  'lng' => -72.2852],
+            ['keys' => ['Jamaica', 'JM'],               'region' => 'LATIN AMERICA',      'lat' => 18.1096,  'lng' => -77.2975],
+            ['keys' => ['Trinidad and Tobago', 'TT'],   'region' => 'LATIN AMERICA',      'lat' => 10.6918,  'lng' => -61.2225],
 
-            // EUROPE
-            'United Kingdom'             => ['region' => 'EUROPE',              'lat' => 55.3781,   'lng' => -3.4360],
-            'UK'                         => ['region' => 'EUROPE',              'lat' => 55.3781,   'lng' => -3.4360],
-            'Germany'                    => ['region' => 'EUROPE',              'lat' => 51.1657,   'lng' => 10.4515],
-            'France'                     => ['region' => 'EUROPE',              'lat' => 46.2276,   'lng' => 2.2137],
-            'Italy'                      => ['region' => 'EUROPE',              'lat' => 41.8719,   'lng' => 12.5674],
-            'Spain'                      => ['region' => 'EUROPE',              'lat' => 40.4637,   'lng' => -3.7492],
-            'Netherlands'                => ['region' => 'EUROPE',              'lat' => 52.1326,   'lng' => 5.2913],
-            'Belgium'                    => ['region' => 'EUROPE',              'lat' => 50.5039,   'lng' => 4.4699],
-            'Switzerland'                => ['region' => 'EUROPE',              'lat' => 46.8182,   'lng' => 8.2275],
-            'Austria'                    => ['region' => 'EUROPE',              'lat' => 47.5162,   'lng' => 14.5501],
-            'Sweden'                     => ['region' => 'EUROPE',              'lat' => 60.1282,   'lng' => 18.6435],
-            'Norway'                     => ['region' => 'EUROPE',              'lat' => 60.4720,   'lng' => 8.4689],
-            'Denmark'                    => ['region' => 'EUROPE',              'lat' => 56.2639,   'lng' => 9.5018],
-            'Finland'                    => ['region' => 'EUROPE',              'lat' => 61.9241,   'lng' => 25.7482],
-            'Poland'                     => ['region' => 'EUROPE',              'lat' => 51.9194,   'lng' => 19.1451],
-            'Czech Republic'             => ['region' => 'EUROPE',              'lat' => 49.8175,   'lng' => 15.4730],
-            'Hungary'                    => ['region' => 'EUROPE',              'lat' => 47.1625,   'lng' => 19.5033],
-            'Romania'                    => ['region' => 'EUROPE',              'lat' => 45.9432,   'lng' => 24.9668],
-            'Bulgaria'                   => ['region' => 'EUROPE',              'lat' => 42.7339,   'lng' => 25.4858],
-            'Greece'                     => ['region' => 'EUROPE',              'lat' => 39.0742,   'lng' => 21.8243],
-            'Portugal'                   => ['region' => 'EUROPE',              'lat' => 39.3999,   'lng' => -8.2245],
-            'Ireland'                    => ['region' => 'EUROPE',              'lat' => 53.1424,   'lng' => -7.6921],
-            'Ukraine'                    => ['region' => 'EUROPE',              'lat' => 48.3794,   'lng' => 31.1656],
-            'Russia'                     => ['region' => 'EUROPE',              'lat' => 61.5240,   'lng' => 105.3188],
-            'Turkey'                     => ['region' => 'EUROPE',              'lat' => 38.9637,   'lng' => 35.2433],
-            'Croatia'                    => ['region' => 'EUROPE',              'lat' => 45.1000,   'lng' => 15.2000],
-            'Serbia'                     => ['region' => 'EUROPE',              'lat' => 44.0165,   'lng' => 21.0059],
-            'Slovakia'                   => ['region' => 'EUROPE',              'lat' => 48.6690,   'lng' => 19.6990],
-            'Luxembourg'                 => ['region' => 'EUROPE',              'lat' => 49.8153,   'lng' => 6.1296],
-            'Iceland'                    => ['region' => 'EUROPE',              'lat' => 64.9631,   'lng' => -19.0208],
-            'Malta'                      => ['region' => 'EUROPE',              'lat' => 35.9375,   'lng' => 14.3754],
-            'Cyprus'                     => ['region' => 'EUROPE',              'lat' => 35.1264,   'lng' => 33.4299],
+            // ── EUROPE ────────────────────────────────────────────────────────────────
+            ['keys' => ['United Kingdom', 'UK', 'GB'],  'region' => 'EUROPE',             'lat' => 55.3781,  'lng' => -3.4360],
+            ['keys' => ['Germany', 'DE'],               'region' => 'EUROPE',             'lat' => 51.1657,  'lng' => 10.4515],
+            ['keys' => ['France', 'FR'],                'region' => 'EUROPE',             'lat' => 46.2276,  'lng' => 2.2137],
+            ['keys' => ['Italy', 'IT'],                 'region' => 'EUROPE',             'lat' => 41.8719,  'lng' => 12.5674],
+            ['keys' => ['Spain', 'ES'],                 'region' => 'EUROPE',             'lat' => 40.4637,  'lng' => -3.7492],
+            ['keys' => ['Netherlands', 'NL'],           'region' => 'EUROPE',             'lat' => 52.1326,  'lng' => 5.2913],
+            ['keys' => ['Belgium', 'BE'],               'region' => 'EUROPE',             'lat' => 50.5039,  'lng' => 4.4699],
+            ['keys' => ['Switzerland', 'CH'],           'region' => 'EUROPE',             'lat' => 46.8182,  'lng' => 8.2275],
+            ['keys' => ['Austria', 'AT'],               'region' => 'EUROPE',             'lat' => 47.5162,  'lng' => 14.5501],
+            ['keys' => ['Sweden', 'SE'],                'region' => 'EUROPE',             'lat' => 60.1282,  'lng' => 18.6435],
+            ['keys' => ['Norway', 'NO'],                'region' => 'EUROPE',             'lat' => 60.4720,  'lng' => 8.4689],
+            ['keys' => ['Denmark', 'DK'],               'region' => 'EUROPE',             'lat' => 56.2639,  'lng' => 9.5018],
+            ['keys' => ['Finland', 'FI'],               'region' => 'EUROPE',             'lat' => 61.9241,  'lng' => 25.7482],
+            ['keys' => ['Poland', 'PL'],                'region' => 'EUROPE',             'lat' => 51.9194,  'lng' => 19.1451],
+            ['keys' => ['Czech Republic', 'CZ'],        'region' => 'EUROPE',             'lat' => 49.8175,  'lng' => 15.4730],
+            ['keys' => ['Hungary', 'HU'],               'region' => 'EUROPE',             'lat' => 47.1625,  'lng' => 19.5033],
+            ['keys' => ['Romania', 'RO'],               'region' => 'EUROPE',             'lat' => 45.9432,  'lng' => 24.9668],
+            ['keys' => ['Bulgaria', 'BG'],              'region' => 'EUROPE',             'lat' => 42.7339,  'lng' => 25.4858],
+            ['keys' => ['Greece', 'GR'],                'region' => 'EUROPE',             'lat' => 39.0742,  'lng' => 21.8243],
+            ['keys' => ['Portugal', 'PT'],              'region' => 'EUROPE',             'lat' => 39.3999,  'lng' => -8.2245],
+            ['keys' => ['Ireland', 'IE'],               'region' => 'EUROPE',             'lat' => 53.1424,  'lng' => -7.6921],
+            ['keys' => ['Ukraine', 'UA'],               'region' => 'EUROPE',             'lat' => 48.3794,  'lng' => 31.1656],
+            ['keys' => ['Russia', 'RU'],                'region' => 'EUROPE',             'lat' => 61.5240,  'lng' => 105.3188],
+            ['keys' => ['Turkey', 'TR'],                'region' => 'EUROPE',             'lat' => 38.9637,  'lng' => 35.2433],
+            ['keys' => ['Croatia', 'HR'],               'region' => 'EUROPE',             'lat' => 45.1000,  'lng' => 15.2000],
+            ['keys' => ['Serbia', 'RS'],                'region' => 'EUROPE',             'lat' => 44.0165,  'lng' => 21.0059],
+            ['keys' => ['Slovakia', 'SK'],              'region' => 'EUROPE',             'lat' => 48.6690,  'lng' => 19.6990],
+            ['keys' => ['Luxembourg', 'LU'],            'region' => 'EUROPE',             'lat' => 49.8153,  'lng' => 6.1296],
+            ['keys' => ['Iceland', 'IS'],               'region' => 'EUROPE',             'lat' => 64.9631,  'lng' => -19.0208],
+            ['keys' => ['Malta', 'MT'],                 'region' => 'EUROPE',             'lat' => 35.9375,  'lng' => 14.3754],
+            ['keys' => ['Cyprus', 'CY'],                'region' => 'EUROPE',             'lat' => 35.1264,  'lng' => 33.4299],
 
-            // ASIA
-            'China'                      => ['region' => 'ASIA',                'lat' => 35.8617,   'lng' => 104.1954],
-            'Japan'                      => ['region' => 'ASIA',                'lat' => 36.2048,   'lng' => 138.2529],
-            'India'                      => ['region' => 'ASIA',                'lat' => 20.5937,   'lng' => 78.9629],
-            'South Korea'                => ['region' => 'ASIA',                'lat' => 35.9078,   'lng' => 127.7669],
-            'Korea'                      => ['region' => 'ASIA',                'lat' => 35.9078,   'lng' => 127.7669],
-            'Indonesia'                  => ['region' => 'ASIA',                'lat' => -0.7893,   'lng' => 113.9213],
-            'Malaysia'                   => ['region' => 'ASIA',                'lat' => 4.2105,    'lng' => 101.9758],
-            'Philippines'                => ['region' => 'ASIA',                'lat' => 12.8797,   'lng' => 121.7740],
-            'Vietnam'                    => ['region' => 'ASIA',                'lat' => 14.0583,   'lng' => 108.2772],
-            'Thailand'                   => ['region' => 'ASIA',                'lat' => 15.8700,   'lng' => 100.9925],
-            'Singapore'                  => ['region' => 'ASIA',                'lat' => 1.3521,    'lng' => 103.8198],
-            'Bangladesh'                 => ['region' => 'ASIA',                'lat' => 23.6850,   'lng' => 90.3563],
-            'Pakistan'                   => ['region' => 'ASIA',                'lat' => 30.3753,   'lng' => 69.3451],
-            'Sri Lanka'                  => ['region' => 'ASIA',                'lat' => 7.8731,    'lng' => 80.7718],
-            'Nepal'                      => ['region' => 'ASIA',                'lat' => 28.3949,   'lng' => 84.1240],
-            'Myanmar'                    => ['region' => 'ASIA',                'lat' => 21.9162,   'lng' => 95.9560],
-            'Cambodia'                   => ['region' => 'ASIA',                'lat' => 12.5657,   'lng' => 104.9910],
-            'Laos'                       => ['region' => 'ASIA',                'lat' => 19.8563,   'lng' => 102.4955],
-            'Mongolia'                   => ['region' => 'ASIA',                'lat' => 46.8625,   'lng' => 103.8467],
-            'Kazakhstan'                 => ['region' => 'ASIA',                'lat' => 48.0196,   'lng' => 66.9237],
-            'Uzbekistan'                 => ['region' => 'ASIA',                'lat' => 41.3775,   'lng' => 64.5853],
-            'Azerbaijan'                 => ['region' => 'ASIA',                'lat' => 40.1431,   'lng' => 47.5769],
-            'Georgia'                    => ['region' => 'ASIA',                'lat' => 42.3154,   'lng' => 43.3569],
-            'Armenia'                    => ['region' => 'ASIA',                'lat' => 40.0691,   'lng' => 45.0382],
-            'Taiwan'                     => ['region' => 'ASIA',                'lat' => 23.6978,   'lng' => 120.9605],
-            'Hong Kong'                  => ['region' => 'ASIA',                'lat' => 22.3193,   'lng' => 114.1694],
-            'Macau'                      => ['region' => 'ASIA',                'lat' => 22.1987,   'lng' => 113.5439],
-            'Brunei'                     => ['region' => 'ASIA',                'lat' => 4.5353,    'lng' => 114.7277],
-            'Maldives'                   => ['region' => 'ASIA',                'lat' => 3.2028,    'lng' => 73.2207],
-            'Bhutan'                     => ['region' => 'ASIA',                'lat' => 27.5142,   'lng' => 90.4336],
-            'Timor-Leste'                => ['region' => 'ASIA',                'lat' => -8.8742,   'lng' => 125.7275],
+            // ── ASIA ──────────────────────────────────────────────────────────────────
+            ['keys' => ['China', 'CN'],                 'region' => 'ASIA',               'lat' => 35.8617,  'lng' => 104.1954],
+            ['keys' => ['Japan', 'JP'],                 'region' => 'ASIA',               'lat' => 36.2048,  'lng' => 138.2529],
+            ['keys' => ['India', 'IN'],                 'region' => 'ASIA',               'lat' => 20.5937,  'lng' => 78.9629],
+            ['keys' => ['South Korea', 'Korea', 'KR'],  'region' => 'ASIA',               'lat' => 35.9078,  'lng' => 127.7669],
+            ['keys' => ['Indonesia', 'ID'],             'region' => 'ASIA',               'lat' => -0.7893,  'lng' => 113.9213],
+            ['keys' => ['Malaysia', 'MY'],              'region' => 'ASIA',               'lat' => 4.2105,   'lng' => 101.9758],
+            ['keys' => ['Philippines', 'PH'],           'region' => 'ASIA',               'lat' => 12.8797,  'lng' => 121.7740],
+            ['keys' => ['Vietnam', 'VN'],               'region' => 'ASIA',               'lat' => 14.0583,  'lng' => 108.2772],
+            ['keys' => ['Thailand', 'TH'],              'region' => 'ASIA',               'lat' => 15.8700,  'lng' => 100.9925],
+            ['keys' => ['Singapore', 'SG'],             'region' => 'ASIA',               'lat' => 1.3521,   'lng' => 103.8198],
+            ['keys' => ['Bangladesh', 'BD'],            'region' => 'ASIA',               'lat' => 23.6850,  'lng' => 90.3563],
+            ['keys' => ['Pakistan', 'PK'],              'region' => 'ASIA',               'lat' => 30.3753,  'lng' => 69.3451],
+            ['keys' => ['Sri Lanka', 'LK'],             'region' => 'ASIA',               'lat' => 7.8731,   'lng' => 80.7718],
+            ['keys' => ['Nepal', 'NP'],                 'region' => 'ASIA',               'lat' => 28.3949,  'lng' => 84.1240],
+            ['keys' => ['Myanmar', 'MM'],               'region' => 'ASIA',               'lat' => 21.9162,  'lng' => 95.9560],
+            ['keys' => ['Cambodia', 'KH'],              'region' => 'ASIA',               'lat' => 12.5657,  'lng' => 104.9910],
+            ['keys' => ['Laos', 'LA'],                  'region' => 'ASIA',               'lat' => 19.8563,  'lng' => 102.4955],
+            ['keys' => ['Mongolia', 'MN'],              'region' => 'ASIA',               'lat' => 46.8625,  'lng' => 103.8467],
+            ['keys' => ['Kazakhstan', 'KZ'],            'region' => 'ASIA',               'lat' => 48.0196,  'lng' => 66.9237],
+            ['keys' => ['Uzbekistan', 'UZ'],            'region' => 'ASIA',               'lat' => 41.3775,  'lng' => 64.5853],
+            ['keys' => ['Azerbaijan', 'AZ'],            'region' => 'ASIA',               'lat' => 40.1431,  'lng' => 47.5769],
+            ['keys' => ['Georgia', 'GE'],               'region' => 'ASIA',               'lat' => 42.3154,  'lng' => 43.3569],
+            ['keys' => ['Armenia', 'AM'],               'region' => 'ASIA',               'lat' => 40.0691,  'lng' => 45.0382],
+            ['keys' => ['Taiwan', 'TW'],                'region' => 'ASIA',               'lat' => 23.6978,  'lng' => 120.9605],
+            ['keys' => ['Hong Kong', 'HK'],             'region' => 'ASIA',               'lat' => 22.3193,  'lng' => 114.1694],
+            ['keys' => ['Macau', 'MO'],                 'region' => 'ASIA',               'lat' => 22.1987,  'lng' => 113.5439],
+            ['keys' => ['Brunei', 'BN'],                'region' => 'ASIA',               'lat' => 4.5353,   'lng' => 114.7277],
+            ['keys' => ['Maldives', 'MV'],              'region' => 'ASIA',               'lat' => 3.2028,   'lng' => 73.2207],
+            ['keys' => ['Bhutan', 'BT'],                'region' => 'ASIA',               'lat' => 27.5142,  'lng' => 90.4336],
+            ['keys' => ['Timor-Leste', 'TL'],           'region' => 'ASIA',               'lat' => -8.8742,  'lng' => 125.7275],
 
-            // MIDDLE EAST / AFRICA
-            'Saudi Arabia'               => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 23.8859,   'lng' => 45.0792],
-            'United Arab Emirates'       => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 23.4241,   'lng' => 53.8478],
-            'UAE'                        => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 23.4241,   'lng' => 53.8478],
-            'Qatar'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 25.3548,   'lng' => 51.1839],
-            'Kuwait'                     => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 29.3117,   'lng' => 47.4818],
-            'Bahrain'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 26.0667,   'lng' => 50.5577],
-            'Oman'                       => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 21.4735,   'lng' => 55.9754],
-            'Jordan'                     => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 30.5852,   'lng' => 36.2384],
-            'Lebanon'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 33.8547,   'lng' => 35.8623],
-            'Iraq'                       => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 33.2232,   'lng' => 43.6793],
-            'Iran'                       => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 32.4279,   'lng' => 53.6880],
-            'Israel'                     => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 31.0461,   'lng' => 34.8516],
-            'Palestine'                  => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 31.9522,   'lng' => 35.2332],
-            'Syria'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 34.8021,   'lng' => 38.9968],
-            'Yemen'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 15.5527,   'lng' => 48.5164],
-            'Egypt'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 26.8206,   'lng' => 30.8025],
-            'Nigeria'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 9.0820,    'lng' => 8.6753],
-            'South Africa'               => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -30.5595,  'lng' => 22.9375],
-            'Kenya'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -0.0236,   'lng' => 37.9062],
-            'Ethiopia'                   => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 9.1450,    'lng' => 40.4897],
-            'Ghana'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 7.9465,    'lng' => -1.0232],
-            'Tanzania'                   => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -6.3690,   'lng' => 34.8888],
-            'Uganda'                     => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 1.3733,    'lng' => 32.2903],
-            'Algeria'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 28.0339,   'lng' => 1.6596],
-            'Morocco'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 31.7917,   'lng' => -7.0926],
-            'Tunisia'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 33.8869,   'lng' => 9.5375],
-            'Libya'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 26.3351,   'lng' => 17.2283],
-            'Sudan'                      => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 12.8628,   'lng' => 30.2176],
-            'Angola'                     => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -11.2027,  'lng' => 17.8739],
-            'Mozambique'                 => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -18.6657,  'lng' => 35.5296],
-            'Zimbabwe'                   => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -19.0154,  'lng' => 29.1549],
-            'Zambia'                     => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -13.1339,  'lng' => 27.8493],
-            'Cameroon'                   => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 3.8480,    'lng' => 11.5021],
-            'Ivory Coast'                => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 7.5400,    'lng' => -5.5471],
-            'Senegal'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 14.4974,   'lng' => -14.4524],
-            'Somalia'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => 5.1521,    'lng' => 46.1996],
-            'Rwanda'                     => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -1.9403,   'lng' => 29.8739],
-            'Mauritius'                  => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -20.3484,  'lng' => 57.5522],
-            'Namibia'                    => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -22.9576,  'lng' => 18.4904],
-            'Botswana'                   => ['region' => 'MIDDLE EAST/AFRICA',  'lat' => -22.3285,  'lng' => 24.6849],
+            // ── MIDDLE EAST / AFRICA ──────────────────────────────────────────────────
+            ['keys' => ['Saudi Arabia', 'SA'],          'region' => 'MIDDLE EAST/AFRICA', 'lat' => 23.8859,  'lng' => 45.0792],
+            ['keys' => ['United Arab Emirates', 'UAE', 'AE'], 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 23.4241, 'lng' => 53.8478],
+            ['keys' => ['Qatar', 'QA'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 25.3548,  'lng' => 51.1839],
+            ['keys' => ['Kuwait', 'KW'],                'region' => 'MIDDLE EAST/AFRICA', 'lat' => 29.3117,  'lng' => 47.4818],
+            ['keys' => ['Bahrain', 'BH'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 26.0667,  'lng' => 50.5577],
+            ['keys' => ['Oman', 'OM'],                  'region' => 'MIDDLE EAST/AFRICA', 'lat' => 21.4735,  'lng' => 55.9754],
+            ['keys' => ['Jordan', 'JO'],                'region' => 'MIDDLE EAST/AFRICA', 'lat' => 30.5852,  'lng' => 36.2384],
+            ['keys' => ['Lebanon', 'LB'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 33.8547,  'lng' => 35.8623],
+            ['keys' => ['Iraq', 'IQ'],                  'region' => 'MIDDLE EAST/AFRICA', 'lat' => 33.2232,  'lng' => 43.6793],
+            ['keys' => ['Iran', 'IR'],                  'region' => 'MIDDLE EAST/AFRICA', 'lat' => 32.4279,  'lng' => 53.6880],
+            ['keys' => ['Israel', 'IL'],                'region' => 'MIDDLE EAST/AFRICA', 'lat' => 31.0461,  'lng' => 34.8516],
+            ['keys' => ['Palestine', 'PS'],             'region' => 'MIDDLE EAST/AFRICA', 'lat' => 31.9522,  'lng' => 35.2332],
+            ['keys' => ['Syria', 'SY'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 34.8021,  'lng' => 38.9968],
+            ['keys' => ['Yemen', 'YE'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 15.5527,  'lng' => 48.5164],
+            ['keys' => ['Egypt', 'EG'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 26.8206,  'lng' => 30.8025],
+            ['keys' => ['Nigeria', 'NG'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 9.0820,   'lng' => 8.6753],
+            ['keys' => ['South Africa', 'ZA'],          'region' => 'MIDDLE EAST/AFRICA', 'lat' => -30.5595, 'lng' => 22.9375],
+            ['keys' => ['Kenya', 'KE'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => -0.0236,  'lng' => 37.9062],
+            ['keys' => ['Ethiopia', 'ET'],              'region' => 'MIDDLE EAST/AFRICA', 'lat' => 9.1450,   'lng' => 40.4897],
+            ['keys' => ['Ghana', 'GH'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 7.9465,   'lng' => -1.0232],
+            ['keys' => ['Tanzania', 'TZ'],              'region' => 'MIDDLE EAST/AFRICA', 'lat' => -6.3690,  'lng' => 34.8888],
+            ['keys' => ['Uganda', 'UG'],                'region' => 'MIDDLE EAST/AFRICA', 'lat' => 1.3733,   'lng' => 32.2903],
+            ['keys' => ['Algeria', 'DZ'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 28.0339,  'lng' => 1.6596],
+            ['keys' => ['Morocco', 'MA'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 31.7917,  'lng' => -7.0926],
+            ['keys' => ['Tunisia', 'TN'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 33.8869,  'lng' => 9.5375],
+            ['keys' => ['Libya', 'LY'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 26.3351,  'lng' => 17.2283],
+            ['keys' => ['Sudan', 'SD'],                 'region' => 'MIDDLE EAST/AFRICA', 'lat' => 12.8628,  'lng' => 30.2176],
+            ['keys' => ['Angola', 'AO'],                'region' => 'MIDDLE EAST/AFRICA', 'lat' => -11.2027, 'lng' => 17.8739],
+            ['keys' => ['Mozambique', 'MZ'],            'region' => 'MIDDLE EAST/AFRICA', 'lat' => -18.6657, 'lng' => 35.5296],
+            ['keys' => ['Zimbabwe', 'ZW'],              'region' => 'MIDDLE EAST/AFRICA', 'lat' => -19.0154, 'lng' => 29.1549],
+            ['keys' => ['Zambia', 'ZM'],                'region' => 'MIDDLE EAST/AFRICA', 'lat' => -13.1339, 'lng' => 27.8493],
+            ['keys' => ['Cameroon', 'CM'],              'region' => 'MIDDLE EAST/AFRICA', 'lat' => 3.8480,   'lng' => 11.5021],
+            ['keys' => ['Ivory Coast', 'CI'],           'region' => 'MIDDLE EAST/AFRICA', 'lat' => 7.5400,   'lng' => -5.5471],
+            ['keys' => ['Senegal', 'SN'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 14.4974,  'lng' => -14.4524],
+            ['keys' => ['Somalia', 'SO'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => 5.1521,   'lng' => 46.1996],
+            ['keys' => ['Rwanda', 'RW'],                'region' => 'MIDDLE EAST/AFRICA', 'lat' => -1.9403,  'lng' => 29.8739],
+            ['keys' => ['Mauritius', 'MU'],             'region' => 'MIDDLE EAST/AFRICA', 'lat' => -20.3484, 'lng' => 57.5522],
+            ['keys' => ['Namibia', 'NA'],               'region' => 'MIDDLE EAST/AFRICA', 'lat' => -22.9576, 'lng' => 18.4904],
+            ['keys' => ['Botswana', 'BW'],              'region' => 'MIDDLE EAST/AFRICA', 'lat' => -22.3285, 'lng' => 24.6849],
         ];
+
+        // Flatten into a single uppercase-keyed map for O(1) lookup
+        $map = [];
+        foreach ($entries as $entry) {
+            $payload = ['region' => $entry['region'], 'lat' => $entry['lat'], 'lng' => $entry['lng']];
+            foreach ($entry['keys'] as $key) {
+                $map[strtoupper($key)] = $payload;
+            }
+        }
+
+        return $map;
     }
 
     private function resolveRegionAndCoords(TrainingCenter $tc): array
     {
         $countryData = $this->getCountryData();
-        $country = $tc->country ?? '';
+        $key = strtoupper(trim($tc->country ?? ''));
 
         $region = 'OTHER';
-        $lat = $tc->latitude;
-        $lng = $tc->longitude;
+        $lat    = $tc->latitude;
+        $lng    = $tc->longitude;
 
-        // Case-insensitive lookup
-        foreach ($countryData as $key => $data) {
-            if (strcasecmp($key, $country) === 0) {
-                $region = $data['region'];
-                if ($lat === null) {
-                    $lat = $data['lat'];
-                }
-                if ($lng === null) {
-                    $lng = $data['lng'];
-                }
-                break;
+        if ($key !== '' && isset($countryData[$key])) {
+            $data   = $countryData[$key];
+            $region = $data['region'];
+            if ($lat === null) {
+                $lat = $data['lat'];
+            }
+            if ($lng === null) {
+                $lng = $data['lng'];
             }
         }
 
