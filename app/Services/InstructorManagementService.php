@@ -372,9 +372,11 @@ class InstructorManagementService
         }
         // else: neither provided — general authorization request with no courses
 
-        // Block if instructor is already approved with this ACC
+        // Block if instructor is already approved with this ACC for THIS training center
+        // (allow other training centers to request their own authorization with the same ACC)
         $approvedAuthorization = InstructorAccAuthorization::where('instructor_id', $instructor->id)
             ->where('acc_id', $request->acc_id)
+            ->where('training_center_id', $trainingCenter->id)
             ->where('status', 'approved')
             ->first();
 
