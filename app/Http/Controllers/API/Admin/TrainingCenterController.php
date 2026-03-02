@@ -445,7 +445,7 @@ class TrainingCenterController extends Controller
             ->get();
 
         $rows = [];
-        $rows[] = ['ID', 'Name', 'Country', 'City', 'Region', 'Latitude', 'Longitude', 'Status', 'Email', 'Phone', 'Training Provider Type', 'Logo URL'];
+        $rows[] = ['ID', 'Name', 'Country', 'City', 'Region', 'Status', 'Email', 'Phone', 'Training Provider Type', 'Logo URL'];
 
         foreach ($trainingCenters as $tc) {
             $resolved = $this->resolveRegionAndCoords($tc);
@@ -458,8 +458,6 @@ class TrainingCenterController extends Controller
                 $tc->country ?? '',
                 $tc->city ?? '',
                 $resolved['region'],
-                $resolved['lat'] ?? '',
-                $resolved['lng'] ?? '',
                 $tc->status ?? '',
                 $tc->email ?? '',
                 $tc->phone ?? '',
