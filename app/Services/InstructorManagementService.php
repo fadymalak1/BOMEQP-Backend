@@ -868,9 +868,14 @@ class InstructorManagementService
                 return;
             }
 
+            // Already sent if instructor has any certificate for this ACC (course-based or general)
             $alreadySent = \App\Models\Certificate::where('instructor_id', $instructor->id)
-                ->whereHas('course', function ($q) use ($acc) {
-                    $q->where('acc_id', $acc->id);
+                ->where(function ($q) use ($acc) {
+                    $q->whereHas('course', fn($c) => $c->where('acc_id', $acc->id))
+                        ->orWhere(function ($q2) use ($acc) {
+                            $q2->whereNull('course_id')
+                                ->whereHas('template', fn($t) => $t->where('acc_id', $acc->id));
+                        });
                 })
                 ->exists();
 
@@ -896,25 +901,25 @@ class InstructorManagementService
                 return;
             }
 
-            // ── Collect all newly-authorized courses (no certificate yet) ──
+            // ── Collect newly-authorized courses; if none, we still send a general ACC certificate ──
             $authorizedCourses = \App\Models\InstructorCourseAuthorization::where('instructor_id', $authorization->instructor_id)
                 ->where('acc_id', $authorization->acc_id)
                 ->where('status', 'active')
-                // ->with('course')
+                ->with('course')
                 ->get()
                 ->filter(fn($ca) => $ca->course !== null);
 
-            if ($authorizedCourses->isEmpty()) {
-                Log::info('No authorized courses found for instructor certificate generation', [
-                    'instructor_id' => $authorization->instructor_id,
-                    'acc_id'        => $authorization->acc_id,
-                ]);
-                return;
-            }
+            $coursePlaceholder = (object) [
+                'name'    => $acc->name . ' – Authorization',
+                'name_ar' => '',
+                'code'    => 'ACC-AUTH',
+            ];
+            $firstCourseAuth = $authorizedCourses->isEmpty()
+                ? (object) ['course' => $coursePlaceholder]
+                : $authorizedCourses->first();
 
-            // ── Generate ONE certificate PDF (using the first course) ──
+            // ── Generate ONE certificate PDF (using first course or placeholder) ──
             $certificateService = new \App\Services\CertificateGenerationService();
-            $firstCourseAuth    = $authorizedCourses->first();
 
             $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
             while (\App\Models\Certificate::where('verification_code', $verificationCode)->exists()) {
@@ -924,7 +929,7 @@ class InstructorManagementService
             $result = $certificateService->generateInstructorCertificate(
                 $certificateTemplate,
                 $instructor,
-                $firstCourseAuth->course,
+                $firstCourseAuth->course ?? $coursePlaceholder,
                 $acc,
                 $verificationCode
             );
@@ -948,9 +953,11 @@ class InstructorManagementService
                 return;
             }
 
-            // ── Send ONE email with all course names listed ──
+            // ── Send ONE email with all course names listed (or ACC authorization label if no courses) ──
             $instructorFullName = trim($instructor->first_name . ' ' . $instructor->last_name);
-            $courseNames        = $authorizedCourses->map(fn($ca) => $ca->course->name)->values()->all();
+            $courseNames = $authorizedCourses->isEmpty()
+                ? [$coursePlaceholder->name]
+                : $authorizedCourses->map(fn($ca) => $ca->course->name)->values()->all();
 
             try {
                 $mail = new \App\Mail\InstructorCertificateMail(
@@ -978,8 +985,8 @@ class InstructorManagementService
                 return;
             }
 
-            // ── Persist a certificate record for every authorized course ──
-            foreach ($authorizedCourses as $courseAuth) {
+            // ── Persist certificate record(s): one per authorized course, or one with course_id null ──
+            if ($authorizedCourses->isEmpty()) {
                 try {
                     do {
                         $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
@@ -987,7 +994,7 @@ class InstructorManagementService
 
                     \App\Models\Certificate::create([
                         'certificate_number'  => $certificateNumber,
-                        'course_id'           => $courseAuth->course->id,
+                        'course_id'           => null,
                         'training_center_id'  => $instructor->training_center_id,
                         'instructor_id'       => $instructor->id,
                         'type'                => 'instructor',
@@ -997,17 +1004,47 @@ class InstructorManagementService
                         'expiry_date'         => null,
                         'template_id'         => $certificateTemplate->id,
                         'certificate_pdf_url' => $pdfUrl,
-                        'verification_code'   => $courseAuth->course->id === $firstCourseAuth->course->id
-                                                    ? $verificationCode
-                                                    : ('VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10))),
+                        'verification_code'   => $verificationCode,
                         'status'              => 'valid',
                     ]);
                 } catch (\Exception $e) {
-                    Log::error('Failed to save certificate record for course', [
+                    Log::error('Failed to save instructor certificate record (no courses)', [
                         'instructor_id' => $instructor->id,
-                        'course_id'     => $courseAuth->course->id,
+                        'acc_id'        => $acc->id,
                         'error'         => $e->getMessage(),
                     ]);
+                }
+            } else {
+                foreach ($authorizedCourses as $courseAuth) {
+                    try {
+                        do {
+                            $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
+                        } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
+
+                        \App\Models\Certificate::create([
+                            'certificate_number'  => $certificateNumber,
+                            'course_id'           => $courseAuth->course->id,
+                            'training_center_id'  => $instructor->training_center_id,
+                            'instructor_id'       => $instructor->id,
+                            'type'                => 'instructor',
+                            'trainee_name'        => $instructorFullName,
+                            'trainee_id_number'   => $instructor->id_number,
+                            'issue_date'          => now()->toDateString(),
+                            'expiry_date'         => null,
+                            'template_id'         => $certificateTemplate->id,
+                            'certificate_pdf_url' => $pdfUrl,
+                            'verification_code'   => $courseAuth->course->id === $firstCourseAuth->course->id
+                                                        ? $verificationCode
+                                                        : ('VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10))),
+                            'status'              => 'valid',
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to save certificate record for course', [
+                            'instructor_id' => $instructor->id,
+                            'course_id'     => $courseAuth->course->id,
+                            'error'         => $e->getMessage(),
+                        ]);
+                    }
                 }
             }
 
