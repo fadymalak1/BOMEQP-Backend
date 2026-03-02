@@ -574,41 +574,31 @@ class CertificateGenerationService
      * Replace {{variables}} in template HTML.
      *
      * Image values should already be data-URIs at this point (pre-processed in
-     * generatePdfFromBlade). This method just does plain htmlspecialchars
-     * substitution for all keys and removes elements whose value is empty/null.
+     * generatePdfFromBlade). Empty/null values are replaced with empty string
+     * so layout is preserved (e.g. group-admin certificate). We do NOT remove
+     * entire divs for empty values, as that can remove the certificate wrapper
+     * and produce a blank PDF.
      */
     private function replaceTemplateVariables(string $html, array $data): string
     {
-        // Remove elements (div / img) containing variables with null/empty values
         foreach ($data as $key => $value) {
-            if ($value === null || $value === '') {
-                $varRegex = '(?:\{\{\s*' . preg_quote($key, '/') . '\s*\}\})';
-                $html = preg_replace('/<div[^>]*>[\s\S]*?' . $varRegex . '[\s\S]*?<\/div>/i', '', $html) ?? $html;
-                $html = preg_replace('/<img[^>]*' . $varRegex . '[^>]*\/?>/i', '', $html) ?? $html;
-            }
-        }
-    
-        // Replace remaining variables
-        foreach ($data as $key => $value) {
-            if ($value === null || $value === '') {
-                continue;
-            }
-    
             if (is_string($value) && str_starts_with($value, 'data:')) {
                 $safeValue = $value;
             } else {
-                $safeValue = htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+                $safeValue = $value !== null && $value !== ''
+                    ? htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8')
+                    : '';
             }
-    
+
             $html = preg_replace('/\{\{\s*' . preg_quote($key, '/') . '\s*\}\}/i', $safeValue, $html) ?? $html;
-    
+
             if ($key === 'verification_code') {
                 foreach (['verificationCode', 'VerificationCode', 'VERIFICATION_CODE', 'verification-code'] as $alt) {
                     $html = preg_replace('/\{\{\s*' . preg_quote($alt, '/') . '\s*\}\}/i', $safeValue, $html) ?? $html;
                 }
             }
         }
-    
+
         $html = preg_replace('/\n\s*\n/', "\n", $html) ?? $html;
         return $html;
     }
