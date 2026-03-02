@@ -324,6 +324,12 @@ class TrainingCenterController extends Controller
                                         new OA\Property(property: "MIDDLE EAST/AFRICA", type: "integer", example: 7),
                                     ]
                                 ),
+                                new OA\Property(
+                                    property: "export_download_urls",
+                                    type: "object",
+                                    description: "Per-region download URL for Excel (CSV) export. One file per region.",
+                                    additionalProperties: new OA\AdditionalProperties(type: "string", example: "https://app.example.com/api/admin/training-centers/map/export?region=EUROPE&status=active")
+                                ),
                             ]
                         ),
                     ]
@@ -388,12 +394,92 @@ class TrainingCenterController extends Controller
             unset($regions['OTHER']);
         }
 
+        $status = $request->get('status', 'active');
+        $exportBase = url('/api/admin/training-centers/map/export');
+        $exportDownloadUrls = [];
+        foreach (array_keys($regions) as $r) {
+            $exportDownloadUrls[$r] = $exportBase . '?region=' . rawurlencode($r) . '&status=' . rawurlencode($status);
+        }
+
         return response()->json([
             'training_centers' => $mapped,
             'summary' => [
-                'total'     => $mapped->count(),
-                'by_region' => $regions,
+                'total'                  => $mapped->count(),
+                'by_region'              => $regions,
+                'export_download_urls'   => $exportDownloadUrls,
             ],
+        ]);
+    }
+
+    #[OA\Get(
+        path: "/admin/training-centers/map/export",
+        summary: "Download training centers Excel (CSV) by region",
+        description: "Returns a CSV file (Excel-compatible) of training centers for the given region. Use one request per region to get one Excel file per region. Requires region query parameter.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "region", in: "query", required: true, schema: new OA\Schema(type: "string", enum: ["USA/CANADA", "LATIN AMERICA", "EUROPE", "ASIA", "MIDDLE EAST/AFRICA", "OTHER"]), description: "Region to export"),
+            new OA\Parameter(name: "status", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["pending", "active", "suspended", "inactive"]), description: "Filter by status. Defaults to 'active'.")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "CSV file download"),
+            new OA\Response(response: 400, description: "Missing region parameter"),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
+    public function mapExport(Request $request)
+    {
+        $region = $request->get('region');
+        if ($region === null || $region === '') {
+            return response()->json(['message' => 'The region parameter is required.'], 400);
+        }
+
+        $status = $request->get('status', 'active');
+        $trainingCenters = TrainingCenter::select([
+                'id', 'name', 'country', 'city',
+                'latitude', 'longitude',
+                'status', 'logo_url', 'email', 'phone',
+                'training_provider_type',
+            ])
+            ->where('status', $status)
+            ->get();
+
+        $rows = [];
+        $rows[] = ['ID', 'Name', 'Country', 'City', 'Region', 'Latitude', 'Longitude', 'Status', 'Email', 'Phone', 'Training Provider Type', 'Logo URL'];
+
+        foreach ($trainingCenters as $tc) {
+            $resolved = $this->resolveRegionAndCoords($tc);
+            if ($resolved['region'] !== $region) {
+                continue;
+            }
+            $rows[] = [
+                $tc->id,
+                $tc->name ?? '',
+                $tc->country ?? '',
+                $tc->city ?? '',
+                $resolved['region'],
+                $resolved['lat'] ?? '',
+                $resolved['lng'] ?? '',
+                $tc->status ?? '',
+                $tc->email ?? '',
+                $tc->phone ?? '',
+                $tc->training_provider_type ?? '',
+                $tc->logo_url ?? '',
+            ];
+        }
+
+        $filename = 'training-centers-' . preg_replace('/[^a-z0-9_-]/i', '-', $region) . '.csv';
+        $callback = function () use ($rows) {
+            $out = fopen('php://output', 'w');
+            fprintf($out, "\xEF\xBB\xBF"); // UTF-8 BOM for Excel
+            foreach ($rows as $row) {
+                fputcsv($out, $row);
+            }
+            fclose($out);
+        };
+
+        return response()->streamDownload($callback, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 

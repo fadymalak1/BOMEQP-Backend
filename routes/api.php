@@ -113,6 +113,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/training-centers/applications/{id}/approve', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'approve']);
         Route::put('/training-centers/applications/{id}/reject', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'reject']);
         Route::get('/training-centers/map', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'mapData']);
+        Route::get('/training-centers/map/export', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'mapExport']);
         Route::get('/training-centers', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'index']);
         Route::get('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'show']);
         Route::put('/training-centers/{id}', [App\Http\Controllers\API\Admin\TrainingCenterController::class, 'update']);
