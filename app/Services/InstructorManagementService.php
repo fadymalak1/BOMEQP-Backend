@@ -900,7 +900,7 @@ class InstructorManagementService
             $authorizedCourses = \App\Models\InstructorCourseAuthorization::where('instructor_id', $authorization->instructor_id)
                 ->where('acc_id', $authorization->acc_id)
                 ->where('status', 'active')
-                ->with('course')
+                // ->with('course')
                 ->get()
                 ->filter(fn($ca) => $ca->course !== null);
 
