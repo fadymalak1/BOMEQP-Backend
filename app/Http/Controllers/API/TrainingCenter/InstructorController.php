@@ -70,17 +70,21 @@ class InstructorController extends Controller
         }
 
         // Instructors that belong to this TC (primary) or are linked via pivot
-        $query = Instructor::where('training_center_id', $trainingCenter->id)
-            ->orWhereHas('linkedTrainingCenters', function ($q) use ($trainingCenter) {
-                $q->where('training_centers.id', $trainingCenter->id);
+        $query = Instructor::query()
+            ->where(function ($q) use ($trainingCenter) {
+                $q->where('training_center_id', $trainingCenter->id)
+                    ->orWhereHas('linkedTrainingCenters', function ($q2) use ($trainingCenter) {
+                        $q2->where('training_centers.id', $trainingCenter->id);
+                    });
             })
-            ->with(['courses' => function($query) {
-                $query->with(['subCategory', 'acc']);
+            ->with(['courses' => function ($coursesQuery) {
+                $coursesQuery->with(['subCategory', 'acc']);
             }]);
 
-        // Filter by status
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
+        // Filter by status (from query string so it works with GET ?status=suspended)
+        $statusFilter = $request->query('status');
+        if ($statusFilter !== null && $statusFilter !== '') {
+            $query->where('instructors.status', $statusFilter);
         }
 
         // Filter by country
