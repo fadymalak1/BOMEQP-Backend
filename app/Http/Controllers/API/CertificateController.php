@@ -29,14 +29,18 @@ class CertificateController extends Controller
                 description: "Certificate verified successfully",
                 content: new OA\JsonContent(
                     properties: [
+                        new OA\Property(property: "valid", type: "boolean", example: true),
+                        new OA\Property(property: "message", type: "string", example: "Certificate is valid"),
                         new OA\Property(property: "certificate", type: "object", properties: [
                             new OA\Property(property: "certificate_number", type: "string", example: "CERT-2024-001"),
                             new OA\Property(property: "trainee_name", type: "string", example: "John Doe"),
-                            new OA\Property(property: "course", type: "string", example: "Fire Safety Training"),
+                            new OA\Property(property: "course", type: "object"),
                             new OA\Property(property: "issue_date", type: "string", format: "date", example: "2024-01-15"),
                             new OA\Property(property: "expiry_date", type: "string", format: "date", example: "2026-01-15"),
                             new OA\Property(property: "status", type: "string", example: "valid"),
-                            new OA\Property(property: "training_center", type: "string", example: "ABC Training Center")
+                            new OA\Property(property: "training_center", type: "object"),
+                            new OA\Property(property: "certificate_pdf_url", type: "string", nullable: true, description: "URL to the certificate PDF"),
+                            new OA\Property(property: "card_pdf_url", type: "string", nullable: true, description: "URL to the card PDF when the certificate has a card; null otherwise")
                         ])
                     ]
                 )
@@ -124,6 +128,7 @@ class CertificateController extends Controller
                     'name' => $certificate->instructor->name,
                 ] : null,
                 'certificate_pdf_url' => $certificate->certificate_pdf_url,
+                'card_pdf_url' => $certificate->card_pdf_url,
             ],
         ]);
     }

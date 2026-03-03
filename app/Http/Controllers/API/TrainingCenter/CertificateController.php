@@ -43,7 +43,26 @@ class CertificateController extends Controller
                 description: "Certificates retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "certificates", type: "array", items: new OA\Items(type: "object")),
+                        new OA\Property(
+                            property: "certificates",
+                            type: "array",
+                            items: new OA\Items(
+                                type: "object",
+                                properties: [
+                                    new OA\Property(property: "id", type: "integer"),
+                                    new OA\Property(property: "certificate_number", type: "string"),
+                                    new OA\Property(property: "certificate_pdf_url", type: "string", nullable: true, description: "URL to the certificate PDF"),
+                                    new OA\Property(property: "card_pdf_url", type: "string", nullable: true, description: "URL to the card PDF when generated; null if no card"),
+                                    new OA\Property(property: "name", type: "string", description: "Trainee/student name (alias for trainee_name)"),
+                                    new OA\Property(property: "type", type: "string", enum: ["instructor", "trainee"]),
+                                    new OA\Property(property: "issue_date", type: "string", format: "date"),
+                                    new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true),
+                                    new OA\Property(property: "status", type: "string"),
+                                    new OA\Property(property: "course_id", type: "integer"),
+                                    new OA\Property(property: "verification_code", type: "string"),
+                                ]
+                            )
+                        ),
                         new OA\Property(property: "pagination", type: "object")
                     ]
                 )
@@ -136,7 +155,24 @@ class CertificateController extends Controller
                 description: "Certificate retrieved successfully",
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: "certificate", type: "object")
+                        new OA\Property(
+                            property: "certificate",
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "id", type: "integer"),
+                                new OA\Property(property: "certificate_number", type: "string"),
+                                new OA\Property(property: "certificate_pdf_url", type: "string", nullable: true),
+                                new OA\Property(property: "card_pdf_url", type: "string", nullable: true, description: "URL to the card PDF when the template had a card; null otherwise"),
+                                new OA\Property(property: "trainee_name", type: "string"),
+                                new OA\Property(property: "issue_date", type: "string", format: "date"),
+                                new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true),
+                                new OA\Property(property: "status", type: "string"),
+                                new OA\Property(property: "type", type: "string", enum: ["instructor", "trainee"]),
+                                new OA\Property(property: "course", type: "object", nullable: true),
+                                new OA\Property(property: "template", type: "object", nullable: true),
+                                new OA\Property(property: "verification_code", type: "string"),
+                            ]
+                        )
                     ]
                 )
             ),
@@ -455,11 +491,38 @@ class CertificateController extends Controller
             )
         ),
         responses: [
-            new OA\Response(response: 201, description: "Certificate issued successfully"),
+            new OA\Response(
+                response: 201,
+                description: "Certificate issued successfully. When the template includes a card, two separate PDFs are generated: the main certificate (certificate_pdf_url) and the card (card_pdf_url).",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Certificate generated successfully"),
+                        new OA\Property(
+                            property: "certificate",
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "id", type: "integer", example: 1),
+                                new OA\Property(property: "certificate_number", type: "string", example: "CERT-2024-ABC123XY"),
+                                new OA\Property(property: "verification_code", type: "string", example: "VERIFY-XXX"),
+                                new OA\Property(property: "certificate_pdf_url", type: "string", nullable: true, description: "URL to the certificate PDF (main document only)"),
+                                new OA\Property(property: "card_pdf_url", type: "string", nullable: true, description: "URL to the card PDF when the template has a card; null otherwise. Card is a separate PDF with its own dimensions."),
+                                new OA\Property(property: "trainee_name", type: "string"),
+                                new OA\Property(property: "issue_date", type: "string", format: "date"),
+                                new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true),
+                                new OA\Property(property: "status", type: "string", example: "valid"),
+                                new OA\Property(property: "course_id", type: "integer"),
+                                new OA\Property(property: "template_id", type: "integer"),
+                            ]
+                        )
+                    ]
+                )
+            ),
             new OA\Response(response: 401, description: "Unauthenticated"),
             new OA\Response(response: 403, description: "ACC not authorized or course not available"),
             new OA\Response(response: 404, description: "ACC, Course, Template, or Training Class not found"),
-            new OA\Response(response: 422, description: "Validation error or training class is not completed")
+            new OA\Response(response: 409, description: "A certificate already exists for this trainee for this course"),
+            new OA\Response(response: 422, description: "Validation error or training class is not completed"),
+            new OA\Response(response: 500, description: "Certificate generation failed")
         ]
     )]
     public function store(Request $request)

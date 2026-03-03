@@ -146,12 +146,13 @@ class CertificateController extends Controller
         responses: [
             new OA\Response(
                 response: 200,
-                description: "Certificate generated successfully",
+                description: "Certificate generated successfully. When the template includes a card, two PDFs are produced: pdf_url (certificate) and card_pdf_url (card).",
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(property: "certificate_id", type: "string", example: "CERT-001"),
-                        new OA\Property(property: "pdf_url", type: "string", format: "uri"),
-                        new OA\Property(property: "preview_url", type: "string", format: "uri"),
+                        new OA\Property(property: "pdf_url", type: "string", format: "uri", description: "URL to the certificate PDF"),
+                        new OA\Property(property: "preview_url", type: "string", format: "uri", description: "Same as pdf_url (certificate)"),
+                        new OA\Property(property: "card_pdf_url", type: "string", format: "uri", nullable: true, description: "URL to the card PDF when template has a card; omitted otherwise"),
                     ]
                 )
             ),
@@ -185,11 +186,15 @@ class CertificateController extends Controller
             ], 422);
         }
 
-        return response()->json([
+        $response = [
             'certificate_id' => 'CERT-' . \Illuminate\Support\Str::random(8),
             'pdf_url' => $result['file_url'] ?? null,
             'preview_url' => $result['file_url'] ?? null,
-        ]);
+        ];
+        if (!empty($result['card_file_url'])) {
+            $response['card_pdf_url'] = $result['card_file_url'];
+        }
+        return response()->json($response);
     }
 }
 
