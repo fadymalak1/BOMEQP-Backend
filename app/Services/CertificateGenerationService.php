@@ -899,6 +899,10 @@ class CertificateGenerationService
                 $data[$templateKey] = $data[$apiKey];
             }
         }
+        // So {{student_name}} works when caller only sends trainee_name
+        if (!isset($data['student_name']) && isset($data['trainee_name'])) {
+            $data['student_name'] = $data['trainee_name'];
+        }
         return $data;
     }
 

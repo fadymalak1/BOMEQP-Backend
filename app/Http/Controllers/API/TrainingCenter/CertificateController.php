@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Certificate;
 use App\Models\CertificateCode;
 use App\Models\CertificateTemplate;
+use App\Models\Instructor;
 use App\Models\TrainingClass;
+use Carbon\Carbon;
 use App\Services\CertificateGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -697,6 +699,9 @@ class CertificateController extends Controller
             // Load ACC and training center for logo fields
             $acc = \App\Models\ACC::find($request->acc_id);
 
+            // Load instructor when instructor_id is provided (for card template variables)
+            $instructor = $request->instructor_id ? Instructor::find($request->instructor_id) : null;
+
             // Build QR code URL pointing to the frontend verification page
             $frontendBase = rtrim(env('FRONTEND_URL', config('app.url')), '/');
             $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?' . http_build_query([
@@ -705,17 +710,37 @@ class CertificateController extends Controller
                 'format' => 'png',
             ]);
 
-            // Auto-generate student_data from course information
+            $issueDateFormatted = $request->issue_date
+                ? Carbon::parse($request->issue_date)->format('F j, Y')
+                : '';
+
+            $instructorPhotoUrl = null;
+            if ($instructor && ($instructor->photo_url ?? null)) {
+                $instructorPhotoUrl = str_starts_with($instructor->photo_url, 'http')
+                    ? $instructor->photo_url
+                    : url($instructor->photo_url);
+            }
+
+            // Auto-generate student_data from course information (includes all card_template_html variables)
             $certificateData = [
-                'student_name'      => $request->trainee_name,
-                'trainee_name'      => $request->trainee_name,
-                'course_name'       => $course->name,
-                'date'              => $request->issue_date,
-                'cert_id'           => $certificateNumber,
+                'student_name'       => $request->trainee_name,
+                'trainee_name'       => $request->trainee_name,
+                'course_name'        => $course->name,
+                'course_code'        => $course->code ?? '',
+                'date'               => $request->issue_date,
+                'cert_id'            => $certificateNumber,
                 'certificate_number' => $certificateNumber,
-                'issue_date'        => $request->issue_date,
-                'expiry_date'       => $request->expiry_date ?? null,
-                'verification_code' => $verificationCode,
+                'serial_number'      => $certificateNumber,
+                'issue_date'         => $request->issue_date,
+                'issue_date_formatted' => $issueDateFormatted,
+                'expiry_date'        => $request->expiry_date ?? null,
+                'verification_code'  => $verificationCode,
+                'training_center_name' => $trainingCenter->name ?? '',
+                'acc_name'           => $acc?->name ?? '',
+                'instructor_name'    => $instructor ? trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')) : '',
+                'instructor_first_name' => $instructor?->first_name ?? '',
+                'instructor_last_name'  => $instructor?->last_name ?? '',
+                'instructor_photo'   => $instructorPhotoUrl,
                 // Image variables – resolved to full URLs so the service can embed them
                 'training_center_logo' => $trainingCenter->logo_url
                     ? (str_starts_with($trainingCenter->logo_url, 'http') ? $trainingCenter->logo_url : url($trainingCenter->logo_url))
