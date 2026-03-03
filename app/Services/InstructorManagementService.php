@@ -944,6 +944,7 @@ class InstructorManagementService
 
             $pdfPath = Storage::disk('public')->path($result['file_path']);
             $pdfUrl  = $result['file_url'] ?? Storage::disk('public')->url($result['file_path']);
+            $cardPdfUrl = $result['card_file_url'] ?? null;
 
             if (!file_exists($pdfPath)) {
                 Log::warning('Certificate PDF file does not exist after generation', [
@@ -992,7 +993,7 @@ class InstructorManagementService
                         $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
                     } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
 
-                    \App\Models\Certificate::create([
+                    \App\Models\Certificate::create(array_filter([
                         'certificate_number'  => $certificateNumber,
                         'course_id'           => null,
                         'training_center_id'  => $instructor->training_center_id,
@@ -1004,9 +1005,10 @@ class InstructorManagementService
                         'expiry_date'         => null,
                         'template_id'         => $certificateTemplate->id,
                         'certificate_pdf_url' => $pdfUrl,
+                        'card_pdf_url'        => $cardPdfUrl,
                         'verification_code'   => $verificationCode,
                         'status'              => 'valid',
-                    ]);
+                    ]));
                 } catch (\Exception $e) {
                     Log::error('Failed to save instructor certificate record (no courses)', [
                         'instructor_id' => $instructor->id,
@@ -1021,7 +1023,7 @@ class InstructorManagementService
                             $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
                         } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
 
-                        \App\Models\Certificate::create([
+                        \App\Models\Certificate::create(array_filter([
                             'certificate_number'  => $certificateNumber,
                             'course_id'           => $courseAuth->course->id,
                             'training_center_id'  => $instructor->training_center_id,
@@ -1033,11 +1035,12 @@ class InstructorManagementService
                             'expiry_date'         => null,
                             'template_id'         => $certificateTemplate->id,
                             'certificate_pdf_url' => $pdfUrl,
+                            'card_pdf_url'        => $cardPdfUrl,
                             'verification_code'   => $courseAuth->course->id === $firstCourseAuth->course->id
                                                         ? $verificationCode
                                                         : ('VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10))),
                             'status'              => 'valid',
-                        ]);
+                        ]));
                     } catch (\Exception $e) {
                         Log::error('Failed to save certificate record for course', [
                             'instructor_id' => $instructor->id,
@@ -1168,6 +1171,7 @@ class InstructorManagementService
 
             $pdfPath = Storage::disk('public')->path($result['file_path']);
             $pdfUrl  = $result['file_url'] ?? Storage::disk('public')->url($result['file_path']);
+            $cardPdfUrl = $result['card_file_url'] ?? null;
 
             if (!file_exists($pdfPath)) {
                 Log::warning('checkAndSendGroupAdminCertificate: PDF file missing after generation', [
@@ -1202,7 +1206,7 @@ class InstructorManagementService
                 $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
             } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
 
-            \App\Models\Certificate::create([
+            \App\Models\Certificate::create(array_filter([
                 'certificate_number'  => $certificateNumber,
                 'course_id'           => null,
                 'training_center_id'  => $instructor->training_center_id,
@@ -1214,9 +1218,10 @@ class InstructorManagementService
                 'expiry_date'         => null,
                 'template_id'         => $template->id,
                 'certificate_pdf_url' => $pdfUrl,
+                'card_pdf_url'        => $cardPdfUrl,
                 'verification_code'   => $verificationCode,
                 'status'              => 'valid',
-            ]);
+            ]));
 
             // Notify the instructor in-app about their achievement certificate
             $instructorUser = User::where('email', $instructor->email)->first();

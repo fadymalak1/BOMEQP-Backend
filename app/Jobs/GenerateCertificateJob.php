@@ -55,11 +55,15 @@ class GenerateCertificateJob implements ShouldQueue
                 return;
             }
 
-            // Update certificate with PDF URL
-            $this->certificate->update([
+            // Update certificate with PDF URL(s): certificate only, and card PDF when generated separately
+            $updateData = [
                 'certificate_pdf_url' => $generationResult['file_url'],
                 'status' => 'valid',
-            ]);
+            ];
+            if (!empty($generationResult['card_file_url'])) {
+                $updateData['card_pdf_url'] = $generationResult['card_file_url'];
+            }
+            $this->certificate->update($updateData);
 
             Log::info('Certificate PDF generated successfully', [
                 'certificate_id' => $this->certificate->id,

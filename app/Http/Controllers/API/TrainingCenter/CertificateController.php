@@ -802,11 +802,15 @@ class CertificateController extends Controller
                 ], 500);
             }
 
-            // Update certificate with PDF URL
-            $certificate->update([
+            // Update certificate with PDF URL(s): certificate only, and card PDF when generated separately
+            $updateData = [
                 'certificate_pdf_url' => $generationResult['file_url'],
                 'status' => 'valid',
-            ]);
+            ];
+            if (!empty($generationResult['card_file_url'])) {
+                $updateData['card_pdf_url'] = $generationResult['card_file_url'];
+            }
+            $certificate->update($updateData);
 
             // Reload certificate from database to ensure all fields including verification_code are included
             $certificate = $certificate->fresh(['course', 'instructor', 'template']);

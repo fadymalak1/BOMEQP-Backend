@@ -24,6 +24,7 @@ class Certificate extends Model
         'expiry_date',
         'template_id',
         'certificate_pdf_url',
+        'card_pdf_url',
         'verification_code',
         'status',
         'code_used_id',
