@@ -171,17 +171,23 @@ class CertificateGenerationService
             // STEP 5 – Append card page when include_card is enabled.
             // The card is injected as a <div> inside the SAME HTML document so
             // DomPDF produces exactly one extra page (page 2), not two.
+            // Card page uses its own size (parsed from card_template_html or 856×540px default).
             // ------------------------------------------------------------------
             if ($template->include_card) {
-                $cardDiv = $this->buildCardDiv($template, $data, $widthPt, $heightPt);
+                $cardDims = $this->getCardDimensionsInPt($template);
+                $cardWidthPt  = $cardDims['width_pt'];
+                $cardHeightPt = $cardDims['height_pt'];
+                $cardDiv = $this->buildCardDiv($template, $data, $cardWidthPt, $cardHeightPt);
                 if ($cardDiv !== null) {
-                    // Inject card CSS once into the existing <head>
-                    $cardCss = sprintf(
-                        '.card-page{page-break-before:always;width:%spt;height:%spt;position:relative;overflow:hidden;margin:0;padding:0;}',
-                        round($widthPt, 2),
-                        round($heightPt, 2)
+                    // Named @page so the second page uses the card size; first page keeps default @page size
+                    $cardPageCss = sprintf(
+                        '@page card { size: %spt %spt; margin: 0; } .card-page{page: card; page-break-before:always; width:%spt; height:%spt; position:relative; overflow:hidden; margin:0; padding:0;}',
+                        round($cardWidthPt, 2),
+                        round($cardHeightPt, 2),
+                        round($cardWidthPt, 2),
+                        round($cardHeightPt, 2)
                     );
-                    $html = $this->injectCss($html, $cardCss);
+                    $html = $this->injectCss($html, $cardPageCss);
 
                     // Append card <div> before </body> (or at the end)
                     if (stripos($html, '</body>') !== false) {
@@ -236,6 +242,32 @@ class CertificateGenerationService
     // -------------------------------------------------------------------------
     // CARD PAGE BUILDER
     // -------------------------------------------------------------------------
+
+    /**
+     * Get card page dimensions in points from template (card_template_html or defaults).
+     * Parses width/height from the first div in card_template_html (e.g. width: 856px; height: 540px).
+     * Returns null when no card content; otherwise ['width_pt' => float, 'height_pt' => float].
+     */
+    private function getCardDimensionsInPt(CertificateTemplate $template): ?array
+    {
+        $html = $template->card_template_html ?? '';
+        if ($html === '') {
+            $html = ''; // will use defaults
+        }
+        $widthPx  = 856;
+        $heightPx = 540;
+        if (preg_match('/width\s*:\s*(\d+)\s*px/i', $html, $mw)) {
+            $widthPx = (int) $mw[1];
+        }
+        if (preg_match('/height\s*:\s*(\d+)\s*px/i', $html, $mh)) {
+            $heightPx = (int) $mh[1];
+        }
+        // CSS: 96px = 72pt => pt = px * 72/96
+        return [
+            'width_pt'  => round($widthPx * 72 / 96, 2),
+            'height_pt' => round($heightPx * 72 / 96, 2),
+        ];
+    }
 
     /**
      * Build the card page as a single <div> to be injected into the main HTML document.
