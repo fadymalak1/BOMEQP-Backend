@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Barryvdh\DomPDF\Facade\Pdf;
+use setasign\Fpdi\Fpdi;
 
 class CertificateGenerationService
 {
@@ -168,18 +169,43 @@ class CertificateGenerationService
             }
 
             // ------------------------------------------------------------------
-            // STEP 5 – Append card page when include_card is enabled.
-            // The card is injected as a <div> inside the SAME HTML document so
-            // DomPDF produces exactly one extra page (page 2), not two.
-            // Card page uses its own size (parsed from card_template_html or 856×540px default).
+            // STEP 5 – Card page when include_card is enabled.
+            // DomPDF uses one paper size for the whole document, so we generate
+            // certificate and card as separate PDFs and merge them so each
+            // page has the correct dimensions (no white space).
             // ------------------------------------------------------------------
+            $directory = 'certificates/' . $template->id;
+            if (!Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->makeDirectory($directory);
+            }
+            $fileName = Str::random(40) . '.pdf';
+            $filePath = $directory . '/' . $fileName;
+            $fullPath = Storage::disk('public')->path($filePath);
+
             if ($template->include_card) {
                 $cardDims = $this->getCardDimensionsInPt($template);
                 $cardWidthPt  = $cardDims['width_pt'];
                 $cardHeightPt = $cardDims['height_pt'];
                 $cardDiv = $this->buildCardDiv($template, $data, $cardWidthPt, $cardHeightPt);
                 if ($cardDiv !== null) {
-                    // Named @page so the second page uses the card size; first page keeps default @page size
+                    $merged = $this->generatePdfWithSeparateCardPage(
+                        $template,
+                        $html,
+                        $cardDiv,
+                        $widthPt,
+                        $heightPt,
+                        $cardWidthPt,
+                        $cardHeightPt,
+                        $fullPath
+                    );
+                    if ($merged) {
+                        return [
+                            'success'   => true,
+                            'file_path' => $filePath,
+                            'file_url'  => $this->getCertificateApiUrl($filePath),
+                        ];
+                    }
+                    // Fallback: single PDF with card appended (card page will have cert size)
                     $cardPageCss = sprintf(
                         '@page card { size: %spt %spt; margin: 0; } .card-page{page: card; page-break-before:always; width:%spt; height:%spt; position:relative; overflow:hidden; margin:0; padding:0;}',
                         round($cardWidthPt, 2),
@@ -188,8 +214,6 @@ class CertificateGenerationService
                         round($cardHeightPt, 2)
                     );
                     $html = $this->injectCss($html, $cardPageCss);
-
-                    // Append card <div> before </body> (or at the end)
                     if (stripos($html, '</body>') !== false) {
                         $html = str_ireplace('</body>', $cardDiv . '</body>', $html);
                     } else {
@@ -199,7 +223,7 @@ class CertificateGenerationService
             }
 
             // ------------------------------------------------------------------
-            // STEP 6 – Render PDF
+            // STEP 6 – Render PDF (single page or cert+card in one doc)
             // ------------------------------------------------------------------
             $pdf = Pdf::loadHTML($html)
                 ->setPaper([0, 0, $widthPt, $heightPt], 'portrait')
@@ -212,19 +236,10 @@ class CertificateGenerationService
             // ------------------------------------------------------------------
             // STEP 7 – Save
             // ------------------------------------------------------------------
-            $directory = 'certificates/' . $template->id;
-            if (!Storage::disk('public')->exists($directory)) {
-                Storage::disk('public')->makeDirectory($directory);
-            }
-
-            $fileName = Str::random(40) . '.pdf';
-            $filePath = $directory . '/' . $fileName;
-            $fullPath = Storage::disk('public')->path($filePath);
-
             $pdf->save($fullPath);
 
             return [
-                'success'  => true,
+                'success'   => true,
                 'file_path' => $filePath,
                 'file_url'  => $this->getCertificateApiUrl($filePath),
             ];
@@ -396,6 +411,87 @@ class CertificateGenerationService
             return preg_replace('/<head>/i', "<head>\n<style>{$css}</style>", $html, 1);
         }
         return "<head><style>{$css}</style></head>" . $html;
+    }
+
+    /**
+     * Generate final PDF by rendering certificate and card as separate PDFs
+     * (each with its own page size) then merging with FPDI so page 1 = cert size,
+     * page 2 = card size (no white space).
+     */
+    private function generatePdfWithSeparateCardPage(
+        CertificateTemplate $template,
+        string $certificateHtml,
+        string $cardDiv,
+        float $certWidthPt,
+        float $certHeightPt,
+        float $cardWidthPt,
+        float $cardHeightPt,
+        string $fullPath
+    ): bool {
+        $tempDir = sys_get_temp_dir() . '/bomeqp_cert_' . Str::random(8);
+        if (!@mkdir($tempDir, 0755, true)) {
+            Log::warning('Certificate merge: could not create temp dir', ['dir' => $tempDir]);
+            return false;
+        }
+        $certPdfPath = $tempDir . '/cert.pdf';
+        $cardPdfPath = $tempDir . '/card.pdf';
+        try {
+            $certPdf = Pdf::loadHTML($certificateHtml)
+                ->setPaper([0, 0, $certWidthPt, $certHeightPt], 'portrait')
+                ->setOption('isHtml5ParserEnabled', true)
+                ->setOption('isRemoteEnabled', true)
+                ->setOption('fontDir', storage_path('fonts'))
+                ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('defaultFont', 'serif');
+            $certPdf->save($certPdfPath);
+
+            $cardPageCss = sprintf(
+                '@page { size: %spt %spt; margin: 0; } body { margin: 0; padding: 0; }',
+                round($cardWidthPt, 2),
+                round($cardHeightPt, 2)
+            );
+            $cardHtml = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' . $cardPageCss . '</style></head><body>' . $cardDiv . '</body></html>';
+            $cardPdf = Pdf::loadHTML($cardHtml)
+                ->setPaper([0, 0, $cardWidthPt, $cardHeightPt], 'portrait')
+                ->setOption('isHtml5ParserEnabled', true)
+                ->setOption('isRemoteEnabled', true)
+                ->setOption('fontDir', storage_path('fonts'))
+                ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('defaultFont', 'serif');
+            $cardPdf->save($cardPdfPath);
+
+            $fpdi = new Fpdi();
+            $pageCount = $fpdi->setSourceFile($certPdfPath);
+            $tplId = $fpdi->importPage(1);
+            $size = $fpdi->getTemplateSize($tplId);
+            $fpdi->AddPage($size['orientation'] ?? 'P', [$size['width'], $size['height']]);
+            $fpdi->useTemplate($tplId);
+
+            $pageCount = $fpdi->setSourceFile($cardPdfPath);
+            $tplId = $fpdi->importPage(1);
+            $size = $fpdi->getTemplateSize($tplId);
+            $fpdi->AddPage($size['orientation'] ?? 'P', [$size['width'], $size['height']]);
+            $fpdi->useTemplate($tplId);
+
+            $fpdi->Output('F', $fullPath);
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('Certificate merge failed', [
+                'template_id' => $template->id,
+                'error'       => $e->getMessage(),
+            ]);
+            return false;
+        } finally {
+            if (file_exists($certPdfPath)) {
+                @unlink($certPdfPath);
+            }
+            if (file_exists($cardPdfPath)) {
+                @unlink($cardPdfPath);
+            }
+            if (is_dir($tempDir)) {
+                @rmdir($tempDir);
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
