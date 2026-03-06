@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers\API\Admin;
 
+use App\Exports\SubCategoryTemplateExport;
 use App\Http\Controllers\Controller;
+use App\Imports\SubCategoryImport;
 use App\Models\SubCategory;
 use Illuminate\Http\Request;
+use Maatwebsite\Excel\Facades\Excel;
 use OpenApi\Attributes as OA;
 
 class SubCategoryController extends Controller
@@ -210,6 +213,104 @@ class SubCategoryController extends Controller
         $subCategory->delete();
 
         return response()->json(['message' => 'Sub category deleted successfully']);
+    }
+
+    #[OA\Get(
+        path: "/admin/sub-categories/template/download",
+        summary: "Download subcategories Excel/CSV template",
+        description: "Download an Excel or CSV template for bulk subcategory import. Excel format includes a dropdown in the category column to select from existing categories. Use format=xlsx for Excel (recommended for dropdown) or format=csv for CSV. Available to group_admin and acc_admin.",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "format", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["xlsx", "csv"], default: "xlsx"), example: "xlsx")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Template file downloaded"),
+            new OA\Response(response: 401, description: "Unauthenticated")
+        ]
+    )]
+    public function downloadTemplate(Request $request)
+    {
+        $format = strtolower($request->get('format', 'xlsx'));
+        if (!in_array($format, ['xlsx', 'csv'], true)) {
+            $format = 'xlsx';
+        }
+
+        $fileName = 'subcategories_template.' . $format;
+
+        return Excel::download(new SubCategoryTemplateExport(), $fileName, $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX);
+    }
+
+    #[OA\Post(
+        path: "/admin/sub-categories/import",
+        summary: "Import subcategories from Excel/CSV file",
+        description: "Upload an Excel or CSV file to bulk create/update subcategories. Columns: category (required, select from dropdown in Excel or enter exact category name in CSV), name (required), name_ar, description, status (active|inactive).",
+        tags: ["Admin"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["file"],
+                    properties: [
+                        new OA\Property(property: "file", type: "string", format: "binary", description: "Excel (.xlsx) or CSV file")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Import completed",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string"),
+                        new OA\Property(property: "created_count", type: "integer"),
+                        new OA\Property(property: "updated_count", type: "integer"),
+                        new OA\Property(property: "errors", type: "array", items: new OA\Items(type: "string"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "No file uploaded"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 422, description: "Invalid file format")
+        ]
+    )]
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt,xlsx',
+        ]);
+
+        $file = $request->file('file');
+        $import = new SubCategoryImport($request->user()->id);
+
+        try {
+            Excel::import($import, $file);
+        } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
+            $failures = $e->failures();
+            $errors = [];
+            foreach ($failures as $failure) {
+                $errors[] = 'Row ' . $failure->row() . ': ' . implode(', ', $failure->errors());
+            }
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => array_merge($errors, $import->getErrors()),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Import failed',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Subcategories imported successfully',
+            'created_count' => $import->getCreatedCount(),
+            'updated_count' => $import->getUpdatedCount(),
+            'errors' => $import->getErrors(),
+        ]);
     }
 }
 

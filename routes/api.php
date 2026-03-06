@@ -71,6 +71,11 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
 
     // Shared routes for both group_admin and acc_admin
     Route::prefix('admin')->middleware(['role:group_admin,acc_admin'])->group(function () {
+        // Categories & Subcategories Excel/CSV template download and import (specific routes first)
+        Route::get('/categories/template/download', [App\Http\Controllers\API\Admin\CategoryController::class, 'downloadTemplate']);
+        Route::post('/categories/import', [App\Http\Controllers\API\Admin\CategoryController::class, 'import']);
+        Route::get('/sub-categories/template/download', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'downloadTemplate']);
+        Route::post('/sub-categories/import', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'import']);
         // Sub-categories (read access for ACC admins)
         Route::get('/sub-categories', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'index']);
         Route::get('/sub-categories/{id}', [App\Http\Controllers\API\Admin\SubCategoryController::class, 'show']);
