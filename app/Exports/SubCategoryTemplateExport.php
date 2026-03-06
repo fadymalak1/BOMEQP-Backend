@@ -53,13 +53,29 @@ class SubCategoryTemplateExport extends DefaultValueBinder implements FromArray,
                 if (empty($this->categoryNames)) {
                     return;
                 }
+                $sheet = $event->sheet->getDelegate();
                 $hasComma = collect($this->categoryNames)->contains(fn ($n) => str_contains((string) $n, ','));
                 $listLength = strlen(implode(',', $this->categoryNames));
                 if ($hasComma || $listLength > 250) {
-                    $this->addDropdownViaHiddenSheet($event->sheet->getDelegate());
+                    $this->addDropdownViaHiddenSheet($sheet);
+                } else {
+                    $this->addDropdownViaFormulaToRange($sheet);
                 }
             },
         ];
+    }
+
+    protected function addDropdownViaFormulaToRange(Worksheet $sheet): void
+    {
+        $list = implode(',', array_map(fn ($n) => str_replace('"', '""', (string) $n), $this->categoryNames));
+        $validation = $sheet->getCell('A2')->getDataValidation();
+        $validation->setType(DataValidation::TYPE_LIST);
+        $validation->setAllowBlank(true);
+        $validation->setShowDropDown(true);
+        $validation->setFormula1('"' . $list . '"');
+        for ($row = 2; $row <= 500; $row++) {
+            $sheet->getCell('A' . $row)->setDataValidation(clone $validation);
+        }
     }
 
     public function bindValue(Cell $cell, $value)
@@ -71,12 +87,7 @@ class SubCategoryTemplateExport extends DefaultValueBinder implements FromArray,
             $validation->setAllowBlank(true);
             $validation->setShowDropDown(true);
             $validation->setFormula1('"' . $list . '"');
-
-            $sheet = $cell->getWorksheet();
-            for ($row = 2; $row <= 500; $row++) {
-                $sheet->getCell('A' . $row)->setDataValidation(clone $validation);
-            }
-
+            // Only set validation on current cell; AfterSheet will apply to rest of column (avoids "cell not bound" when exporting CSV)
             $value = $value[0] ?? '';
         }
 
