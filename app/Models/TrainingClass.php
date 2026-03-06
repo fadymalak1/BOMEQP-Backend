@@ -25,6 +25,7 @@ class TrainingClass extends Model
         'end_date',
         'exam_date',
         'exam_score',
+        'success_grade',
         'schedule_json',
         'enrolled_count',
         'status',
@@ -39,6 +40,7 @@ class TrainingClass extends Model
             'end_date' => 'date',
             'exam_date' => 'date',
             'exam_score' => 'decimal:2',
+            'success_grade' => 'decimal:2',
             'schedule_json' => 'array',
         ];
     }
@@ -76,7 +78,7 @@ class TrainingClass extends Model
     public function trainees(): BelongsToMany
     {
         return $this->belongsToMany(Trainee::class, 'trainee_training_class', 'training_class_id', 'trainee_id')
-            ->withPivot('status', 'enrolled_at', 'completed_at')
+            ->withPivot('status', 'exam_score', 'enrolled_at', 'completed_at')
             ->withTimestamps();
     }
 }

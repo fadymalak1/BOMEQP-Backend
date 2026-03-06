@@ -39,7 +39,7 @@ class Trainee extends Model
     public function trainingClasses(): BelongsToMany
     {
         return $this->belongsToMany(TrainingClass::class, 'trainee_training_class', 'trainee_id', 'training_class_id')
-            ->withPivot('status', 'enrolled_at', 'completed_at')
+            ->withPivot('status', 'exam_score', 'enrolled_at', 'completed_at')
             ->withTimestamps();
     }
 

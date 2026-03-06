@@ -348,11 +348,15 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
             'destroy' => 'training-center.classes.destroy',
         ]);
         Route::put('/classes/{id}/complete', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'complete']);
+        Route::post('/classes/{id}/grades', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'saveGrades']);
+        Route::get('/classes/{id}/grades/export', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'exportGradesTemplate']);
+        Route::post('/classes/{id}/grades/import', [App\Http\Controllers\API\TrainingCenter\ClassController::class, 'importGradesFromFile']);
 
         // Certificates
         Route::get('/certificates/accs', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'getAuthorizedAccs']);
         Route::get('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'index']);
         Route::post('/certificates', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'store']);
+        Route::post('/classes/{id}/certificates/generate', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'generateForClass']);
         Route::get('/certificates/{id}/validity', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'checkValidity']);
         Route::get('/certificates/{id}/download', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'download']);
         Route::get('/certificates/{id}', [App\Http\Controllers\API\TrainingCenter\CertificateController::class, 'show']);

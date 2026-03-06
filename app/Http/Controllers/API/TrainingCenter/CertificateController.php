@@ -689,41 +689,8 @@ class CertificateController extends Controller
             }
         }
 
-        // Find template: first check for course-specific template (via pivot table), then fall back to category template
-        $categoryId = $course->subCategory->category_id ?? null;
-        
-        if (!$categoryId) {
-            return response()->json(['message' => 'Course category not found'], 422);
-        }
-
-        // First, try to find a template that has this course in its courses array (many-to-many)
-        $template = CertificateTemplate::where('acc_id', $request->acc_id)
-            ->where('status', 'active')
-            ->whereHas('courses', function ($query) use ($request) {
-                $query->where('courses.id', $request->course_id);
-            })
-            ->first();
-
-        // If no template found via courses relationship, check legacy course_id field
-        if (!$template) {
-            $template = CertificateTemplate::where('acc_id', $request->acc_id)
-                ->where('course_id', $request->course_id)
-                ->where('status', 'active')
-                ->first();
-        }
-
-        // If no course-specific template found, fall back to category template
-        if (!$template) {
-            $template = CertificateTemplate::where('acc_id', $request->acc_id)
-                ->where('category_id', $categoryId)
-                ->whereNull('course_id') // Ensure it's a category template, not a course template
-                ->whereDoesntHave('courses') // Also ensure it doesn't have courses via pivot
-                ->where('status', 'active')
-                ->whereNotNull('background_image_url')
-                ->whereNotNull('config_json')
-                ->first();
-        }
-
+        // Resolve certificate template for this ACC/course
+        $template = $this->resolveCertificateTemplateForCourse((int) $request->acc_id, $course);
         if (!$template) {
             return response()->json([
                 'message' => 'No certificate template found for this ACC and course. Please ensure the ACC has created a certificate template for this course or its category.',
@@ -896,6 +863,341 @@ class CertificateController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: "/training-center/classes/{id}/certificates/generate",
+        summary: "Generate certificates for successful trainees in a class",
+        description: "Generate certificates in bulk for all trainees in a completed class whose exam_score is greater than or equal to the class success_grade. Uses the same template and code rules as the single-certificate endpoint.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(
+                        property: "trainee_ids",
+                        type: "array",
+                        nullable: true,
+                        description: "Optional list of trainee IDs to restrict generation to. If omitted, all passing trainees in the class will be used.",
+                        items: new OA\Items(type: "integer", example: 1)
+                    ),
+                    new OA\Property(
+                        property: "issue_date",
+                        type: "string",
+                        format: "date",
+                        nullable: true,
+                        description: "Optional issue date to override the default (today)."
+                    ),
+                    new OA\Property(
+                        property: "expiry_date",
+                        type: "string",
+                        format: "date",
+                        nullable: true,
+                        description: "Optional expiry date for generated certificates."
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: "Certificates generated successfully for all eligible trainees.",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Certificates generated successfully"),
+                        new OA\Property(property: "generated_count", type: "integer", example: 10),
+                        new OA\Property(property: "skipped_count", type: "integer", example: 2),
+                        new OA\Property(property: "details", type: "array", items: new OA\Items(type: "object"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 403, description: "ACC not authorized or course not available"),
+            new OA\Response(response: 404, description: "Training class not found"),
+            new OA\Response(response: 422, description: "Class is not completed or exam configuration is missing"),
+            new OA\Response(response: 500, description: "Certificate generation failed")
+        ]
+    )]
+    public function generateForClass(Request $request, $id)
+    {
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $class = TrainingClass::where('training_center_id', $trainingCenter->id)
+            ->with(['course.acc', 'trainees'])
+            ->findOrFail($id);
+
+        if ($class->status !== 'completed') {
+            return response()->json([
+                'message' => 'Certificates can only be generated for completed classes',
+                'class_status' => $class->status,
+            ], 422);
+        }
+
+        if ($class->exam_score === null || $class->success_grade === null) {
+            return response()->json([
+                'message' => 'Exam configuration is missing for this class. Please set exam_score and success_grade first.',
+            ], 422);
+        }
+
+        $course = $class->course;
+        $acc = $course->acc;
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found for this course'], 404);
+        }
+
+        // Verify ACC is authorized
+        $isAuthorized = DB::table('training_center_acc_authorization')
+            ->where('training_center_id', $trainingCenter->id)
+            ->where('acc_id', $acc->id)
+            ->where('status', 'approved')
+            ->exists();
+
+        if (!$isAuthorized) {
+            return response()->json(['message' => 'ACC is not authorized for this training center'], 403);
+        }
+
+        // Resolve template once for this ACC/course
+        $template = $this->resolveCertificateTemplateForCourse($acc->id, $course);
+        if (!$template) {
+            return response()->json([
+                'message' => 'No certificate template found for this ACC and course. Please ensure the ACC has created a certificate template for this course or its category.',
+            ], 404);
+        }
+
+        $request->validate([
+            'trainee_ids' => 'nullable|array',
+            'trainee_ids.*' => 'integer',
+            'issue_date' => 'nullable|date',
+            'expiry_date' => 'nullable|date|after:issue_date',
+        ]);
+
+        $issueDate = $request->issue_date ?? now()->toDateString();
+        $expiryDate = $request->expiry_date;
+
+        // Determine which trainees to include: passing only, optionally filtered by trainee_ids
+        $trainees = $class->trainees;
+        if ($request->has('trainee_ids') && is_array($request->trainee_ids) && !empty($request->trainee_ids)) {
+            $idsFilter = $request->trainee_ids;
+            $trainees = $trainees->whereIn('id', $idsFilter)->values();
+        }
+
+        $passingTrainees = $trainees->filter(function ($trainee) use ($class) {
+            $score = $trainee->pivot->exam_score;
+            if ($score === null) {
+                return false;
+            }
+            return (float) $score >= (float) $class->success_grade;
+        })->values();
+
+        if ($passingTrainees->isEmpty()) {
+            return response()->json([
+                'message' => 'No trainees found with exam_score greater than or equal to success_grade.',
+                'generated_count' => 0,
+                'skipped_count' => $trainees->count(),
+                'details' => [],
+            ], 201);
+        }
+
+        $generated = 0;
+        $skipped = 0;
+        $details = [];
+
+        foreach ($passingTrainees as $trainee) {
+            $fullName = trim(($trainee->first_name ?? '') . ' ' . ($trainee->last_name ?? ''));
+
+            // Skip if certificate already exists for this trainee & course
+            $existingCertificate = Certificate::where('course_id', $course->id)
+                ->where('training_center_id', $trainingCenter->id)
+                ->where('trainee_name', $fullName)
+                ->whereIn('status', ['valid', 'expired'])
+                ->first();
+
+            if ($existingCertificate) {
+                $skipped++;
+                $details[] = [
+                    'trainee_id' => $trainee->id,
+                    'name' => $fullName,
+                    'reason' => 'existing_certificate',
+                    'certificate_id' => $existingCertificate->id,
+                ];
+                continue;
+            }
+
+            // Get an available purchase code for this trainee
+            $purchaseCode = \App\Models\CertificateCode::where('training_center_id', $trainingCenter->id)
+                ->where('acc_id', $acc->id)
+                ->where(function ($q) use ($course) {
+                    $q->where('course_id', $course->id)
+                      ->orWhereNull('course_id');
+                })
+                ->where('status', 'available')
+                ->orderBy('purchased_at', 'asc')
+                ->first();
+
+            if (!$purchaseCode) {
+                $details[] = [
+                    'trainee_id' => $trainee->id,
+                    'name' => $fullName,
+                    'reason' => 'no_available_purchase_code',
+                ];
+                $skipped++;
+                continue;
+            }
+
+            try {
+                DB::beginTransaction();
+
+                $certificateNumber = $this->generateCertificateNumber();
+                $verificationCode = $this->generateVerificationCode();
+
+                $instructor = $class->instructor_id ? Instructor::find($class->instructor_id) : null;
+
+                $frontendBase = rtrim(env('FRONTEND_URL', config('app.url')), '/');
+                $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?' . http_build_query([
+                    'data'   => $frontendBase . '/verify-certificate?code=' . urlencode($verificationCode),
+                    'size'   => '200x200',
+                    'format' => 'png',
+                ]);
+
+                $issueDateFormatted = $issueDate
+                    ? Carbon::parse($issueDate)->format('F j, Y')
+                    : '';
+
+                $instructorPhotoUrl = null;
+                if ($instructor && ($instructor->photo_url ?? null)) {
+                    $instructorPhotoUrl = str_starts_with($instructor->photo_url, 'http')
+                        ? $instructor->photo_url
+                        : url($instructor->photo_url);
+                }
+
+                $certificateData = [
+                    'student_name'       => $fullName,
+                    'trainee_name'       => $fullName,
+                    'course_name'        => $course->name,
+                    'course_code'        => $course->code ?? '',
+                    'date'               => $issueDate,
+                    'cert_id'            => $certificateNumber,
+                    'certificate_number' => $certificateNumber,
+                    'serial_number'      => $certificateNumber,
+                    'issue_date'         => $issueDate,
+                    'issue_date_formatted' => $issueDateFormatted,
+                    'expiry_date'        => $expiryDate ?? null,
+                    'verification_code'  => $verificationCode,
+                    'training_center_name' => $trainingCenter->name ?? '',
+                    'acc_name'           => $acc->name ?? '',
+                    'instructor_name'    => $instructor ? trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')) : '',
+                    'instructor_first_name' => $instructor?->first_name ?? '',
+                    'instructor_last_name'  => $instructor?->last_name ?? '',
+                    'instructor_photo'   => $instructorPhotoUrl,
+                    'training_center_logo' => $trainingCenter->logo_url
+                        ? (str_starts_with($trainingCenter->logo_url, 'http') ? $trainingCenter->logo_url : url($trainingCenter->logo_url))
+                        : null,
+                    'acc_logo' => $acc->logo_url
+                        ? (str_starts_with($acc->logo_url, 'http') ? $acc->logo_url : url($acc->logo_url))
+                        : null,
+                    'qr_code' => $qrCodeUrl,
+                ];
+
+                $certificate = Certificate::create([
+                    'certificate_number' => $certificateNumber,
+                    'course_id' => $course->id,
+                    'training_class_id' => $class->id,
+                    'training_center_id' => $trainingCenter->id,
+                    'instructor_id' => $class->instructor_id,
+                    'type' => Certificate::determineType($class->instructor_id, $fullName),
+                    'trainee_name' => $fullName,
+                    'trainee_id_number' => $trainee->id_number,
+                    'issue_date' => $issueDate,
+                    'expiry_date' => $expiryDate,
+                    'template_id' => $template->id,
+                    'certificate_pdf_url' => '',
+                    'verification_code' => $verificationCode,
+                    'status' => 'valid',
+                    'code_used_id' => $purchaseCode->id,
+                ]);
+
+                $purchaseCode->update([
+                    'status' => 'used',
+                    'used_at' => now(),
+                    'used_for_certificate_id' => $certificate->id,
+                ]);
+
+                $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'pdf');
+
+                if (!$generationResult['success']) {
+                    $certificate->update([
+                        'status' => 'revoked',
+                    ]);
+
+                    $purchaseCode->update([
+                        'status' => 'available',
+                        'used_at' => null,
+                        'used_for_certificate_id' => null,
+                    ]);
+
+                    DB::rollBack();
+
+                    $skipped++;
+                    $details[] = [
+                        'trainee_id' => $trainee->id,
+                        'name' => $fullName,
+                        'reason' => 'generation_failed',
+                        'error' => $generationResult['message'] ?? 'Unknown error',
+                    ];
+                    continue;
+                }
+
+                $updateData = [
+                    'certificate_pdf_url' => $generationResult['file_url'],
+                    'status' => 'valid',
+                ];
+                if (!empty($generationResult['card_file_url'])) {
+                    $updateData['card_pdf_url'] = $generationResult['card_file_url'];
+                }
+                $certificate->update($updateData);
+
+                DB::commit();
+
+                $generated++;
+                $details[] = [
+                    'trainee_id' => $trainee->id,
+                    'name' => $fullName,
+                    'certificate_id' => $certificate->id,
+                ];
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Illuminate\Support\Facades\Log::error('Bulk certificate generation error', [
+                    'class_id' => $class->id,
+                    'trainee_id' => $trainee->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $skipped++;
+                $details[] = [
+                    'trainee_id' => $trainee->id,
+                    'name' => $fullName,
+                    'reason' => 'exception',
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return response()->json([
+            'message' => 'Certificates generation completed',
+            'generated_count' => $generated,
+            'skipped_count' => $skipped,
+            'details' => $details,
+        ], 201);
+    }
+
     /**
      * Generate unique certificate number
      */
@@ -918,5 +1220,48 @@ class CertificateController extends Controller
         } while (Certificate::where('verification_code', $code)->exists());
 
         return $code;
+    }
+
+    /**
+     * Resolve certificate template for a given ACC and course, using the same rules
+     * as the single-certificate endpoint.
+     */
+    private function resolveCertificateTemplateForCourse(int $accId, \App\Models\Course $course): ?CertificateTemplate
+    {
+        $categoryId = $course->subCategory->category_id ?? null;
+
+        if (!$categoryId) {
+            return null;
+        }
+
+        // First, try to find a template that has this course in its courses array (many-to-many)
+        $template = CertificateTemplate::where('acc_id', $accId)
+            ->where('status', 'active')
+            ->whereHas('courses', function ($query) use ($course) {
+                $query->where('courses.id', $course->id);
+            })
+            ->first();
+
+        // If no template found via courses relationship, check legacy course_id field
+        if (!$template) {
+            $template = CertificateTemplate::where('acc_id', $accId)
+                ->where('course_id', $course->id)
+                ->where('status', 'active')
+                ->first();
+        }
+
+        // If no course-specific template found, fall back to category template
+        if (!$template) {
+            $template = CertificateTemplate::where('acc_id', $accId)
+                ->where('category_id', $categoryId)
+                ->whereNull('course_id') // Ensure it's a category template, not a course template
+                ->whereDoesntHave('courses') // Also ensure it doesn't have courses via pivot
+                ->where('status', 'active')
+                ->whereNotNull('background_image_url')
+                ->whereNotNull('config_json')
+                ->first();
+        }
+
+        return $template;
     }
 }

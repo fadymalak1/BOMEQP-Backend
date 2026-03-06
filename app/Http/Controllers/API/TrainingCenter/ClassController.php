@@ -139,6 +139,9 @@ class ClassController extends Controller
                 if (isset($classData['exam_score']) && $classData['exam_score'] !== null) {
                     $classData['exam_score'] = (int) round($classData['exam_score']);
                 }
+                if (isset($classData['success_grade']) && $classData['success_grade'] !== null) {
+                    $classData['success_grade'] = (int) round($classData['success_grade']);
+                }
                 // Keep enrolled_count for backward compatibility
                 $classData['trainees_count'] = $class->trainees->count();
                 return $classData;
@@ -180,6 +183,7 @@ class ClassController extends Controller
                     new OA\Property(property: "end_date", type: "string", format: "date", example: "2024-01-20"),
                     new OA\Property(property: "exam_date", type: "string", format: "date", nullable: true, example: "2024-01-25"),
                     new OA\Property(property: "exam_score", type: "number", format: "float", nullable: true, example: 85.50),
+                    new OA\Property(property: "success_grade", type: "number", format: "float", nullable: true, example: 60.00, description: "Minimum score required to pass the exam"),
                     new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], example: "physical"),
                     new OA\Property(property: "location_details", type: "string", nullable: true, example: "Room 101"),
@@ -213,6 +217,7 @@ class ClassController extends Controller
             'end_date' => 'required|date|after:start_date',
             'exam_date' => 'nullable|date|after_or_equal:start_date',
             'exam_score' => 'nullable|numeric|min:0|max:100',
+            'success_grade' => 'nullable|numeric|min:0|max:100|lte:exam_score',
             'schedule_json' => 'nullable|array',
             'location' => 'required|in:physical,online',
             'location_details' => 'nullable|string',
@@ -331,6 +336,7 @@ class ClassController extends Controller
             'end_date' => $request->end_date,
             'exam_date' => $request->exam_date,
             'exam_score' => $request->exam_score,
+            'success_grade' => $request->success_grade,
             'schedule_json' => $request->schedule_json ?? $request->schedule,
             'enrolled_count' => 0,
             'status' => 'scheduled',
@@ -357,7 +363,7 @@ class ClassController extends Controller
     #[OA\Get(
         path: "/training-center/classes/{id}",
         summary: "Get class details",
-        description: "Get detailed information about a specific training class.",
+        description: "Get detailed information about a specific training class including trainees and their enrollment/exam status.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -418,7 +424,67 @@ class ClassController extends Controller
             }
         }
 
-        return response()->json(['class' => $class->fresh()]);
+        $class->load('trainees');
+
+        // Preload certificates for this class to expose download info per trainee
+        $certificatesByName = \App\Models\Certificate::where('training_class_id', $class->id)
+            ->get()
+            ->groupBy('trainee_name');
+
+        // Map trainees with exam result (success/fail) based on success_grade if available
+        $successGrade = $class->success_grade;
+        $classArray = $class->toArray();
+        $classArray['trainees'] = $class->trainees->map(function ($trainee) use ($successGrade, $certificatesByName) {
+            $fullName = trim(($trainee->first_name ?? '') . ' ' . ($trainee->last_name ?? ''));
+            $examScore = $trainee->pivot->exam_score !== null ? (float) $trainee->pivot->exam_score : null;
+
+            // Derive exam_status field (success/fail/pending) for UI convenience
+            $examStatus = null;
+            if ($examScore !== null && $successGrade !== null) {
+                $examStatus = $examScore >= (float) $successGrade ? 'success' : 'fail';
+            }
+
+            // Try to find a certificate for this trainee in this class (by full name)
+            $certificate = null;
+            if ($fullName !== '' && $certificatesByName->has($fullName)) {
+                $certificate = $certificatesByName->get($fullName)->first();
+            }
+
+            return [
+                'id' => $trainee->id,
+                'first_name' => $trainee->first_name,
+                'last_name' => $trainee->last_name,
+                'full_name' => $fullName,
+                'email' => $trainee->email,
+                'phone' => $trainee->phone,
+                'id_number' => $trainee->id_number,
+                'status' => $trainee->pivot->status ?? null,
+                'exam_score' => $examScore,
+                'exam_status' => $examStatus,
+                'enrolled_at' => $trainee->pivot->enrolled_at ?? null,
+                'completed_at' => $trainee->pivot->completed_at ?? null,
+                'certificate' => $certificate ? [
+                    'id' => $certificate->id,
+                    'certificate_number' => $certificate->certificate_number,
+                    'verification_code' => $certificate->verification_code,
+                    'certificate_pdf_url' => $certificate->certificate_pdf_url,
+                    'card_pdf_url' => $certificate->card_pdf_url,
+                    'status' => $certificate->status,
+                    'issue_date' => $certificate->issue_date,
+                    'expiry_date' => $certificate->expiry_date,
+                ] : null,
+            ];
+        })->values();
+
+        // Normalize numeric fields
+        if (isset($classArray['exam_score']) && $classArray['exam_score'] !== null) {
+            $classArray['exam_score'] = (int) round($classArray['exam_score']);
+        }
+        if (isset($classArray['success_grade']) && $classArray['success_grade'] !== null) {
+            $classArray['success_grade'] = (int) round($classArray['success_grade']);
+        }
+
+        return response()->json(['class' => $classArray]);
     }
 
     #[OA\Put(
@@ -440,6 +506,7 @@ class ClassController extends Controller
                     new OA\Property(property: "end_date", type: "string", format: "date", nullable: true),
                     new OA\Property(property: "exam_date", type: "string", format: "date", nullable: true, example: "2024-01-25"),
                     new OA\Property(property: "exam_score", type: "number", format: "float", nullable: true, example: 85.50),
+                    new OA\Property(property: "success_grade", type: "number", format: "float", nullable: true, example: 60.00, description: "Minimum score required to pass the exam"),
                     new OA\Property(property: "schedule_json", type: "array", nullable: true, items: new OA\Items(type: "object")),
                     new OA\Property(property: "location", type: "string", enum: ["physical", "online"], nullable: true),
                     new OA\Property(property: "location_details", type: "string", nullable: true),
@@ -484,6 +551,7 @@ class ClassController extends Controller
             'end_date' => 'sometimes|date|after:start_date',
             'exam_date' => 'nullable|date|after_or_equal:start_date',
             'exam_score' => 'nullable|numeric|min:0|max:100',
+            'success_grade' => 'nullable|numeric|min:0|max:100|lte:exam_score',
             'schedule_json' => 'nullable|array',
             'location' => 'sometimes|in:physical,online',
             'location_details' => 'nullable|string',
@@ -572,7 +640,7 @@ class ClassController extends Controller
 
         $updateData = $request->only([
             'course_id', 'name', 'instructor_id', 'start_date', 'end_date',
-            'exam_date', 'exam_score', 'location', 'location_details', 'status'
+            'exam_date', 'exam_score', 'success_grade', 'location', 'location_details', 'status'
         ]);
 
         if ($request->has('schedule_json') || $request->has('schedule')) {
@@ -773,6 +841,325 @@ class ClassController extends Controller
             'message' => 'Class marked as completed',
             'class' => $class
         ]);
+    }
+
+    #[OA\Post(
+        path: "/training-center/classes/{id}/grades",
+        summary: "Save trainee exam grades for a class",
+        description: "Save or update exam scores for trainees in a class. Automatically sets each trainee status to 'completed' (success) or 'failed' based on the class success_grade.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ["grades"],
+                properties: [
+                    new OA\Property(
+                        property: "grades",
+                        type: "array",
+                        description: "Array of trainee exam grades",
+                        items: new OA\Items(
+                            type: "object",
+                            properties: [
+                                new OA\Property(property: "trainee_id", type: "integer", example: 1),
+                                new OA\Property(property: "score", type: "number", format: "float", example: 75.5, description: "Exam score for this trainee (same scale as class exam_score)")
+                            ]
+                        )
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Grades saved successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Grades saved successfully"),
+                        new OA\Property(property: "class", type: "object")
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found"),
+            new OA\Response(response: 422, description: "Validation error or success_grade not configured for class")
+        ]
+    )]
+    public function saveGrades(Request $request, $id)
+    {
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $class = TrainingClass::where('training_center_id', $trainingCenter->id)
+            ->with('trainees')
+            ->findOrFail($id);
+
+        // Ensure class has exam_score and success_grade configured
+        if ($class->exam_score === null || $class->success_grade === null) {
+            return response()->json([
+                'message' => 'Exam configuration is missing for this class. Please set exam_score and success_grade first.',
+            ], 422);
+        }
+
+        $request->validate([
+            'grades' => 'required|array|min:1',
+            'grades.*.trainee_id' => 'required|integer',
+            'grades.*.score' => 'required|numeric|min:0|max:100',
+        ]);
+
+        $this->updateTraineeGrades($class, $request->grades);
+
+        $class->refresh();
+
+        return response()->json([
+            'message' => 'Grades saved successfully',
+            'class' => $class->load(['course', 'instructor', 'trainees']),
+        ]);
+    }
+
+    #[OA\Get(
+        path: "/training-center/classes/{id}/grades/export",
+        summary: "Download Excel-compatible grades template for a class",
+        description: "Download a CSV/Excel-compatible file containing all trainees in the class with an exam_score column to fill and re-upload.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "CSV template downloaded successfully"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found")
+        ]
+    )]
+    public function exportGradesTemplate(Request $request, $id)
+    {
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $class = TrainingClass::where('training_center_id', $trainingCenter->id)
+            ->with('trainees')
+            ->findOrFail($id);
+
+        $rows = [];
+        $rows[] = ['trainee_id', 'first_name', 'last_name', 'email', 'id_number', 'exam_score'];
+
+        foreach ($class->trainees as $trainee) {
+            $rows[] = [
+                $trainee->id,
+                $trainee->first_name,
+                $trainee->last_name,
+                $trainee->email,
+                $trainee->id_number,
+                $trainee->pivot->exam_score !== null ? (float) $trainee->pivot->exam_score : '',
+            ];
+        }
+
+        $handle = fopen('php://temp', 'r+');
+        foreach ($rows as $row) {
+            fputcsv($handle, $row);
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+
+        $fileName = 'class_' . $class->id . '_grades.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+        ]);
+    }
+
+    #[OA\Post(
+        path: "/training-center/classes/{id}/grades/import",
+        summary: "Import trainee exam grades from Excel/CSV file",
+        description: "Upload an Excel-compatible CSV file (exported from the class grades template) to bulk update exam scores and success/fail status for all trainees.",
+        tags: ["Training Center"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"), example: 1)
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["file"],
+                    properties: [
+                        new OA\Property(property: "file", type: "string", format: "binary", description: "CSV/Excel file exported from the grades template")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Grades imported successfully",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string", example: "Grades imported successfully"),
+                        new OA\Property(property: "updated_count", type: "integer", example: 10),
+                        new OA\Property(property: "skipped_count", type: "integer", example: 2)
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "Invalid or missing file"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "Class not found"),
+            new OA\Response(response: 422, description: "Exam configuration missing or file format invalid")
+        ]
+    )]
+    public function importGradesFromFile(Request $request, $id)
+    {
+        $user = $request->user();
+        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
+
+        if (!$trainingCenter) {
+            return response()->json(['message' => 'Training center not found'], 404);
+        }
+
+        $class = TrainingClass::where('training_center_id', $trainingCenter->id)
+            ->with('trainees')
+            ->findOrFail($id);
+
+        // Ensure class has exam_score and success_grade configured
+        if ($class->exam_score === null || $class->success_grade === null) {
+            return response()->json([
+                'message' => 'Exam configuration is missing for this class. Please set exam_score and success_grade first.',
+            ], 422);
+        }
+
+        if (!$request->hasFile('file')) {
+            return response()->json(['message' => 'No file uploaded'], 400);
+        }
+
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt',
+        ]);
+
+        $file = $request->file('file');
+        $path = $file->getRealPath();
+
+        if (!$path) {
+            return response()->json(['message' => 'Unable to read uploaded file'], 400);
+        }
+
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            return response()->json(['message' => 'Unable to open uploaded file'], 400);
+        }
+
+        $header = fgetcsv($handle);
+        if ($header === false) {
+            fclose($handle);
+            return response()->json(['message' => 'Empty or invalid CSV file'], 422);
+        }
+
+        // Map header columns to indices
+        $header = array_map('trim', $header);
+        $traineeIdIndex = array_search('trainee_id', $header, true);
+        $scoreIndex = array_search('exam_score', $header, true);
+
+        if ($traineeIdIndex === false || $scoreIndex === false) {
+            fclose($handle);
+            return response()->json([
+                'message' => 'Invalid file format. Header must contain at least trainee_id and exam_score columns.',
+            ], 422);
+        }
+
+        $grades = [];
+        $updated = 0;
+        $skipped = 0;
+
+        while (($row = fgetcsv($handle)) !== false) {
+            if (!isset($row[$traineeIdIndex]) || $row[$traineeIdIndex] === '') {
+                $skipped++;
+                continue;
+            }
+
+            $traineeId = (int) $row[$traineeIdIndex];
+            $scoreRaw = $row[$scoreIndex] ?? '';
+
+            if ($scoreRaw === '') {
+                $skipped++;
+                continue;
+            }
+
+            if (!is_numeric($scoreRaw)) {
+                $skipped++;
+                continue;
+            }
+
+            $score = (float) $scoreRaw;
+
+            if ($score < 0 || $score > 100) {
+                $skipped++;
+                continue;
+            }
+
+            $grades[] = [
+                'trainee_id' => $traineeId,
+                'score' => $score,
+            ];
+            $updated++;
+        }
+
+        fclose($handle);
+
+        if (!empty($grades)) {
+            $this->updateTraineeGrades($class, $grades);
+        }
+
+        return response()->json([
+            'message' => 'Grades imported successfully',
+            'updated_count' => $updated,
+            'skipped_count' => $skipped,
+        ]);
+    }
+
+    /**
+     * Apply an array of grades to a class, updating pivot exam_score and pass/fail status.
+     *
+     * @param TrainingClass $class
+     * @param array<int, array{trainee_id:int, score:float}> $grades
+     */
+    private function updateTraineeGrades(TrainingClass $class, array $grades): void
+    {
+        $class->loadMissing('trainees');
+        $enrolledIds = $class->trainees->pluck('id')->toArray();
+
+        foreach ($grades as $grade) {
+            if (!isset($grade['trainee_id'], $grade['score'])) {
+                continue;
+            }
+
+            $traineeId = (int) $grade['trainee_id'];
+            $score = (float) $grade['score'];
+
+            if (!in_array($traineeId, $enrolledIds, true)) {
+                continue;
+            }
+
+            $status = $score >= (float) $class->success_grade ? 'completed' : 'failed';
+
+            $class->trainees()->updateExistingPivot($traineeId, [
+                'exam_score' => $score,
+                'status' => $status,
+                'completed_at' => $status === 'completed' ? now() : null,
+            ]);
+        }
     }
 }
 
