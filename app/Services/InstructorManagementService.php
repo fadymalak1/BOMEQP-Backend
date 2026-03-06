@@ -381,6 +381,13 @@ class InstructorManagementService
             ->first();
 
         if ($approvedAuthorization) {
+            Log::info('Instructor authorization blocked because already approved', [
+                'instructor_id' => $instructor->id,
+                'acc_id' => $request->acc_id,
+                'training_center_id' => $trainingCenter->id,
+                'authorization_id' => $approvedAuthorization->id,
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'Instructor is already authorized with this ACC.',
