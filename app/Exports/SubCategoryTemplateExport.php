@@ -23,13 +23,13 @@ class SubCategoryTemplateExport implements FromArray, WithHeadings, WithEvents
         $firstCategory = $this->categoryNames[0] ?? '';
 
         return [
-            [$firstCategory, '', '', '', 'active'],
+            [$firstCategory, '', ''],
         ];
     }
 
     public function headings(): array
     {
-        return ['category', 'name', 'name_ar', 'description', 'status'];
+        return ['category', 'name', 'description'];
     }
 
     public function registerEvents(): array

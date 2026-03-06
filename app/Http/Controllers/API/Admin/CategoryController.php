@@ -271,7 +271,7 @@ class CategoryController extends Controller
     #[OA\Post(
         path: "/admin/categories/import",
         summary: "Import categories from Excel/CSV file",
-        description: "Upload an Excel or CSV file to bulk create/update categories. Columns: name (required), name_ar, description, icon_url, status (active|inactive).",
+        description: "Upload an Excel or CSV file to bulk create/update categories. Template columns: name (required), description.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
