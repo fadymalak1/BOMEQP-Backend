@@ -52,9 +52,9 @@ class SubCategoryImport implements ToCollection, WithHeadingRow
                 $data = [
                     'category_id' => $categoryId,
                     'name' => $name,
-                    'name_ar' => null,
+                    'name_ar' => trim((string) ($row['name_ar'] ?? '')),
                     'description' => trim((string) ($row['description'] ?? '')),
-                    'status' => 'active',
+                    'status' => $this->normalizeStatus($row['status'] ?? 'active'),
                     'created_by' => $this->createdBy,
                 ];
 
@@ -77,6 +77,12 @@ class SubCategoryImport implements ToCollection, WithHeadingRow
             return;
         }
         $this->categoryNameToId = Category::pluck('id', 'name')->toArray();
+    }
+
+    protected function normalizeStatus(mixed $value): string
+    {
+        $s = strtolower(trim((string) $value));
+        return in_array($s, ['active', 'inactive'], true) ? $s : 'active';
     }
 
     public function getCreatedCount(): int

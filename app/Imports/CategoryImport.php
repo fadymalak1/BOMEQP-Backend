@@ -34,10 +34,10 @@ class CategoryImport implements ToCollection, WithHeadingRow
 
                 $data = [
                     'name' => $name,
-                    'name_ar' => null,
+                    'name_ar' => trim((string) ($row['name_ar'] ?? '')),
                     'description' => trim((string) ($row['description'] ?? '')),
-                    'icon_url' => null,
-                    'status' => 'active',
+                    'icon_url' => trim((string) ($row['icon_url'] ?? '')),
+                    'status' => $this->normalizeStatus($row['status'] ?? 'active'),
                     'created_by' => $this->createdBy,
                 ];
 
@@ -52,6 +52,12 @@ class CategoryImport implements ToCollection, WithHeadingRow
                 $this->errors[] = "Row {$rowNumber}: " . $e->getMessage();
             }
         }
+    }
+
+    protected function normalizeStatus(mixed $value): string
+    {
+        $s = strtolower(trim((string) $value));
+        return in_array($s, ['active', 'inactive'], true) ? $s : 'active';
     }
 
     public function getCreatedCount(): int
