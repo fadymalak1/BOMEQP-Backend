@@ -609,6 +609,13 @@ class InstructorController extends Controller
             ->orWhereHas('linkedTrainingCenters', fn ($q) => $q->where('training_centers.id', $trainingCenter->id))
             ->findOrFail($id);
 
+        \Illuminate\Support\Facades\Log::info('TC InstructorController::requestAuthorization resolved instructor', [
+            'route_id' => (int) $id,
+            'resolved_instructor_id' => $instructor->id,
+            'training_center_id' => $trainingCenter->id,
+            'acc_id' => $request->acc_id,
+        ]);
+
         try {
             $result = $this->instructorService->requestAuthorization($request, $instructor, $trainingCenter);
             

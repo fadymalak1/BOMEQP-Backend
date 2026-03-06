@@ -314,6 +314,12 @@ class InstructorManagementService
      */
     public function requestAuthorization(Request $request, Instructor $instructor, TrainingCenter $trainingCenter): array
     {
+        Log::info('InstructorManagementService::requestAuthorization called', [
+            'instructor_id' => $instructor->id,
+            'training_center_id' => $trainingCenter->id,
+            'acc_id' => $request->acc_id,
+        ]);
+
         // Validate that Training Center has authorization with the requested ACC
         $trainingCenterAccAuthorization = \App\Models\TrainingCenterAccAuthorization::where('training_center_id', $trainingCenter->id)
             ->where('acc_id', $request->acc_id)
