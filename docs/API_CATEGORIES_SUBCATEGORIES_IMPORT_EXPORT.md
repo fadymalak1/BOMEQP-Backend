@@ -49,19 +49,18 @@ GET /api/admin/categories/template/download?format=csv
 
 ### Template Columns
 
+User enters **name** and **description** only.
+
 | Column | Required | Description |
 |--------|----------|-------------|
-| `name` | Yes | Category name (English) |
-| `name_ar` | No | Category name (Arabic) |
+| `name` | Yes | Category name |
 | `description` | No | Description |
-| `icon_url` | No | Icon URL |
-| `status` | Yes | `active` or `inactive` |
 
 ---
 
 ## 2. Categories Import
 
-Upload an Excel or CSV file to bulk create/update categories.
+Upload an Excel or CSV file to bulk create/update categories. File must have columns: **name**, **description**.
 
 | Method | Endpoint |
 |--------|----------|
@@ -138,13 +137,13 @@ GET /api/admin/sub-categories/template/download?format=csv
 
 ### Template Columns
 
+User **selects category** (dropdown in Excel / exact name in CSV) and types **name** and **description** only.
+
 | Column | Required | Description |
 |--------|----------|-------------|
-| `category` | Yes | Category name. In **Excel**: use dropdown to select. In **CSV**: enter exact category name. |
+| `category` | Yes | Category. In **Excel**: use dropdown to select. In **CSV**: enter exact category name. |
 | `name` | Yes | Subcategory name |
-| `name_ar` | No | Subcategory name (Arabic) |
 | `description` | No | Description |
-| `status` | Yes | `active` or `inactive` |
 
 ### Notes for Frontend
 
@@ -155,7 +154,7 @@ GET /api/admin/sub-categories/template/download?format=csv
 
 ## 4. Subcategories Import
 
-Upload an Excel or CSV file to bulk create/update subcategories.
+Upload an Excel or CSV file to bulk create/update subcategories. File must have columns: **category**, **name**, **description**.
 
 | Method | Endpoint |
 |--------|----------|

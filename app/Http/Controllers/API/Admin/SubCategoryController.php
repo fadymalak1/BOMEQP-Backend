@@ -238,13 +238,13 @@ class SubCategoryController extends Controller
 
         $fileName = 'subcategories_template.' . $format;
 
-        return Excel::download(new SubCategoryTemplateExport(), $fileName, $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX);
+        return Excel::download(new SubCategoryTemplateExport($format), $fileName, $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX);
     }
 
     #[OA\Post(
         path: "/admin/sub-categories/import",
         summary: "Import subcategories from Excel/CSV file",
-        description: "Upload an Excel or CSV file to bulk create/update subcategories. Columns: category (required, select from dropdown in Excel or enter exact category name in CSV), name (required), name_ar, description, status (active|inactive).",
+        description: "Upload an Excel or CSV file to bulk create/update subcategories. Template columns: category (required, select from dropdown in Excel or enter exact category name in CSV), name (required), description.",
         tags: ["Admin"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
