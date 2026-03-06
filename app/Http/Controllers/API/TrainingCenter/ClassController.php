@@ -122,30 +122,66 @@ class ClassController extends Controller
                     }
                 }
 
+                // Preload certificates for this class to expose download info per trainee
+                $certificatesByName = \App\Models\Certificate::where('training_class_id', $class->id)
+                    ->get()
+                    ->groupBy('trainee_name');
+
                 $classData = $class->toArray();
-                // Format trainees data
-                $classData['trainees'] = $class->trainees->map(function ($trainee) {
+
+                // Format trainees data with exam score, status, and certificate URLs
+                $successGrade = $class->success_grade;
+                $classData['trainees'] = $class->trainees->map(function ($trainee) use ($successGrade, $certificatesByName) {
+                    $fullName = trim(($trainee->first_name ?? '') . ' ' . ($trainee->last_name ?? ''));
+                    $examScore = $trainee->pivot->exam_score !== null ? (float) $trainee->pivot->exam_score : null;
+
+                    $examStatus = null;
+                    if ($examScore !== null && $successGrade !== null) {
+                        $examStatus = $examScore >= (float) $successGrade ? 'success' : 'fail';
+                    }
+
+                    $certificate = null;
+                    if ($fullName !== '' && $certificatesByName->has($fullName)) {
+                        $certificate = $certificatesByName->get($fullName)->first();
+                    }
+
                     return [
                         'id' => $trainee->id,
                         'first_name' => $trainee->first_name,
                         'last_name' => $trainee->last_name,
+                        'full_name' => $fullName,
                         'email' => $trainee->email,
                         'phone' => $trainee->phone,
                         'id_number' => $trainee->id_number,
                         'status' => $trainee->pivot->status ?? null,
+                        'exam_score' => $examScore,
+                        'exam_status' => $examStatus,
                         'enrolled_at' => $trainee->pivot->enrolled_at ?? null,
                         'completed_at' => $trainee->pivot->completed_at ?? null,
+                        'certificate' => $certificate ? [
+                            'id' => $certificate->id,
+                            'certificate_number' => $certificate->certificate_number,
+                            'verification_code' => $certificate->verification_code,
+                            'certificate_pdf_url' => $certificate->certificate_pdf_url,
+                            'card_pdf_url' => $certificate->card_pdf_url,
+                            'status' => $certificate->status,
+                            'issue_date' => $certificate->issue_date,
+                            'expiry_date' => $certificate->expiry_date,
+                        ] : null,
                     ];
-                });
-                // Convert exam_score to int if it exists
+                })->values();
+
+                // Convert exam_score/success_grade to int on class level if they exist
                 if (isset($classData['exam_score']) && $classData['exam_score'] !== null) {
                     $classData['exam_score'] = (int) round($classData['exam_score']);
                 }
                 if (isset($classData['success_grade']) && $classData['success_grade'] !== null) {
                     $classData['success_grade'] = (int) round($classData['success_grade']);
                 }
+
                 // Keep enrolled_count for backward compatibility
                 $classData['trainees_count'] = $class->trainees->count();
+
                 return $classData;
             });
 
