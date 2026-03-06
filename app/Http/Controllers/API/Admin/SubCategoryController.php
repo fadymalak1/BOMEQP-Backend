@@ -5,7 +5,9 @@ namespace App\Http\Controllers\API\Admin;
 use App\Exports\SubCategoryTemplateExport;
 use App\Http\Controllers\Controller;
 use App\Imports\SubCategoryImport;
+use App\Models\ACC;
 use App\Models\SubCategory;
+use App\Services\CategoryManagementService;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use OpenApi\Attributes as OA;
@@ -236,9 +238,21 @@ class SubCategoryController extends Controller
             $format = 'xlsx';
         }
 
+        $accessibleCategoryIds = null;
+        if ($request->user()->role === 'acc_admin') {
+            $acc = ACC::where('email', $request->user()->email)->first();
+            $accessibleCategoryIds = $acc
+                ? app(CategoryManagementService::class)->getAccessibleCategoryIds($acc, $request->user()->id)
+                : [];
+        }
+
         $fileName = 'subcategories_template.' . $format;
 
-        return Excel::download(new SubCategoryTemplateExport($format), $fileName, $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX);
+        return Excel::download(
+            new SubCategoryTemplateExport($format, $accessibleCategoryIds),
+            $fileName,
+            $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX
+        );
     }
 
     #[OA\Post(

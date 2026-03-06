@@ -16,10 +16,20 @@ class SubCategoryTemplateExport implements FromArray, WithHeadings, WithEvents
 
     protected string $format = 'xlsx';
 
-    public function __construct(?string $format = 'xlsx')
+    /**
+     * @param  string|null  $format  'xlsx' or 'csv'
+     * @param  array<int>|null  $accessibleCategoryIds  When set (e.g. for acc_admin), only these categories appear in the dropdown. When null (e.g. group_admin), all categories.
+     */
+    public function __construct(?string $format = 'xlsx', ?array $accessibleCategoryIds = null)
     {
-        $this->categoryNames = Category::orderBy('name')->pluck('name')->toArray();
         $this->format = strtolower($format ?? 'xlsx') === 'csv' ? 'csv' : 'xlsx';
+        if ($accessibleCategoryIds === null) {
+            $this->categoryNames = Category::orderBy('name')->pluck('name')->toArray();
+        } else {
+            $this->categoryNames = $accessibleCategoryIds === []
+                ? []
+                : Category::whereIn('id', $accessibleCategoryIds)->orderBy('name')->pluck('name')->toArray();
+        }
     }
 
     public function array(): array
