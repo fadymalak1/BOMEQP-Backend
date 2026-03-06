@@ -952,6 +952,17 @@ class ClassController extends Controller
             'grades.*.score' => 'required|numeric|min:0|max:100',
         ]);
 
+        $blockedTrainees = $this->getTraineesWithCertificatesBlockingGradeUpdate($class, $request->grades);
+        if (!empty($blockedTrainees)) {
+            return response()->json([
+                'message' => 'Cannot change score for trainee(s) who already have a certificate. Score is locked once a certificate has been issued.',
+                'errors' => [
+                    'grades' => ['The following trainee(s) have certificates and cannot be updated: ' . implode(', ', $blockedTrainees) . '.'],
+                ],
+                'blocked_trainees' => $blockedTrainees,
+            ], 422);
+        }
+
         $this->updateTraineeGrades($class, $request->grades);
 
         $class->refresh();
@@ -1225,6 +1236,17 @@ class ClassController extends Controller
         }
 
         if (!empty($grades)) {
+            $blockedTrainees = $this->getTraineesWithCertificatesBlockingGradeUpdate($class, $grades);
+            if (!empty($blockedTrainees)) {
+                return response()->json([
+                    'message' => 'Cannot change score for trainee(s) who already have a certificate. Score is locked once a certificate has been issued.',
+                    'errors' => [
+                        'file' => ['The following trainee(s) in the file have certificates and cannot be updated: ' . implode(', ', $blockedTrainees) . '.'],
+                    ],
+                    'blocked_trainees' => $blockedTrainees,
+                ], 422);
+            }
+
             $this->updateTraineeGrades($class, $grades);
         }
 
@@ -1233,6 +1255,52 @@ class ClassController extends Controller
             'updated_count' => $updated,
             'skipped_count' => $skipped,
         ]);
+    }
+
+    /**
+     * Get trainee names that have certificates for this class/course and therefore cannot have their score changed.
+     *
+     * @param TrainingClass $class
+     * @param array<int, array{trainee_id:int, score:float}> $grades
+     * @return array<int, string> List of full names of blocked trainees
+     */
+    private function getTraineesWithCertificatesBlockingGradeUpdate(TrainingClass $class, array $grades): array
+    {
+        $class->loadMissing('trainees');
+        $enrolledIds = $class->trainees->pluck('id')->toArray();
+        $blocked = [];
+
+        foreach ($grades as $grade) {
+            if (!isset($grade['trainee_id'])) {
+                continue;
+            }
+            $traineeId = (int) $grade['trainee_id'];
+            if (!in_array($traineeId, $enrolledIds, true)) {
+                continue;
+            }
+
+            $trainee = $class->trainees->firstWhere('id', $traineeId);
+            if (!$trainee) {
+                continue;
+            }
+
+            $fullName = trim(($trainee->first_name ?? '') . ' ' . ($trainee->last_name ?? ''));
+            if ($fullName === '') {
+                continue;
+            }
+
+            $hasCertificate = \App\Models\Certificate::where('course_id', $class->course_id)
+                ->where('training_center_id', $class->training_center_id)
+                ->where('trainee_name', $fullName)
+                ->whereIn('status', ['valid', 'expired'])
+                ->exists();
+
+            if ($hasCertificate && !in_array($fullName, $blocked, true)) {
+                $blocked[] = $fullName;
+            }
+        }
+
+        return $blocked;
     }
 
     /**
