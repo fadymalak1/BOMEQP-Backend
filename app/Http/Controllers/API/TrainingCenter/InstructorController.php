@@ -360,9 +360,14 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $instructor = Instructor::where('training_center_id', $trainingCenter->id)
-            ->orWhereHas('linkedTrainingCenters', fn ($q) => $q->where('training_centers.id', $trainingCenter->id))
-            ->findOrFail($id);
+        // Important: group the TC/linked-TC conditions so the ID filter applies to both,
+        // otherwise another instructor linked to this TC can be returned.
+        $instructor = Instructor::where(function ($q) use ($trainingCenter) {
+                $q->where('training_center_id', $trainingCenter->id)
+                  ->orWhereHas('linkedTrainingCenters', fn ($q2) => $q2->where('training_centers.id', $trainingCenter->id));
+            })
+            ->where('id', $id)
+            ->firstOrFail();
 
         $request->validate([
             'first_name' => 'required|string|max:255',
