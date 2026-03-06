@@ -64,7 +64,7 @@ class AuthService
                 // Create training center first to get the ID
                 $trainingCenter = \App\Models\TrainingCenter::create([
                     'name' => $request->company_name,
-                    'legal_name' => $request->company_name,
+                    'legal_name' => $request->legal_name ?? $request->company_name,
                     'registration_number' => 'TC-' . strtoupper(Str::random(8)),
                     'country' => $request->country,
                     'city' => $request->city,

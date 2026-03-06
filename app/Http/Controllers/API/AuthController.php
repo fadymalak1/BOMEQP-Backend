@@ -41,6 +41,7 @@ class AuthController extends Controller
                         
                         // Training Center Specific Fields (required when role is training_center_admin)
                         new OA\Property(property: "company_name", type: "string", example: "ABC Training Center", description: "Company name (required for training_center_admin)"),
+                        new OA\Property(property: "legal_name", type: "string", example: "ABC Training Center LLC", description: "Legal/registered company name (optional for training_center_admin, falls back to company_name if not provided)"),
                         new OA\Property(property: "company_email", type: "string", format: "email", example: "info@abctraining.com", description: "Company email address (required for training_center_admin)"),
                         new OA\Property(property: "training_provider_type", type: "string", enum: ["Training Center", "Institute", "University"], example: "Training Center", description: "Type of training provider (required for training_center_admin)"),
                         new OA\Property(property: "facility_floorplan", type: "string", format: "binary", description: "Facility floorplan file (PDF, JPG, PNG, max 10MB, optional, only for training_center_admin)"),
@@ -129,6 +130,7 @@ class AuthController extends Controller
             $rules = array_merge($rules, [
                 // Company Information
                 'company_name' => 'required|string|max:255',
+                'legal_name' => 'nullable|string|max:255',
                 'company_email' => 'required|email|max:255',
                 'telephone_number' => 'required|string|max:255',
                 'fax' => 'nullable|string|max:255',

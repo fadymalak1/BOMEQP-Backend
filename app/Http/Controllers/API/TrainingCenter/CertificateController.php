@@ -1190,8 +1190,19 @@ class CertificateController extends Controller
             }
         }
 
+        // Build a more descriptive message based on results
+        if ($generated > 0 && $skipped === 0) {
+            $message = 'Certificates generated successfully for all eligible trainees.';
+        } elseif ($generated > 0 && $skipped > 0) {
+            $message = 'Certificates generated for some trainees; others were skipped. Check details for reasons.';
+        } elseif ($generated === 0 && $skipped > 0) {
+            $message = 'No certificates were generated. All eligible trainees were skipped. Check details for reasons.';
+        } else {
+            $message = 'No certificates were generated.';
+        }
+
         return response()->json([
-            'message' => 'Certificates generation completed',
+            'message' => $message,
             'generated_count' => $generated,
             'skipped_count' => $skipped,
             'details' => $details,
