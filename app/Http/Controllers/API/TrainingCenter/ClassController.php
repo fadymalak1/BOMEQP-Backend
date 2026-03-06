@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\API\TrainingCenter;
 
 use App\Http\Controllers\Controller;
+use App\Imports\ClassGradesImport;
 use App\Models\TrainingClass;
 use App\Models\ClassCompletion;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Maatwebsite\Excel\Facades\Excel;
 use OpenApi\Attributes as OA;
 
 class ClassController extends Controller
@@ -1046,34 +1048,32 @@ class ClassController extends Controller
         }
 
         $request->validate([
-            'file' => 'required|file|mimes:csv,txt',
+            'file' => 'required|file|mimes:csv,txt,xlsx',
         ]);
 
         $file = $request->file('file');
-        $path = $file->getRealPath();
 
-        if (!$path) {
-            return response()->json(['message' => 'Unable to read uploaded file'], 400);
+        // Use Laravel Excel to support both CSV and XLSX transparently
+        try {
+            $sheets = Excel::toArray(new ClassGradesImport(), $file);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Failed to read uploaded file',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 400);
         }
 
-        $handle = fopen($path, 'r');
-        if ($handle === false) {
-            return response()->json(['message' => 'Unable to open uploaded file'], 400);
+        $rows = $sheets[0] ?? [];
+        if (empty($rows)) {
+            return response()->json(['message' => 'Empty or invalid file'], 422);
         }
 
-        $header = fgetcsv($handle);
-        if ($header === false) {
-            fclose($handle);
-            return response()->json(['message' => 'Empty or invalid CSV file'], 422);
-        }
-
-        // Map header columns to indices
-        $header = array_map('trim', $header);
+        // First row is header
+        $header = array_map(static fn ($v) => trim((string) $v), $rows[0]);
         $traineeIdIndex = array_search('trainee_id', $header, true);
         $scoreIndex = array_search('exam_score', $header, true);
 
         if ($traineeIdIndex === false || $scoreIndex === false) {
-            fclose($handle);
             return response()->json([
                 'message' => 'Invalid file format. Header must contain at least trainee_id and exam_score columns.',
             ], 422);
@@ -1083,16 +1083,22 @@ class ClassController extends Controller
         $updated = 0;
         $skipped = 0;
 
-        while (($row = fgetcsv($handle)) !== false) {
-            if (!isset($row[$traineeIdIndex]) || $row[$traineeIdIndex] === '') {
+        foreach (array_slice($rows, 1) as $row) {
+            if (!is_array($row)) {
                 $skipped++;
                 continue;
             }
 
-            $traineeId = (int) $row[$traineeIdIndex];
+            $traineeIdRaw = $row[$traineeIdIndex] ?? null;
+            if ($traineeIdRaw === null || $traineeIdRaw === '') {
+                $skipped++;
+                continue;
+            }
+
+            $traineeId = (int) $traineeIdRaw;
             $scoreRaw = $row[$scoreIndex] ?? '';
 
-            if ($scoreRaw === '') {
+            if ($scoreRaw === '' || $scoreRaw === null) {
                 $skipped++;
                 continue;
             }
@@ -1116,7 +1122,9 @@ class ClassController extends Controller
             $updated++;
         }
 
-        fclose($handle);
+        if (!empty($grades)) {
+            $this->updateTraineeGrades($class, $grades);
+        }
 
         if (!empty($grades)) {
             $this->updateTraineeGrades($class, $grades);
