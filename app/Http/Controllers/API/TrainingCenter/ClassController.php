@@ -976,7 +976,7 @@ class ClassController extends Controller
     #[OA\Get(
         path: "/training-center/classes/{id}/grades/export",
         summary: "Download Excel-compatible grades template for a class",
-        description: "Download a CSV/Excel-compatible file containing all trainees in the class with an exam_score column to fill and re-upload.",
+        description: "Download a CSV/Excel-compatible file containing all trainees in the class with exam_score and certificate_pdf_url (for trainees who already have a certificate) columns.",
         tags: ["Training Center"],
         security: [["sanctum" => []]],
         parameters: [
@@ -1001,10 +1001,20 @@ class ClassController extends Controller
             ->with('trainees')
             ->findOrFail($id);
 
+        // Preload certificates for this class to include certificate URL for trainees who have one
+        $certificatesByName = \App\Models\Certificate::where('training_class_id', $class->id)
+            ->get()
+            ->keyBy('trainee_name');
+
         $rows = [];
-        $rows[] = ['trainee_id', 'first_name', 'last_name', 'email', 'id_number', 'exam_score'];
+        $rows[] = ['trainee_id', 'first_name', 'last_name', 'email', 'id_number', 'exam_score', 'certificate_pdf_url'];
 
         foreach ($class->trainees as $trainee) {
+            $fullName = trim(($trainee->first_name ?? '') . ' ' . ($trainee->last_name ?? ''));
+            $certificateUrl = $certificatesByName->has($fullName)
+                ? ($certificatesByName->get($fullName)->certificate_pdf_url ?? '')
+                : '';
+
             $rows[] = [
                 $trainee->id,
                 $trainee->first_name,
@@ -1012,6 +1022,7 @@ class ClassController extends Controller
                 $trainee->email,
                 $trainee->id_number,
                 $trainee->pivot->exam_score !== null ? (float) $trainee->pivot->exam_score : '',
+                $certificateUrl,
             ];
         }
 

@@ -179,7 +179,7 @@ belongsToMany(Trainee::class, 'trainee_training_class', 'training_class_id', 'tr
 
 #### 4.1 تصدير Template الدرجات – `GET /api/training-center/classes/{id}/grades/export`
 
-**الوصف**: تنزيل ملف CSV (متوافق مع Excel) فيه كل الطلبة في الـ class مع عمود `exam_score` لتعبئته.
+**الوصف**: تنزيل ملف CSV (متوافق مع Excel) فيه كل الطلبة في الـ class مع عمود `exam_score` لتعبئته وعمود `certificate_pdf_url` (يُملأ تلقائياً للطلبة الذين لديهم شهادة).
 
 - **Path params**:
   - `id`: رقم الـ class.

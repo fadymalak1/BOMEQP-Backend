@@ -1194,9 +1194,9 @@ class CertificateController extends Controller
         if ($generated > 0 && $skipped === 0) {
             $message = 'Certificates generated successfully for all eligible trainees.';
         } elseif ($generated > 0 && $skipped > 0) {
-            $message = 'Certificates generated for some trainees; others were skipped. Check details for reasons.';
+            $message = 'Certificates generated for some trainees and others were skipped.';
         } elseif ($generated === 0 && $skipped > 0) {
-            $message = 'No certificates were generated. All eligible trainees were skipped. Check details for reasons.';
+            $message = 'No certificates were generated. All eligible trainees were skipped.';
         } else {
             $message = 'No certificates were generated.';
         }
