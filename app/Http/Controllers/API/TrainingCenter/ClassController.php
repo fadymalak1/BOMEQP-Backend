@@ -1258,6 +1258,23 @@ class ClassController extends Controller
                 continue;
             }
 
+             // If a certificate already exists for this trainee & course, do NOT allow changing the score
+             $trainee = $class->trainees->firstWhere('id', $traineeId);
+             if ($trainee) {
+                 $fullName = trim(($trainee->first_name ?? '') . ' ' . ($trainee->last_name ?? ''));
+
+                 $existingCertificate = \App\Models\Certificate::where('course_id', $class->course_id)
+                     ->where('training_center_id', $class->training_center_id)
+                     ->where('trainee_name', $fullName)
+                     ->whereIn('status', ['valid', 'expired'])
+                     ->first();
+
+                 if ($existingCertificate) {
+                     // Skip updating this trainee's grade – score is locked once a certificate exists
+                     continue;
+                 }
+             }
+
             $status = $score >= (float) $class->success_grade ? 'completed' : 'failed';
 
             $class->trainees()->updateExistingPivot($traineeId, [
