@@ -4,16 +4,13 @@ namespace App\Exports;
 
 use App\Models\Category;
 use Maatwebsite\Excel\Concerns\FromArray;
-use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
-use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class SubCategoryTemplateExport extends DefaultValueBinder implements FromArray, WithHeadings, WithCustomValueBinder, WithEvents
+class SubCategoryTemplateExport implements FromArray, WithHeadings, WithEvents
 {
     protected array $categoryNames = [];
 
@@ -28,23 +25,6 @@ class SubCategoryTemplateExport extends DefaultValueBinder implements FromArray,
     public function array(): array
     {
         $firstCategory = $this->categoryNames[0] ?? '';
-
-        if (empty($this->categoryNames)) {
-            return [['', '', '']];
-        }
-
-        // CSV does not support dropdowns; always use plain text
-        if ($this->format === 'csv') {
-            return [[$firstCategory, '', '']];
-        }
-
-        $hasComma = collect($this->categoryNames)->contains(fn ($n) => str_contains((string) $n, ','));
-        $listLength = strlen(implode(',', $this->categoryNames));
-
-        // Pass array so bindValue creates dropdown (only for XLSX, when list fits ~255 char limit and no commas)
-        if (!$hasComma && $listLength <= 250) {
-            return [[$this->categoryNames, '', '']];
-        }
 
         return [[$firstCategory, '', '']];
     }
@@ -61,34 +41,35 @@ class SubCategoryTemplateExport extends DefaultValueBinder implements FromArray,
                 if ($this->format === 'csv' || empty($this->categoryNames)) {
                     return;
                 }
-                $hasComma = collect($this->categoryNames)->contains(fn ($n) => str_contains((string) $n, ','));
-                $listLength = strlen(implode(',', $this->categoryNames));
-                if ($hasComma || $listLength > 250) {
-                    $this->addDropdownViaHiddenSheet($event->sheet->getDelegate());
-                }
+                $this->addCategoryDropdown($event->sheet->getDelegate());
             },
         ];
     }
 
-    public function bindValue(Cell $cell, $value)
+    protected function addCategoryDropdown(Worksheet $sheet): void
     {
-        if (is_array($value)) {
-            $list = implode(',', array_map(fn ($n) => str_replace('"', '""', (string) $n), $value));
-            $validation = $cell->getDataValidation();
-            $validation->setType(DataValidation::TYPE_LIST);
-            $validation->setAllowBlank(true);
-            $validation->setShowDropDown(true);
-            $validation->setFormula1('"' . $list . '"');
+        $hasComma = collect($this->categoryNames)->contains(fn ($n) => str_contains((string) $n, ','));
+        $listLength = strlen(implode(',', $this->categoryNames));
 
-            $sheet = $cell->getWorksheet();
-            for ($row = 2; $row <= 500; $row++) {
-                $sheet->getCell('A' . $row)->setDataValidation(clone $validation);
-            }
-
-            $value = $value[0] ?? '';
+        if (!$hasComma && $listLength <= 250) {
+            $this->addDropdownViaFormula($sheet);
+        } else {
+            $this->addDropdownViaHiddenSheet($sheet);
         }
+    }
 
-        return parent::bindValue($cell, $value);
+    protected function addDropdownViaFormula(Worksheet $sheet): void
+    {
+        $list = implode(',', array_map(fn ($n) => str_replace('"', '""', (string) $n), $this->categoryNames));
+        $validation = $sheet->getCell('A2')->getDataValidation();
+        $validation->setType(DataValidation::TYPE_LIST);
+        $validation->setAllowBlank(true);
+        $validation->setShowDropDown(true);
+        $validation->setFormula1('"' . $list . '"');
+
+        for ($row = 2; $row <= 500; $row++) {
+            $sheet->getCell('A' . $row)->setDataValidation(clone $validation);
+        }
     }
 
     protected function addDropdownViaHiddenSheet(Worksheet $sheet): void
