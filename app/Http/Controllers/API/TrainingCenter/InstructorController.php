@@ -610,9 +610,13 @@ class InstructorController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
-        $instructor = Instructor::where('training_center_id', $trainingCenter->id)
-            ->orWhereHas('linkedTrainingCenters', fn ($q) => $q->where('training_centers.id', $trainingCenter->id))
-            ->findOrFail($id);
+        // Ensure the ID filter applies to both own-TC and linked-TC conditions
+        $instructor = Instructor::where(function ($q) use ($trainingCenter) {
+                $q->where('training_center_id', $trainingCenter->id)
+                  ->orWhereHas('linkedTrainingCenters', fn ($q2) => $q2->where('training_centers.id', $trainingCenter->id));
+            })
+            ->where('id', $id)
+            ->firstOrFail();
 
         \Illuminate\Support\Facades\Log::info('TC InstructorController::requestAuthorization resolved instructor', [
             'route_id' => (int) $id,
