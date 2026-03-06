@@ -1052,78 +1052,140 @@ class ClassController extends Controller
         ]);
 
         $file = $request->file('file');
-
-        // Use Laravel Excel to support both CSV and XLSX transparently
-        try {
-            $sheets = Excel::toArray(new ClassGradesImport(), $file);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Failed to read uploaded file',
-                'error' => config('app.debug') ? $e->getMessage() : null,
-            ], 400);
-        }
-
-        $rows = $sheets[0] ?? [];
-        if (empty($rows)) {
-            return response()->json(['message' => 'Empty or invalid file'], 422);
-        }
-
-        // First row is header
-        $header = array_map(static fn ($v) => trim((string) $v), $rows[0]);
-        $traineeIdIndex = array_search('trainee_id', $header, true);
-        $scoreIndex = array_search('exam_score', $header, true);
-
-        if ($traineeIdIndex === false || $scoreIndex === false) {
-            return response()->json([
-                'message' => 'Invalid file format. Header must contain at least trainee_id and exam_score columns.',
-            ], 422);
-        }
+        $extension = strtolower($file->getClientOriginalExtension());
 
         $grades = [];
         $updated = 0;
         $skipped = 0;
 
-        foreach (array_slice($rows, 1) as $row) {
-            if (!is_array($row)) {
-                $skipped++;
-                continue;
+        // CSV/TXT: use native fgetcsv for robustness
+        if (in_array($extension, ['csv', 'txt'], true)) {
+            $path = $file->getRealPath();
+
+            if (!$path) {
+                return response()->json(['message' => 'Unable to read uploaded file'], 400);
             }
 
-            $traineeIdRaw = $row[$traineeIdIndex] ?? null;
-            if ($traineeIdRaw === null || $traineeIdRaw === '') {
-                $skipped++;
-                continue;
+            $handle = fopen($path, 'r');
+            if ($handle === false) {
+                return response()->json(['message' => 'Unable to open uploaded file'], 400);
             }
 
-            $traineeId = (int) $traineeIdRaw;
-            $scoreRaw = $row[$scoreIndex] ?? '';
-
-            if ($scoreRaw === '' || $scoreRaw === null) {
-                $skipped++;
-                continue;
+            $header = fgetcsv($handle);
+            if ($header === false) {
+                fclose($handle);
+                return response()->json(['message' => 'Empty or invalid CSV file'], 422);
             }
 
-            if (!is_numeric($scoreRaw)) {
-                $skipped++;
-                continue;
+            $header = array_map('trim', $header);
+            $traineeIdIndex = array_search('trainee_id', $header, true);
+            $scoreIndex = array_search('exam_score', $header, true);
+
+            if ($traineeIdIndex === false || $scoreIndex === false) {
+                fclose($handle);
+                return response()->json([
+                    'message' => 'Invalid file format. Header must contain at least trainee_id and exam_score columns.',
+                ], 422);
             }
 
-            $score = (float) $scoreRaw;
+            while (($row = fgetcsv($handle)) !== false) {
+                if (!isset($row[$traineeIdIndex]) || $row[$traineeIdIndex] === '') {
+                    $skipped++;
+                    continue;
+                }
 
-            if ($score < 0 || $score > 100) {
-                $skipped++;
-                continue;
+                $traineeId = (int) $row[$traineeIdIndex];
+                $scoreRaw = $row[$scoreIndex] ?? '';
+
+                if ($scoreRaw === '' || $scoreRaw === null) {
+                    $skipped++;
+                    continue;
+                }
+
+                if (!is_numeric($scoreRaw)) {
+                    $skipped++;
+                    continue;
+                }
+
+                $score = (float) $scoreRaw;
+
+                if ($score < 0 || $score > 100) {
+                    $skipped++;
+                    continue;
+                }
+
+                $grades[] = [
+                    'trainee_id' => $traineeId,
+                    'score' => $score,
+                ];
+                $updated++;
             }
 
-            $grades[] = [
-                'trainee_id' => $traineeId,
-                'score' => $score,
-            ];
-            $updated++;
-        }
+            fclose($handle);
+        } else {
+            // XLSX and other spreadsheet formats: use Laravel Excel
+            try {
+                $sheets = Excel::toArray(new ClassGradesImport(), $file);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'message' => 'Failed to read uploaded file',
+                    'error' => config('app.debug') ? $e->getMessage() : null,
+                ], 400);
+            }
 
-        if (!empty($grades)) {
-            $this->updateTraineeGrades($class, $grades);
+            $rows = $sheets[0] ?? [];
+            if (empty($rows)) {
+                return response()->json(['message' => 'Empty or invalid file'], 422);
+            }
+
+            $header = array_map(static fn ($v) => trim((string) $v), $rows[0]);
+            $traineeIdIndex = array_search('trainee_id', $header, true);
+            $scoreIndex = array_search('exam_score', $header, true);
+
+            if ($traineeIdIndex === false || $scoreIndex === false) {
+                return response()->json([
+                    'message' => 'Invalid file format. Header must contain at least trainee_id and exam_score columns.',
+                ], 422);
+            }
+
+            foreach (array_slice($rows, 1) as $row) {
+                if (!is_array($row)) {
+                    $skipped++;
+                    continue;
+                }
+
+                $traineeIdRaw = $row[$traineeIdIndex] ?? null;
+                if ($traineeIdRaw === null || $traineeIdRaw === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                $traineeId = (int) $traineeIdRaw;
+                $scoreRaw = $row[$scoreIndex] ?? '';
+
+                if ($scoreRaw === '' || $scoreRaw === null) {
+                    $skipped++;
+                    continue;
+                }
+
+                if (!is_numeric($scoreRaw)) {
+                    $skipped++;
+                    continue;
+                }
+
+                $score = (float) $scoreRaw;
+
+                if ($score < 0 || $score > 100) {
+                    $skipped++;
+                    continue;
+                }
+
+                $grades[] = [
+                    'trainee_id' => $traineeId,
+                    'score' => $score,
+                ];
+                $updated++;
+            }
         }
 
         if (!empty($grades)) {
