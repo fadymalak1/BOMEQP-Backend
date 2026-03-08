@@ -66,7 +66,8 @@ Returns all certificate templates belonging to the authenticated ACC that have a
         "elements": [
           { "type": "text", "variable": "{{instructor_name}}", "x": 0.38, "y": 0.20, "font_size": 18, "font_weight": "bold", "color": "#ffffff" },
           { "type": "text", "variable": "{{course_name}}", "x": 0.38, "y": 0.38, "font_size": 13, "color": "#e0e0e0" },
-          { "type": "image", "variable": "{{instructor_photo}}", "x": 0.04, "y": 0.12, "width": 0.27, "height": 0.55 }
+          { "type": "image", "variable": "{{instructor_photo}}", "x": 0.04, "y": 0.12, "width": 0.27, "height": 0.55 },
+          { "type": "image", "variable": "{{trainee_photo}}", "x": 0.70, "y": 0.12, "width": 0.25, "height": 0.55 }
         ]
       },
       "status": "active"
@@ -352,6 +353,7 @@ The card shares the same variable pool as the certificate template. Common varia
 | `{{instructor_first_name}}` | First name |
 | `{{instructor_last_name}}` | Last name |
 | `{{instructor_photo}}` | Instructor profile photo (image element) |
+| `{{trainee_photo}}` | Trainee/student photo for the card (image element). Supply via `trainee_id` or `trainee_photo` when issuing the certificate. |
 | `{{course_name}}` | Name of the certified course |
 | `{{course_code}}` | Course code |
 | `{{training_center_name}}` | Name of the training center |
@@ -424,6 +426,7 @@ Content-Type: application/json
   "card_config_json": {
     "elements": [
       { "type": "image",  "variable": "{{instructor_photo}}", "x": 0.04, "y": 0.12, "width": 0.25, "height": 0.52 },
+      { "type": "image",  "variable": "{{trainee_photo}}", "x": 0.70, "y": 0.12, "width": 0.25, "height": 0.52 },
       { "type": "text",   "variable": "{{instructor_name}}",  "x": 0.34, "y": 0.20, "font_size": 17, "font_weight": "bold", "color": "#ffffff" },
       { "type": "text",   "variable": "{{course_name}}",      "x": 0.34, "y": 0.38, "font_size": 12, "color": "#e0e0e0" },
       { "type": "text",   "variable": "Training center: {{training_center_name}}", "x": 0.06, "y": 0.72, "font_size": 10, "color": "#ffffff" },

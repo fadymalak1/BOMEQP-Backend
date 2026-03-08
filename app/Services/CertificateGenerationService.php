@@ -106,7 +106,7 @@ class CertificateGenerationService
             // ------------------------------------------------------------------
             $imageKeys = ['training_center_logo', 'acc_logo', 'qr_code',
                           'training_center_logo_url', 'acc_logo_url', 'qr_code_url',
-                          'instructor_photo'];
+                          'instructor_photo', 'trainee_photo'];
 
             foreach ($imageKeys as $key) {
                 if (!empty($data[$key])) {
@@ -1007,6 +1007,10 @@ class CertificateGenerationService
         // So {{student_name}} works when caller only sends trainee_name
         if (!isset($data['student_name']) && isset($data['trainee_name'])) {
             $data['student_name'] = $data['trainee_name'];
+        }
+        // So card can use trainee_photo when provided as trainee_image_url
+        if (!isset($data['trainee_photo']) && isset($data['trainee_image_url'])) {
+            $data['trainee_photo'] = $data['trainee_image_url'];
         }
         return $data;
     }

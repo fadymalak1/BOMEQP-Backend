@@ -145,6 +145,11 @@ class ClassController extends Controller
                         $certificate = $certificatesByName->get($fullName)->first();
                     }
 
+                    $profilePictureUrl = $trainee->card_image_url ?? $trainee->id_image_url ?? null;
+                    if ($profilePictureUrl && !str_starts_with($profilePictureUrl, 'http')) {
+                        $profilePictureUrl = url($profilePictureUrl);
+                    }
+
                     return [
                         'id' => $trainee->id,
                         'first_name' => $trainee->first_name,
@@ -153,6 +158,7 @@ class ClassController extends Controller
                         'email' => $trainee->email,
                         'phone' => $trainee->phone,
                         'id_number' => $trainee->id_number,
+                        'profile_picture_url' => $profilePictureUrl,
                         'status' => $trainee->pivot->status ?? null,
                         'exam_score' => $examScore,
                         'exam_status' => $examStatus,
@@ -488,6 +494,11 @@ class ClassController extends Controller
                 $certificate = $certificatesByName->get($fullName)->first();
             }
 
+            $profilePictureUrl = $trainee->card_image_url ?? $trainee->id_image_url ?? null;
+            if ($profilePictureUrl && !str_starts_with($profilePictureUrl, 'http')) {
+                $profilePictureUrl = url($profilePictureUrl);
+            }
+
             return [
                 'id' => $trainee->id,
                 'first_name' => $trainee->first_name,
@@ -496,6 +507,7 @@ class ClassController extends Controller
                 'email' => $trainee->email,
                 'phone' => $trainee->phone,
                 'id_number' => $trainee->id_number,
+                'profile_picture_url' => $profilePictureUrl,
                 'status' => $trainee->pivot->status ?? null,
                 'exam_score' => $examScore,
                 'exam_status' => $examStatus,

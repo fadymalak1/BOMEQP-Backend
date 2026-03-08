@@ -7,6 +7,7 @@ use App\Models\Certificate;
 use App\Models\CertificateCode;
 use App\Models\CertificateTemplate;
 use App\Models\Instructor;
+use App\Models\Trainee;
 use App\Models\TrainingClass;
 use Carbon\Carbon;
 use App\Services\CertificateGenerationService;
@@ -483,6 +484,8 @@ class CertificateController extends Controller
                     new OA\Property(property: "training_class_id", type: "integer", nullable: true, example: 1, description: "ID of the training class. If provided, the class must have a status of 'completed'."),
                     new OA\Property(property: "instructor_id", type: "integer", nullable: true, example: 1),
                     new OA\Property(property: "trainee_name", type: "string", example: "John Doe", description: "Student name"),
+                    new OA\Property(property: "trainee_id", type: "integer", nullable: true, example: 1, description: "Optional trainee ID to use trainee's card/image for the certificate card"),
+                    new OA\Property(property: "trainee_photo", type: "string", nullable: true, description: "Optional URL of trainee photo for the card (overrides trainee_id image when provided)"),
                     new OA\Property(property: "trainee_id_number", type: "string", nullable: true, example: "ID123456"),
                     new OA\Property(property: "issue_date", type: "string", format: "date", example: "2024-01-15"),
                     new OA\Property(property: "expiry_date", type: "string", format: "date", nullable: true, example: "2026-01-15"),
@@ -540,6 +543,8 @@ class CertificateController extends Controller
             'training_class_id' => 'nullable|exists:training_classes,id',
             'instructor_id' => 'nullable|exists:instructors,id',
             'trainee_name' => 'required|string|max:255',
+            'trainee_id' => 'nullable|exists:trainees,id',
+            'trainee_photo' => 'nullable|string|max:2048',
             'trainee_id_number' => 'nullable|string|max:255',
             'issue_date' => 'required|date',
             'expiry_date' => 'nullable|date|after:issue_date',
@@ -751,6 +756,21 @@ class CertificateController extends Controller
                     : url($instructor->photo_url);
             }
 
+            $traineePhotoUrl = null;
+            if (!empty($request->trainee_photo)) {
+                $traineePhotoUrl = str_starts_with($request->trainee_photo, 'http')
+                    ? $request->trainee_photo
+                    : url($request->trainee_photo);
+            } elseif (!empty($request->trainee_id)) {
+                $trainee = Trainee::where('training_center_id', $trainingCenter->id)->find($request->trainee_id);
+                if ($trainee) {
+                    $photoUrl = $trainee->card_image_url ?? $trainee->id_image_url ?? null;
+                    if ($photoUrl) {
+                        $traineePhotoUrl = str_starts_with($photoUrl, 'http') ? $photoUrl : url($photoUrl);
+                    }
+                }
+            }
+
             // Auto-generate student_data from course information (includes all card_template_html variables)
             $certificateData = [
                 'student_name'       => $request->trainee_name,
@@ -771,6 +791,7 @@ class CertificateController extends Controller
                 'instructor_first_name' => $instructor?->first_name ?? '',
                 'instructor_last_name'  => $instructor?->last_name ?? '',
                 'instructor_photo'   => $instructorPhotoUrl,
+                'trainee_photo'      => $traineePhotoUrl,
                 // Image variables – resolved to full URLs so the service can embed them
                 'training_center_logo' => $trainingCenter->logo_url
                     ? (str_starts_with($trainingCenter->logo_url, 'http') ? $trainingCenter->logo_url : url($trainingCenter->logo_url))
@@ -1078,6 +1099,12 @@ class CertificateController extends Controller
                         : url($instructor->photo_url);
                 }
 
+                $traineePhotoUrl = null;
+                $traineePhoto = $trainee->card_image_url ?? $trainee->id_image_url ?? null;
+                if ($traineePhoto) {
+                    $traineePhotoUrl = str_starts_with($traineePhoto, 'http') ? $traineePhoto : url($traineePhoto);
+                }
+
                 $certificateData = [
                     'student_name'       => $fullName,
                     'trainee_name'       => $fullName,
@@ -1097,6 +1124,7 @@ class CertificateController extends Controller
                     'instructor_first_name' => $instructor?->first_name ?? '',
                     'instructor_last_name'  => $instructor?->last_name ?? '',
                     'instructor_photo'   => $instructorPhotoUrl,
+                    'trainee_photo'      => $traineePhotoUrl,
                     'training_center_logo' => $trainingCenter->logo_url
                         ? (str_starts_with($trainingCenter->logo_url, 'http') ? $trainingCenter->logo_url : url($trainingCenter->logo_url))
                         : null,
