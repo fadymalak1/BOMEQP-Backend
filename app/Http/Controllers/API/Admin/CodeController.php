@@ -256,7 +256,7 @@ class CodeController extends Controller
             // Notify ACC
             $acc = \App\Models\ACC::find($batch->acc_id);
             if ($acc) {
-                $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+                $accUser = User::where('email', $acc->email)->whereIn('role', ['acc_admin', 'competency_admin'])->first();
                 if ($accUser) {
                     $notificationService->notifyAccCodePurchase(
                         $accUser->id,

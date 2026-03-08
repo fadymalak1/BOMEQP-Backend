@@ -59,7 +59,7 @@ class CheckExpiredSubscriptions extends Command
                     
                     // Also suspend the user account
                     $user = User::where('email', $acc->email)->first();
-                    if ($user && $user->role === 'acc_admin') {
+                    if ($user && in_array($user->role, ['acc_admin', 'competency_admin'])) {
                         $user->update(['status' => 'suspended']);
                     }
                 });

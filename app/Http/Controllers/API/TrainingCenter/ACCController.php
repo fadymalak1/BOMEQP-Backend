@@ -308,7 +308,7 @@ class ACCController extends Controller
             ]);
 
             // Send notification to ACC admin with enhanced details
-            $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+            $accUser = User::where('email', $acc->email)->whereIn('role', ['acc_admin', 'competency_admin'])->first();
             if ($accUser) {
                 $notificationService = new NotificationService();
                 $notificationService->notifyTrainingCenterAuthorizationRequested(
@@ -626,7 +626,7 @@ class ACCController extends Controller
             ]);
 
             // Send notification to ACC admin
-            $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+            $accUser = User::where('email', $acc->email)->whereIn('role', ['acc_admin', 'competency_admin'])->first();
             if ($accUser) {
                 $notificationService = new NotificationService();
                 $notificationService->notifyTrainingCenterAuthorizationRequested(

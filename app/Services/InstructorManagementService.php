@@ -460,7 +460,7 @@ class InstructorManagementService
             // Send notification to ACC admin
             $acc = \App\Models\ACC::find($request->acc_id);
             if ($acc) {
-                $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+                $accUser = User::where('email', $acc->email)->whereIn('role', ['acc_admin', 'competency_admin'])->first();
                 if ($accUser) {
                     $instructorName = $instructor->first_name . ' ' . $instructor->last_name;
                     

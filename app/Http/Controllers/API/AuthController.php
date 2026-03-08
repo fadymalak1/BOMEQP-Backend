@@ -37,7 +37,7 @@ class AuthController extends Controller
                         new OA\Property(property: "email", type: "string", format: "email", example: "john@example.com", description: "User's email address (must be unique)"),
                         new OA\Property(property: "password", type: "string", format: "password", example: "password123", description: "Password (minimum 8 characters)"),
                         new OA\Property(property: "password_confirmation", type: "string", format: "password", example: "password123", description: "Password confirmation"),
-                        new OA\Property(property: "role", type: "string", enum: ["training_center_admin", "acc_admin"], example: "training_center_admin", description: "User role"),
+                        new OA\Property(property: "role", type: "string", enum: ["training_center_admin", "acc_admin", "competency_admin"], example: "training_center_admin", description: "User role (competency_admin has same registration flow and capabilities as acc_admin)"),
                         
                         // Training Center Specific Fields (required when role is training_center_admin)
                         new OA\Property(property: "company_name", type: "string", example: "ABC Training Center", description: "Company name (required for training_center_admin)"),
@@ -122,7 +122,7 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
-            'role' => 'required|in:training_center_admin,acc_admin',
+            'role' => 'required|in:training_center_admin,acc_admin,competency_admin',
         ];
 
         // Additional validation rules for training center registration
@@ -180,8 +180,8 @@ class AuthController extends Controller
             ]);
         }
 
-        // Additional validation rules for ACC registration
-        if ($request->role === 'acc_admin') {
+        // Additional validation rules for ACC / Competency Admin registration (same flow)
+        if (in_array($request->role, ['acc_admin', 'competency_admin'])) {
             $rules = array_merge($rules, [
                 // Accreditation Body Information
                 'legal_name' => 'required|string|max:255',
@@ -376,7 +376,7 @@ class AuthController extends Controller
             if ($trainingCenter && $trainingCenter->name) {
                 $profileName = $trainingCenter->name;
             }
-        } elseif ($user->role === 'acc_admin') {
+        } elseif (in_array($user->role, ['acc_admin', 'competency_admin'])) {
             $acc = \App\Models\ACC::where('email', $user->email)->first();
             if ($acc && $acc->name) {
                 $profileName = $acc->name;

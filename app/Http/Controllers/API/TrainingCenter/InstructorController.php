@@ -483,7 +483,7 @@ class InstructorController extends Controller
         
         // Get user associated with ACC (ACC admin user)
         $accUser = \App\Models\User::where('email', $acc->email)
-            ->where('role', 'acc_admin')
+            ->whereIn('role', ['acc_admin', 'competency_admin'])
             ->first();
         
         // Get categories assigned to ACC from pivot table

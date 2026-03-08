@@ -107,7 +107,7 @@ class ACCManagementService
 
             // Send notification to ACC admin
             $user = User::where('email', $acc->email)->first();
-            if ($user && $user->role === 'acc_admin') {
+            if ($user && in_array($user->role, ['acc_admin', 'competency_admin'])) {
                 $this->notificationService->notifyAccRejected(
                     $user->id,
                     $acc->id,
@@ -299,7 +299,7 @@ class ACCManagementService
 
             // Activate the user account associated with this ACC
             $user = User::where('email', $acc->email)->first();
-            if ($user && $user->role === 'acc_admin') {
+            if ($user && in_array($user->role, ['acc_admin', 'competency_admin'])) {
                 $user->update(['status' => 'active']);
                 
                 // Send notification to ACC admin

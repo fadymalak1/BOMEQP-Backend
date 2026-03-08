@@ -99,7 +99,7 @@ class SubscriptionService
 
             // Also activate the user account associated with this ACC
             $user = User::where('email', $acc->email)->first();
-            if ($user && $user->role === 'acc_admin' && $user->status !== 'active') {
+            if ($user && in_array($user->role, ['acc_admin', 'competency_admin']) && $user->status !== 'active') {
                 $user->update(['status' => 'active']);
             }
 
@@ -236,7 +236,7 @@ class SubscriptionService
 
             // Activate user account if needed
             $user = User::where('email', $acc->email)->first();
-            if ($user && $user->role === 'acc_admin' && $user->status !== 'active') {
+            if ($user && in_array($user->role, ['acc_admin', 'competency_admin']) && $user->status !== 'active') {
                 $user->update(['status' => 'active']);
             }
 

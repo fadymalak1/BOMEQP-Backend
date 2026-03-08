@@ -69,8 +69,8 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         // Discount codes by ACC ID (available to all authenticated users - training centers need this)
         Route::get('/acc/{id}/discount-codes', [App\Http\Controllers\API\ACC\DiscountCodeController::class, 'getByAccId'])->where('id', '[0-9]+');
 
-    // Shared routes for both group_admin and acc_admin
-    Route::prefix('admin')->middleware(['role:group_admin,acc_admin'])->group(function () {
+    // Shared routes for group_admin, acc_admin, and competency_admin
+    Route::prefix('admin')->middleware(['role:group_admin,acc_admin,competency_admin'])->group(function () {
         // Categories & Subcategories Excel/CSV template download and import (specific routes first)
         Route::get('/categories/template/download', [App\Http\Controllers\API\Admin\CategoryController::class, 'downloadTemplate']);
         Route::post('/categories/import', [App\Http\Controllers\API\Admin\CategoryController::class, 'import']);
@@ -202,8 +202,8 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::get('/activity-logs', [App\Http\Controllers\API\Admin\StripeConnectController::class, 'activityLogs']);
     });
 
-    // ACC routes
-    Route::prefix('acc')->middleware(['role:acc_admin', 'acc.active'])->group(function () {
+    // ACC routes (acc_admin and competency_admin share same capabilities)
+    Route::prefix('acc')->middleware(['role:acc_admin,competency_admin', 'acc.active'])->group(function () {
         // Profile Management
         Route::get('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'show']);
         Route::post('/profile', [App\Http\Controllers\API\ACC\ProfileController::class, 'update']); // POST for file uploads

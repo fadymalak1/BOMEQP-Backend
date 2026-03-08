@@ -151,8 +151,8 @@ class AuthService
                 $this->notificationService->notifyAdminNewTrainingCenterApplication($trainingCenter->id, $trainingCenter->name);
             }
 
-            // Create ACC record if role is acc_admin
-            if ($request->role === 'acc_admin') {
+            // Create ACC record if role is acc_admin or competency_admin (same flow)
+            if (in_array($request->role, ['acc_admin', 'competency_admin'])) {
                 // Handle mailing address - if same as physical, copy physical address fields
                 $mailingAddress = $request->mailing_address;
                 $mailingCity = $request->mailing_city;

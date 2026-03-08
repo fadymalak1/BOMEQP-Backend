@@ -809,7 +809,7 @@ class ACCController extends Controller
 
         // Notify ACC admin if status changed
         if ($oldStatus !== $newStatus && in_array($newStatus, ['suspended', 'active', 'expired'])) {
-            $accUser = User::where('email', $acc->email)->where('role', 'acc_admin')->first();
+            $accUser = User::where('email', $acc->email)->whereIn('role', ['acc_admin', 'competency_admin'])->first();
             if ($accUser) {
                 $notificationService = new NotificationService();
                 $notificationService->notifyAccStatusChanged(

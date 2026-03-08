@@ -239,7 +239,7 @@ class SubCategoryController extends Controller
         }
 
         $accessibleCategoryIds = null;
-        if ($request->user()->role === 'acc_admin') {
+        if (in_array($request->user()->role, ['acc_admin', 'competency_admin'])) {
             $acc = ACC::where('email', $request->user()->email)->first();
             $accessibleCategoryIds = $acc
                 ? app(CategoryManagementService::class)->getAccessibleCategoryIds($acc, $request->user()->id)

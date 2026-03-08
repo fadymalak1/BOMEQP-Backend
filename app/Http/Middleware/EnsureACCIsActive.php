@@ -18,8 +18,8 @@ class EnsureACCIsActive
     {
         $user = $request->user();
 
-        // Only check for ACC admin users
-        if ($user && $user->role === 'acc_admin') {
+        // Only check for ACC / Competency admin users
+        if ($user && in_array($user->role, ['acc_admin', 'competency_admin'])) {
             $acc = ACC::where('email', $user->email)->first();
             
             if (!$acc) {
