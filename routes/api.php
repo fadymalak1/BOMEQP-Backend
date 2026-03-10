@@ -236,6 +236,8 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/instructors/{instructorId}/courses', [App\Http\Controllers\API\ACC\InstructorController::class, 'updateCourses']);
 
         // Courses
+        Route::get('/courses/template/download', [App\Http\Controllers\API\ACC\CourseController::class, 'downloadTemplate']);
+        Route::post('/courses/import', [App\Http\Controllers\API\ACC\CourseController::class, 'import']);
         Route::apiResource('courses', App\Http\Controllers\API\ACC\CourseController::class);
         Route::post('/courses/{id}/pricing', [App\Http\Controllers\API\ACC\CourseController::class, 'setPricing']);
         Route::put('/courses/{id}/pricing', [App\Http\Controllers\API\ACC\CourseController::class, 'updatePricing']);

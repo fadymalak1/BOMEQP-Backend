@@ -42,53 +42,58 @@ All card template endpoints are restricted to users with the `acc_admin` role (`
 
 ## Endpoints
 
-### 1. Get All Card Templates for the ACC
+### 1. Get ACC Card Design and Templates Using It
 
 ```
 GET /api/acc/card-template
 ```
 
-Returns all certificate templates belonging to the authenticated ACC that have a card design configured (`card_template_html` or `card_background_image_url` is set). Returns an empty array when none exist.
+Returns:
+
+- The **single shared card design** for the ACC (from the most recently updated certificate template).
+- The list of certificate templates that currently have `include_card = true`.
 
 #### Response `200 OK`
 
 ```json
 {
-  "card_templates": [
+  "card_template": {
+    "id": 7,
+    "name": "ACC Default Card Template",
+    "card_template_html": null,
+    "card_background_image_url": "https://app.bomeqp.com/.../card_background.jpg",
+    "card_config_json": {
+      "elements": [
+        { "type": "text", "variable": "{{trainee_name}}", "x": 0.38, "y": 0.20, "font_size": 18, "font_weight": "bold", "color": "#ffffff" },
+        { "type": "text", "variable": "{{course_name}}", "x": 0.38, "y": 0.38, "font_size": 13, "color": "#e0e0e0" },
+        { "type": "image", "variable": "{{instructor_photo}}", "x": 0.04, "y": 0.12, "width": 0.27, "height": 0.55 },
+        { "type": "image", "variable": "{{trainee_photo}}", "x": 0.70, "y": 0.12, "width": 0.25, "height": 0.55 }
+      ]
+    }
+  },
+  "certificate_templates": [
     {
       "id": 5,
       "name": "QHSE Course Certificate",
       "include_card": true,
-      "card_template_html": null,
-      "card_background_image_url": "https://app.bomeqp.com/.../card_background.jpg",
-      "card_config_json": {
-        "elements": [
-          { "type": "text", "variable": "{{instructor_name}}", "x": 0.38, "y": 0.20, "font_size": 18, "font_weight": "bold", "color": "#ffffff" },
-          { "type": "text", "variable": "{{course_name}}", "x": 0.38, "y": 0.38, "font_size": 13, "color": "#e0e0e0" },
-          { "type": "image", "variable": "{{instructor_photo}}", "x": 0.04, "y": 0.12, "width": 0.27, "height": 0.55 },
-          { "type": "image", "variable": "{{trainee_photo}}", "x": 0.70, "y": 0.12, "width": 0.25, "height": 0.55 }
-        ]
-      },
       "status": "active"
     },
     {
       "id": 9,
       "name": "Safety Management Diploma",
-      "include_card": false,
-      "card_template_html": "<html>...</html>",
-      "card_background_image_url": null,
-      "card_config_json": null,
+      "include_card": true,
       "status": "active"
     }
   ]
 }
 ```
 
-When no card designs exist:
+When no card designs exist (no template has any card fields set), `card_template` will be `null` and `certificate_templates` will be an empty array:
 
 ```json
 {
-  "card_templates": []
+  "card_template": null,
+  "certificate_templates": []
 }
 ```
 
@@ -100,9 +105,12 @@ When no card designs exist:
 PUT /api/acc/certificate-templates/{id}/card
 ```
 
-Attaches (or updates) the card design to an existing certificate template. This also serves as the **include_card toggle endpoint**.
+This endpoint has **two behaviors**:
 
-Multiple certificate templates can each have their own independent card design.
+- **Global card design update** (shared across all templates for this ACC):
+  - Sending `card_template_html` and/or `card_config_json` **updates the shared card design for all templates** of this ACC.
+- **Per-template toggle / metadata**:
+  - `include_card` and `name` apply **only** to the template with the given `{id}`.
 
 #### Path Parameters
 
@@ -115,8 +123,8 @@ Multiple certificate templates can each have their own independent card design.
 | Field                | Type    | Required | Description |
 |----------------------|---------|----------|-------------|
 | `include_card`       | boolean | No       | Toggle the card page in PDF generation (`true` = 2-page PDF) |
-| `card_template_html` | string  | No       | Full custom HTML for the card page. Supports the same `{{variable}}` placeholders as certificate templates. Takes priority over `card_config_json`. |
-| `card_config_json`   | object  | No       | Designer config — see [Card Config JSON Schema](#card-config-json-schema) below |
+| `card_template_html` | string  | No       | Full custom HTML for the card page. Supports the same `{{variable}}` placeholders as certificate templates. Takes priority over `card_config_json`. **Global:** updates shared card HTML for all templates of this ACC. |
+| `card_config_json`   | object  | No       | Designer config — see [Card Config JSON Schema](#card-config-json-schema) below. **Global:** updates shared card config for all templates of this ACC. |
 | `name`               | string  | No       | Optionally update the template name at the same time |
 
 #### Example Request

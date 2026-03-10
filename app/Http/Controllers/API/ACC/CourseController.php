@@ -3,20 +3,29 @@
 namespace App\Http\Controllers\API\ACC;
 
 use App\Http\Controllers\Controller;
+use App\Exports\CourseTemplateExport;
+use App\Imports\CourseImport;
 use App\Models\ACC;
+use App\Models\Category;
 use App\Models\Course;
+use App\Models\SubCategory;
+use App\Services\CategoryManagementService;
 use App\Services\CourseManagementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
 use OpenApi\Attributes as OA;
 
 class CourseController extends Controller
 {
     protected CourseManagementService $courseService;
 
-    public function __construct(CourseManagementService $courseService)
+    protected CategoryManagementService $categoryService;
+
+    public function __construct(CourseManagementService $courseService, CategoryManagementService $categoryService)
     {
         $this->courseService = $courseService;
+        $this->categoryService = $categoryService;
     }
     #[OA\Get(
         path: "/acc/courses",
@@ -62,6 +71,71 @@ class CourseController extends Controller
         $courses = $this->courseService->getCoursesWithPricing($request, $acc);
 
         return response()->json($courses);
+    }
+
+    #[OA\Get(
+        path: "/acc/courses/template/download",
+        summary: "Download courses Excel/CSV template",
+        description: "Download an Excel or CSV template for bulk course import. Excel format includes dropdowns for category, sub category, level, status, and currency.",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(name: "format", in: "query", required: false, schema: new OA\Schema(type: "string", enum: ["xlsx", "csv"], default: "xlsx"), example: "xlsx")
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Template file downloaded"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found")
+        ]
+    )]
+    public function downloadTemplate(Request $request)
+    {
+        $format = strtolower($request->get('format', 'xlsx'));
+        if (!in_array($format, ['xlsx', 'csv'], true)) {
+            $format = 'xlsx';
+        }
+
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $accessibleCategoryIds = $this->categoryService->getAccessibleCategoryIds($acc, $user->id);
+
+        $categoryNames = Category::whereIn('id', $accessibleCategoryIds)
+            ->orderBy('name')
+            ->pluck('name')
+            ->toArray();
+
+        $subCategories = SubCategory::with('category')
+            ->whereIn('category_id', $accessibleCategoryIds)
+            ->orderBy('name')
+            ->get();
+
+        $subCategoryNames = $subCategories->pluck('name')->toArray();
+
+        $currencies = [
+            'USD',
+            'EUR',
+            'GBP',
+            'EGP',
+            'SAR',
+            'AED',
+            'QAR',
+            'KWD',
+            'BHD',
+            'OMR',
+        ];
+
+        $fileName = 'courses_template.' . $format;
+
+        return Excel::download(
+            new CourseTemplateExport($format, $categoryNames, $subCategoryNames, $currencies),
+            $fileName,
+            $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX
+        );
     }
 
     #[OA\Post(
@@ -154,6 +228,108 @@ class CourseController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
+    }
+
+    #[OA\Post(
+        path: "/acc/courses/import",
+        summary: "Import courses from Excel/CSV file",
+        description: "Upload an Excel or CSV file to bulk create/update courses. Template columns: category (required), sub_category (required), name (required), code (required), description, duration_hours, max_capacity, assessor_required (Yes/No), level (Beginner/Intermediate/Advanced), status (Active/Inactive/Archived), base_price, currency (3-letter code).",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["file"],
+                    properties: [
+                        new OA\Property(property: "file", type: "string", format: "binary", description: "Excel (.xlsx) or CSV file generated from the courses template")
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Import completed",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "message", type: "string"),
+                        new OA\Property(property: "created_count", type: "integer"),
+                        new OA\Property(property: "updated_count", type: "integer"),
+                        new OA\Property(property: "errors", type: "array", items: new OA\Items(type: "string"))
+                    ]
+                )
+            ),
+            new OA\Response(response: 400, description: "No file uploaded"),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found"),
+            new OA\Response(response: 422, description: "Invalid file format")
+        ]
+    )]
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt,xlsx',
+        ]);
+
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $file = $request->file('file');
+
+        $accessibleCategoryIds = $this->categoryService->getAccessibleCategoryIds($acc, $user->id);
+
+        $categories = Category::whereIn('id', $accessibleCategoryIds)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $categoryNameToId = $categories->pluck('id', 'name')->toArray();
+
+        $subCategories = SubCategory::with('category')
+            ->whereIn('category_id', $accessibleCategoryIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'category_id']);
+
+        $subCategoryNameToMeta = [];
+        foreach ($subCategories as $subCategory) {
+            $subCategoryNameToMeta[$subCategory->name] = [
+                'id' => $subCategory->id,
+                'category_name' => $subCategory->category?->name ?? '',
+            ];
+        }
+
+        $import = new CourseImport($acc->id, $user->id, $categoryNameToId, $subCategoryNameToMeta);
+
+        try {
+            Excel::import($import, $file);
+        } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
+            $failures = $e->failures();
+            $errors = [];
+            foreach ($failures as $failure) {
+                $errors[] = 'Row ' . $failure->row() . ': ' . implode(', ', $failure->errors());
+            }
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => array_merge($errors, $import->getErrors()),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Import failed',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Courses imported successfully',
+            'created_count' => $import->getCreatedCount(),
+            'updated_count' => $import->getUpdatedCount(),
+            'errors' => $import->getErrors(),
+        ]);
     }
 
     #[OA\Get(
