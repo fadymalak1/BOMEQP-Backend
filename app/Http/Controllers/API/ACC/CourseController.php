@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Exports\CourseTemplateExport;
 use App\Imports\CourseImport;
 use App\Models\ACC;
-use App\Models\Category;
 use App\Models\Course;
 use App\Models\SubCategory;
 use App\Services\CategoryManagementService;
@@ -76,7 +75,7 @@ class CourseController extends Controller
     #[OA\Get(
         path: "/acc/courses/template/download",
         summary: "Download courses Excel/CSV template",
-        description: "Download an Excel or CSV template for bulk course import. Excel format includes dropdowns for category, sub category, level, status, and currency.",
+        description: "Download an Excel or CSV template for bulk course import. Excel format includes dropdowns for sub category, level, status, and currency.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         parameters: [
@@ -104,11 +103,6 @@ class CourseController extends Controller
 
         $accessibleCategoryIds = $this->categoryService->getAccessibleCategoryIds($acc, $user->id);
 
-        $categoryNames = Category::whereIn('id', $accessibleCategoryIds)
-            ->orderBy('name')
-            ->pluck('name')
-            ->toArray();
-
         $subCategories = SubCategory::with('category')
             ->whereIn('category_id', $accessibleCategoryIds)
             ->orderBy('name')
@@ -132,7 +126,7 @@ class CourseController extends Controller
         $fileName = 'courses_template.' . $format;
 
         return Excel::download(
-            new CourseTemplateExport($format, $categoryNames, $subCategoryNames, $currencies),
+            new CourseTemplateExport($format, $subCategoryNames, $currencies),
             $fileName,
             $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX
         );
@@ -233,7 +227,7 @@ class CourseController extends Controller
     #[OA\Post(
         path: "/acc/courses/import",
         summary: "Import courses from Excel/CSV file",
-        description: "Upload an Excel or CSV file to bulk create/update courses. Template columns: category (required), sub_category (required), name (required), code (required), description, duration_hours, max_capacity, assessor_required (Yes/No), level (Beginner/Intermediate/Advanced), status (Active/Inactive/Archived), base_price, currency (3-letter code).",
+        description: "Upload an Excel or CSV file to bulk create/update courses. Template columns: sub_category (required), name (required), code (required), description, duration_hours, max_capacity, assessor_required (Yes/No), level (Beginner/Intermediate/Advanced), status (Active/Inactive/Archived), base_price, currency (3-letter code).",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         requestBody: new OA\RequestBody(
@@ -284,12 +278,6 @@ class CourseController extends Controller
 
         $accessibleCategoryIds = $this->categoryService->getAccessibleCategoryIds($acc, $user->id);
 
-        $categories = Category::whereIn('id', $accessibleCategoryIds)
-            ->orderBy('name')
-            ->get(['id', 'name']);
-
-        $categoryNameToId = $categories->pluck('id', 'name')->toArray();
-
         $subCategories = SubCategory::with('category')
             ->whereIn('category_id', $accessibleCategoryIds)
             ->orderBy('name')
@@ -299,11 +287,10 @@ class CourseController extends Controller
         foreach ($subCategories as $subCategory) {
             $subCategoryNameToMeta[$subCategory->name] = [
                 'id' => $subCategory->id,
-                'category_name' => $subCategory->category?->name ?? '',
             ];
         }
 
-        $import = new CourseImport($acc->id, $user->id, $categoryNameToId, $subCategoryNameToMeta);
+        $import = new CourseImport($acc->id, $user->id, $subCategoryNameToMeta);
 
         try {
             Excel::import($import, $file);

@@ -36,8 +36,7 @@ Downloads an Excel (`.xlsx`) or CSV (`.csv`) template file that you can use to c
 
 The template is **scoped to the authenticated ACC**:
 
-- The **Category** dropdown only contains categories accessible to the ACC.
-- The **Sub Category** dropdown only contains sub categories under those accessible categories.
+- The **Sub Category** dropdown only contains sub categories under categories accessible to the ACC.
 - Level, Status, and Currency are constrained to valid values.
 
 #### Query Parameters
@@ -52,8 +51,7 @@ The Excel template contains a single sheet with the following **headings**:
 
 | Column             | Required | Type     | Description                                                                                         | Dropdown / Allowed Values                                                  |
 |--------------------|----------|----------|-----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------|
-| `category`         | Yes      | string   | Category name. Must match exactly one of the accessible categories.                                | **Dropdown**: accessible categories for this ACC                          |
-| `sub_category`     | Yes      | string   | Sub category name. Must exist and belong to the selected `category`.                               | **Dropdown**: accessible sub categories for this ACC                      |
+| `sub_category`     | Yes      | string   | Sub category name. Must exist in one of the categories accessible to the ACC.                      | **Dropdown**: accessible sub categories for this ACC                      |
 | `name`             | Yes      | string   | Course name (English).                                                                             | Free text                                                                 |
 | `code`             | Yes      | string   | Unique course code per ACC. Used to match existing courses when importing.                         | Free text                                                                 |
 | `description`      | No       | string   | Optional course description.                                                                       | Free text                                                                 |
@@ -105,12 +103,9 @@ Uploads a filled Excel/CSV template file to **create or update courses in bulk**
 For each row (starting at Excel row 2):
 
 - **Empty `name`** → row is skipped (treated as blank).
-- **`category`**:
-  - Must not be empty.
-  - Must match an accessible category name exactly.
 - **`sub_category`**:
   - Must not be empty.
-  - Must exist and belong to the selected `category`.
+  - Must exist in the ACC’s accessible sub categories (use exact name from dropdown).
 - **`code`**:
   - Must not be empty.
   - Used as the unique key per ACC for upserts.
@@ -211,7 +206,6 @@ Save the file `courses_template.xlsx`.
 In Excel:
 
 - For each course row:
-  - Select `category` from the dropdown.
   - Select `sub_category` from the dropdown.
   - Enter `name`, `code`, and other fields.
   - Choose `level` from `Beginner / Intermediate / Advanced`.

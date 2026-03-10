@@ -20,13 +20,11 @@ class CourseImport implements ToCollection, WithHeadingRow
     /**
      * @param  int  $accId
      * @param  int  $userId
-     * @param  array<string,int>  $categoryNameToId
-     * @param  array<string,array{id:int,category_name:string}>  $subCategoryNameToMeta
+     * @param  array<string,array{id:int}>  $subCategoryNameToMeta
      */
     public function __construct(
         protected int $accId,
         protected int $userId,
-        protected array $categoryNameToId,
         protected array $subCategoryNameToMeta,
     ) {
     }
@@ -42,32 +40,15 @@ class CourseImport implements ToCollection, WithHeadingRow
                     continue;
                 }
 
-                $categoryName = trim((string) ($row['category'] ?? ''));
-                if ($categoryName === '') {
-                    $this->errors[] = "Row {$rowNumber}: Category is required.";
-                    continue;
-                }
-
                 $subCategoryName = trim((string) ($row['sub_category'] ?? ''));
                 if ($subCategoryName === '') {
                     $this->errors[] = "Row {$rowNumber}: Sub category is required.";
                     continue;
                 }
 
-                $categoryId = $this->categoryNameToId[$categoryName] ?? null;
-                if ($categoryId === null) {
-                    $this->errors[] = "Row {$rowNumber}: Category '{$categoryName}' not found. Use exact name from dropdown.";
-                    continue;
-                }
-
                 $subMeta = $this->subCategoryNameToMeta[$subCategoryName] ?? null;
                 if ($subMeta === null) {
                     $this->errors[] = "Row {$rowNumber}: Sub category '{$subCategoryName}' not found. Use exact name from dropdown.";
-                    continue;
-                }
-
-                if ($subMeta['category_name'] !== $categoryName) {
-                    $this->errors[] = "Row {$rowNumber}: Sub category '{$subCategoryName}' does not belong to category '{$categoryName}'.";
                     continue;
                 }
 

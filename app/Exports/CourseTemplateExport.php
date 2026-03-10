@@ -15,13 +15,11 @@ class CourseTemplateExport implements FromArray, WithHeadings, WithEvents
 
     /**
      * @param  string|null  $format  'xlsx' or 'csv'
-     * @param  array<string>  $categoryNames
      * @param  array<string>  $subCategoryNames
      * @param  array<string>  $currencies
      */
     public function __construct(
         ?string $format = 'xlsx',
-        protected array $categoryNames = [],
         protected array $subCategoryNames = [],
         protected array $currencies = [],
     ) {
@@ -30,14 +28,12 @@ class CourseTemplateExport implements FromArray, WithHeadings, WithEvents
 
     public function array(): array
     {
-        $firstCategory = $this->categoryNames[0] ?? '';
         $firstSubCategory = $this->subCategoryNames[0] ?? '';
         $defaultLevel = 'Beginner';
         $defaultStatus = 'Active';
         $defaultCurrency = $this->currencies[0] ?? 'USD';
 
         return [[
-            $firstCategory,      // category
             $firstSubCategory,   // sub_category
             '',                  // name
             '',                  // code
@@ -55,7 +51,6 @@ class CourseTemplateExport implements FromArray, WithHeadings, WithEvents
     public function headings(): array
     {
         return [
-            'category',
             'sub_category',
             'name',
             'code',
@@ -80,20 +75,16 @@ class CourseTemplateExport implements FromArray, WithHeadings, WithEvents
 
                 $sheet = $event->sheet->getDelegate();
 
-                if (!empty($this->categoryNames)) {
-                    $this->addDropdownFromList($sheet, 'A', $this->categoryNames, 'Categories');
-                }
-
                 if (!empty($this->subCategoryNames)) {
-                    $this->addDropdownFromList($sheet, 'B', $this->subCategoryNames, 'SubCategories');
+                    $this->addDropdownFromList($sheet, 'A', $this->subCategoryNames, 'SubCategories');
                 }
 
-                $this->addFixedDropdown($sheet, 'H', ['Yes', 'No']); // assessor_required
-                $this->addFixedDropdown($sheet, 'I', ['Beginner', 'Intermediate', 'Advanced']); // level
-                $this->addFixedDropdown($sheet, 'J', ['Active', 'Inactive']); // status
+                $this->addFixedDropdown($sheet, 'G', ['Yes', 'No']); // assessor_required
+                $this->addFixedDropdown($sheet, 'H', ['Beginner', 'Intermediate', 'Advanced']); // level
+                $this->addFixedDropdown($sheet, 'I', ['Active', 'Inactive']); // status
 
                 if (!empty($this->currencies)) {
-                    $this->addDropdownFromList($sheet, 'L', $this->currencies, 'Currencies');
+                    $this->addDropdownFromList($sheet, 'K', $this->currencies, 'Currencies');
                 }
             },
         ];
