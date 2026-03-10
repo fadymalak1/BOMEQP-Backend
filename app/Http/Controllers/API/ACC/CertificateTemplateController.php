@@ -287,6 +287,27 @@ class CertificateTemplateController extends Controller
             'status' => $request->status,
         ]);
 
+        // If this new template should include the card, copy the ACC's existing shared card design
+        // into this row (if a card design already exists for this ACC).
+        if ($template->include_card) {
+            $existingCardTemplate = CertificateTemplate::where('acc_id', $acc->id)
+                ->where(function ($q) {
+                    $q->whereNotNull('card_template_html')
+                      ->orWhereNotNull('card_background_image_url')
+                      ->orWhereNotNull('card_config_json');
+                })
+                ->orderBy('updated_at', 'desc')
+                ->first();
+
+            if ($existingCardTemplate) {
+                $template->update([
+                    'card_template_html'        => $existingCardTemplate->card_template_html,
+                    'card_background_image_url' => $existingCardTemplate->card_background_image_url,
+                    'card_config_json'          => $existingCardTemplate->card_config_json,
+                ]);
+            }
+        }
+
         // Attach courses to template only if template_type is 'course'
         if ($request->template_type === 'course' && !empty($request->course_ids)) {
             $template->courses()->attach($request->course_ids);
