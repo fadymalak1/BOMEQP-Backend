@@ -804,7 +804,6 @@ new OA\Property(
     {
         $user = $request->user();
         $acc  = ACC::where('email', $user->email)->first();
-
         if (!$acc) {
             return response()->json(['message' => 'ACC not found'], 404);
         }
@@ -818,26 +817,36 @@ new OA\Property(
             'name'               => 'sometimes|string|max:255',
         ]);
 
-        $updateData = [];
-
-        if ($request->has('include_card')) {
-            $updateData['include_card'] = (bool) $request->include_card;
-        }
+        // Global card design (shared across all templates for this ACC)
+        $designUpdate = [];
         if ($request->has('card_template_html')) {
-            $updateData['card_template_html'] = $request->card_template_html;
+            $designUpdate['card_template_html'] = $request->card_template_html;
         }
         if ($request->has('card_config_json')) {
             $val = $request->card_config_json;
             if (is_string($val)) {
                 $val = json_decode($val, true) ?: null;
             }
-            $updateData['card_config_json'] = $val;
+            $designUpdate['card_config_json'] = $val;
         }
-        if ($request->has('name')) {
-            $updateData['name'] = $request->name;
+        if (!empty($designUpdate)) {
+            CertificateTemplate::where('acc_id', $acc->id)->update($designUpdate);
         }
 
-        $template->update($updateData);
+        // Per-template properties (include_card, name) remain specific to this template
+        $templateUpdate = [];
+        if ($request->has('include_card')) {
+            $templateUpdate['include_card'] = (bool) $request->include_card;
+        }
+        if ($request->has('name')) {
+            $templateUpdate['name'] = $request->name;
+        }
+
+        if (!empty($templateUpdate)) {
+            $template->update($templateUpdate);
+        } else {
+            $template->refresh();
+        }
 
         return response()->json([
             'message'  => 'Card template saved successfully',
@@ -876,7 +885,6 @@ new OA\Property(
     {
         $user = $request->user();
         $acc  = ACC::where('email', $user->email)->first();
-
         if (!$acc) {
             return response()->json(['message' => 'ACC not found'], 404);
         }
@@ -904,9 +912,14 @@ new OA\Property(
             $filePath = $file->storeAs($directory, $fileName, 'public');
             $fileUrl  = Storage::disk('public')->url($filePath);
 
-            $template->update([
+            // Global card background – same image for all templates of this ACC
+            CertificateTemplate::where('acc_id', $acc->id)->update([
                 'card_background_image_url' => $fileUrl,
-                'include_card'              => true,
+            ]);
+
+            // Per-template toggle: include_card is still controlled per certificate template
+            $template->update([
+                'include_card' => true,
             ]);
 
             return response()->json([
@@ -960,7 +973,6 @@ new OA\Property(
     {
         $user = $request->user();
         $acc  = ACC::where('email', $user->email)->first();
-
         if (!$acc) {
             return response()->json(['message' => 'ACC not found'], 404);
         }
@@ -1012,7 +1024,12 @@ new OA\Property(
             }
         }
 
-        $template->update(['card_config_json' => ['elements' => $elements]]);
+        // Global card config – designer configuration shared by all templates for this ACC
+        CertificateTemplate::where('acc_id', $acc->id)->update([
+            'card_config_json' => ['elements' => $elements],
+        ]);
+
+        $template->refresh();
 
         return response()->json([
             'message'  => 'Card configuration updated successfully',

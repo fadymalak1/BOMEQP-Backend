@@ -8,16 +8,15 @@ The card visually resembles a wallet-sized ID card (see reference image) and dis
 
 ## Overview
 
-- **Multiple** certificate templates belonging to the same ACC can each have their own card design.
-- The card design is controlled by **three optional fields** added to every certificate template:
+- **Single card design per ACC**: all certificate templates for an ACC share the same card design (HTML / background / config).
+- The **card design** is controlled by three fields (stored on each certificate template row but updated **globally** for the ACC:
   - `card_template_html` — full custom HTML for the card page (highest priority).
   - `card_background_image_url` — background image; overlaid with elements from `card_config_json`.
   - `card_config_json` — designer configuration (elements with coordinates and styling).
-- The **`include_card`** boolean fie
-ld on a certificate template acts as the per-template switch:
+- The **`include_card`** boolean field on a certificate template acts as the **per-template switch**:
   - `true` → the generated PDF for that template will have **2 pages** (page 1: certificate, page 2: card).
   - `false` (default) → single-page PDF, card is ignored even if a card design exists.
-- `include_card` can be toggled on `store`, `update`, and `PUT /card` endpoints.
+- `include_card` can be toggled on `store`, `update`, and `PUT /card` endpoints. Changing `card_template_html`, `card_background_image_url`, or `card_config_json` via the ACC endpoints updates the design for **all** templates of that ACC.
 
 ---
 
