@@ -92,18 +92,24 @@ class CourseImport implements ToCollection, WithHeadingRow
                 }
 
                 $basePriceRaw = trim((string) ($row['base_price'] ?? ''));
-                $basePrice = $basePriceRaw === '' ? null : (float) $basePriceRaw;
-
-                $currencyRaw = trim((string) ($row['currency'] ?? ''));
-                $currency = $currencyRaw === '' ? null : strtoupper($currencyRaw);
-
-                if ($basePrice !== null && $basePrice < 0) {
+                if ($basePriceRaw === '') {
+                    $this->errors[] = "Row {$rowNumber}: base_price is required.";
+                    continue;
+                }
+                $basePrice = (float) $basePriceRaw;
+                if ($basePrice < 0) {
                     $this->errors[] = "Row {$rowNumber}: base_price cannot be negative.";
                     continue;
                 }
 
-                if ($basePrice !== null && ($currency === null || strlen($currency) !== 3)) {
+                $currencyRaw = trim((string) ($row['currency'] ?? ''));
+                if ($currencyRaw === '') {
                     $this->errors[] = "Row {$rowNumber}: currency (3-letter code) is required when base_price is provided.";
+                    continue;
+                }
+                $currency = strtoupper($currencyRaw);
+                if (strlen($currency) !== 3) {
+                    $this->errors[] = "Row {$rowNumber}: currency must be a 3-letter code (e.g. USD, EGP).";
                     continue;
                 }
 
@@ -136,9 +142,7 @@ class CourseImport implements ToCollection, WithHeadingRow
                     $this->createdCount++;
                 }
 
-                if ($basePrice !== null && $currency !== null) {
-                    $this->createOrUpdatePricing($course->id, $basePrice, $currency);
-                }
+                $this->createOrUpdatePricing($course->id, $basePrice, $currency);
 
                 DB::commit();
             } catch (\Throwable $e) {

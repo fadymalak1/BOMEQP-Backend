@@ -60,8 +60,8 @@ The Excel template contains a single sheet with the following **headings**:
 | `assessor_required`| No       | boolean  | Whether an assessor is required.                                                                   | **Dropdown**: `Yes`, `No`                                                 |
 | `level`            | Yes      | string   | Course difficulty level.                                                                           | **Dropdown**: `Beginner`, `Intermediate`, `Advanced`                      |
 | `status`           | No       | string   | Course status. If empty, defaults to `Active`.                                                     | **Dropdown**: `Active`, `Inactive` (import also accepts `Archived`)       |
-| `base_price`       | No       | decimal  | Optional course base price for certificates. Must be `>= 0` if provided.                           | Free number                                                                |
-| `currency`         | No*      | string   | 3-letter currency code (e.g. `USD`, `EGP`). **Required if `base_price` is provided.**              | **Dropdown**: `USD`, `EUR`, `GBP`, `EGP`, `SAR`, `AED`, `QAR`, `KWD`, `BHD`, `OMR` |
+| `base_price`       | Yes      | decimal  | Course base price for certificates. Must be `>= 0`.                                                | Free number                                                                |
+| `currency`         | Yes      | string   | 3-letter currency code (e.g. `USD`, `EGP`).                                                        | **Dropdown**: `USD`, `EUR`, `GBP`, `EGP`, `SAR`, `AED`, `QAR`, `KWD`, `BHD`, `OMR` |
 
 > **Note:** Dropdowns are only available in the XLSX version. The CSV version uses the same column names and allowed values but without validation in the file.
 
@@ -123,12 +123,11 @@ For each row (starting at Excel row 2):
   - Allowed values (case-insensitive): `Active`, `Inactive`, `Archived`.
   - Any other value → row error.
 - **`base_price`**:
-  - If present, must be `>= 0`.
-  - If negative → row error.
+  - Must be present.
+  - Must be a number `>= 0`; if negative or empty → row error.
 - **`currency`**:
-  - Required if `base_price` is present.
-  - Must be a 3-letter code (e.g. `USD`, `EGP`).
-  - If missing/invalid while `base_price` is present → row error.
+  - Must be present.
+  - Must be a 3-letter code (e.g. `USD`, `EGP`); if missing or not 3 letters → row error.
 
 If **any** validation rule fails for a row, that row is skipped and an error message is collected.
 
@@ -137,15 +136,14 @@ If **any** validation rule fails for a row, that row is skipped and an error mes
 When a row passes validation:
 
 - The course is created/updated with the provided course fields.
-- If `base_price` and `currency` are both present:
-  - The latest `CertificatePricing` row for this `course_id` and `acc_id` is **created or updated** with:
-    - `base_price`
-    - `currency`
-    - `group_commission_percentage = 0`
-    - `training_center_commission_percentage = 0`
-    - `instructor_commission_percentage = 0`
-    - `effective_from = today`
-    - `effective_to = null`
+- The latest `CertificatePricing` row for this `course_id` and `acc_id` is **created or updated** with:
+  - `base_price`
+  - `currency`
+  - `group_commission_percentage = 0`
+  - `training_center_commission_percentage = 0`
+  - `instructor_commission_percentage = 0`
+  - `effective_from = today`
+  - `effective_to = null`
 
 #### Response `200 OK`
 
