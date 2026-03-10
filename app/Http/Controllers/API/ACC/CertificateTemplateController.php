@@ -720,27 +720,37 @@ new OA\Property(
 
     #[OA\Get(
         path: "/acc/card-template",
-        summary: "Get all card templates for this ACC",
-        description: "Returns all certificate templates belonging to the authenticated ACC that have a card design configured (card_template_html or card_background_image_url is set). Multiple certificate templates can each have their own card.",
+        summary: "Get ACC card design and templates that use it",
+        description: "Return the single shared card design for the ACC (card_template_html / card_background_image_url / card_config_json) plus the list of certificate templates that have include_card = true.",
         tags: ["ACC"],
         security: [["sanctum" => []]],
         responses: [
             new OA\Response(
                 response: 200,
-                description: "Card templates retrieved",
+                description: "Card template retrieved",
                 content: new OA\JsonContent(
                     properties: [
                         new OA\Property(
-                            property: "card_templates",
+                            property: "card_template",
+                            type: "object",
+                            nullable: true,
+                            properties: [
+                                new OA\Property(property: "id", type: "integer"),
+                                new OA\Property(property: "name", type: "string"),
+                                new OA\Property(property: "card_template_html", type: "string", nullable: true),
+                                new OA\Property(property: "card_background_image_url", type: "string", nullable: true),
+                                new OA\Property(property: "card_config_json", type: "object", nullable: true),
+                            ]
+                        ),
+                        new OA\Property(
+                            property: "certificate_templates",
                             type: "array",
+                            description: "Certificate templates that currently have include_card = true.",
                             items: new OA\Items(
                                 properties: [
                                     new OA\Property(property: "id", type: "integer"),
                                     new OA\Property(property: "name", type: "string"),
                                     new OA\Property(property: "include_card", type: "boolean"),
-                                    new OA\Property(property: "card_template_html", type: "string", nullable: true),
-                                    new OA\Property(property: "card_background_image_url", type: "string", nullable: true),
-                                    new OA\Property(property: "card_config_json", type: "object", nullable: true),
                                     new OA\Property(property: "status", type: "string"),
                                 ]
                             )
@@ -761,16 +771,33 @@ new OA\Property(
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        $cardTemplates = CertificateTemplate::where('acc_id', $acc->id)
-            ->where(function ($q) {
-                $q->whereNotNull('card_template_html')
-                  ->orWhereNotNull('card_background_image_url');
-            })
-            ->select(['id', 'name', 'include_card', 'card_template_html', 'card_background_image_url', 'card_config_json', 'status'])
+        // Single shared card design for this ACC – take the most recently updated template
+        $designTemplate = CertificateTemplate::where('acc_id', $acc->id)
             ->orderBy('updated_at', 'desc')
+            ->first();
+
+        $cardTemplate = null;
+        if ($designTemplate) {
+            $cardTemplate = [
+                'id'                         => $designTemplate->id,
+                'name'                       => $designTemplate->name,
+                'card_template_html'         => $designTemplate->card_template_html,
+                'card_background_image_url'  => $designTemplate->card_background_image_url,
+                'card_config_json'           => $designTemplate->card_config_json,
+            ];
+        }
+
+        // All certificate templates that currently have include_card = true
+        $templatesWithCard = CertificateTemplate::where('acc_id', $acc->id)
+            ->where('include_card', true)
+            ->select(['id', 'name', 'include_card', 'status'])
+            ->orderBy('name')
             ->get();
 
-        return response()->json(['card_templates' => $cardTemplates]);
+        return response()->json([
+            'card_template'         => $cardTemplate,
+            'certificate_templates' => $templatesWithCard,
+        ]);
     }
 
     #[OA\Put(
