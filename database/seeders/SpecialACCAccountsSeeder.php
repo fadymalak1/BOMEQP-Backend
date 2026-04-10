@@ -25,43 +25,45 @@ class SpecialACCAccountsSeeder extends Seeder
 
     /**
      * Run the database seeds.
+     *
+     * `name` is short (acronym-style); `legal_name` is the full formal organisation title.
      */
     public function run(): void
     {
         $accounts = [
             [
-                'name' => 'International Organisation of Occupational Safety and Health – UK (IAOSH-UK)',
-                'legal_name' => 'International Organisation of Occupational Safety and Health – UK (IAOSH-UK)',
+                'name' => 'IAOSH-UK',
+                'legal_name' => 'International Organisation of Occupational Safety and Health – UK',
                 'email' => 'support@iaoshuk.com',
             ],
             [
-                'name' => 'Royal Society for Lifting Engineering Standards (RSLES)',
-                'legal_name' => 'Royal Society for Lifting Engineering Standards (RSLES)',
+                'name' => 'RSLES',
+                'legal_name' => 'Royal Society for Lifting Engineering Standards',
                 'email' => 'support@rsles.com',
             ],
             [
-                'name' => 'British Society of Evaluation and Certification Auditors (BSECA)',
-                'legal_name' => 'British Society of Evaluation and Certification Auditors (BSECA)',
+                'name' => 'BSECA',
+                'legal_name' => 'British Society of Evaluation and Certification Auditors',
                 'email' => 'support@bseca.com',
             ],
             [
-                'name' => 'British Institute of Leadership and Project Management (BILPM)',
-                'legal_name' => 'British Institute of Leadership and Project Management (BILPM)',
+                'name' => 'BILPM',
+                'legal_name' => 'British Institute of Leadership and Project Management',
                 'email' => 'support@bilpm.com',
             ],
             [
-                'name' => 'British Society for Accreditation of Professional Engineers (BSAPE)',
-                'legal_name' => 'British Society for Accreditation of Professional Engineers (BSAPE)',
+                'name' => 'BSAPE',
+                'legal_name' => 'British Society for Accreditation of Professional Engineers',
                 'email' => 'support@bsape.com',
             ],
             [
-                'name' => 'British Organisation for Competence Assurance and Qualifications (BOCAQ)',
-                'legal_name' => 'British Organisation for Competence Assurance and Qualifications (BOCAQ)',
+                'name' => 'BOCAQ',
+                'legal_name' => 'British Organisation for Competence Assurance and Qualifications',
                 'email' => 'support@bocaq.com',
             ],
             [
-                'name' => 'British Institute of Healthcare and Hospital Management (BIHHM)',
-                'legal_name' => 'British Institute of Healthcare and Hospital Management (BIHHM)',
+                'name' => 'BIHHM',
+                'legal_name' => 'British Institute of Healthcare and Hospital Management',
                 'email' => 'support@bihhm.com',
             ],
         ];
@@ -69,7 +71,7 @@ class SpecialACCAccountsSeeder extends Seeder
         foreach ($accounts as $accountData) {
             // Check if user already exists
             $user = User::where('email', $accountData['email'])->first();
-            
+
             if (!$user) {
                 // Create user account
                 $user = User::create([
@@ -87,7 +89,7 @@ class SpecialACCAccountsSeeder extends Seeder
 
             // Check if ACC already exists
             $acc = ACC::where('email', $accountData['email'])->first();
-            
+
             if (!$acc) {
                 // Create ACC record with minimal required data
                 // Users will complete their profiles after login
@@ -100,19 +102,19 @@ class SpecialACCAccountsSeeder extends Seeder
                     'address' => 'Address to be completed', // Placeholder, will be updated by user
                     'phone' => '+44-000-000-0000', // Placeholder, will be updated by user
                     'status' => 'pending', // Will appear in admin applications list
-                    
+
                     // Set minimal required fields for ACC registration
                     'physical_street' => 'Address to be completed',
                     'physical_city' => 'City to be completed',
                     'physical_country' => 'United Kingdom',
                     'physical_postal_code' => '00000',
-                    
+
                     'mailing_same_as_physical' => true,
                     'mailing_street' => 'Address to be completed',
                     'mailing_city' => 'City to be completed',
                     'mailing_country' => 'United Kingdom',
                     'mailing_postal_code' => '00000',
-                    
+
                     // Primary Contact (minimal required fields)
                     'primary_contact_title' => 'Mr.',
                     'primary_contact_first_name' => 'Contact',
@@ -120,7 +122,7 @@ class SpecialACCAccountsSeeder extends Seeder
                     'primary_contact_email' => $accountData['email'],
                     'primary_contact_country' => 'United Kingdom',
                     'primary_contact_mobile' => '+44-000-000-0000',
-                    
+
                     // Secondary Contact (required for ACC)
                     'secondary_contact_title' => 'Mrs.',
                     'secondary_contact_first_name' => 'Secondary',
@@ -128,10 +130,10 @@ class SpecialACCAccountsSeeder extends Seeder
                     'secondary_contact_email' => $accountData['email'],
                     'secondary_contact_country' => 'United Kingdom',
                     'secondary_contact_mobile' => '+44-000-000-0000',
-                    
+
                     // Additional Information
                     'company_gov_registry_number' => 'REG-' . strtoupper(Str::random(8)),
-                    
+
                     // Agreement Checkboxes
                     'agreed_to_receive_communications' => true,
                     'agreed_to_terms_and_conditions' => true,
@@ -149,4 +151,3 @@ class SpecialACCAccountsSeeder extends Seeder
         $this->command->info('After approval, they will automatically receive lifetime subscriptions.');
     }
 }
-

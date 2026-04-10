@@ -10,36 +10,38 @@ class OrganizationAccountsSeeder extends Seeder
 {
     /**
      * Run the database seeds.
+     *
+     * `name` is the short display name (acronym-style); full legal titles are in SpecialACCAccountsSeeder legal_name for ACC rows.
      */
     public function run(): void
     {
         $organizations = [
             [
-                'name' => 'International Organisation of Occupational Safety and Health – UK (IAOSH-UK)',
+                'name' => 'IAOSH-UK',
                 'email' => 'support@iaoshuk.com',
             ],
             [
-                'name' => 'Royal Society for Lifting Engineering Standards (RSLES)',
+                'name' => 'RSLES',
                 'email' => 'support@rsles.com',
             ],
             [
-                'name' => 'British Society of Evaluation and Certification Auditors (BSECA)',
+                'name' => 'BSECA',
                 'email' => 'support@bseca.com',
             ],
             [
-                'name' => 'British Institute of Leadership and Project Management (BILPM)',
+                'name' => 'BILPM',
                 'email' => 'support@bilpm.com',
             ],
             [
-                'name' => 'British Society for Accreditation of Professional Engineers (BSAPE)',
+                'name' => 'BSAPE',
                 'email' => 'support@bsape.com',
             ],
             [
-                'name' => 'British Organisation for Competence Assurance and Qualifications (BOCAQ)',
+                'name' => 'BOCAQ',
                 'email' => 'support@bocaq.com',
             ],
             [
-                'name' => 'British Institute of Healthcare and Hospital Management (BIHHM)',
+                'name' => 'BIHHM',
                 'email' => 'support@bihhm.com',
             ],
         ];
@@ -67,4 +69,3 @@ class OrganizationAccountsSeeder extends Seeder
         $this->command->info('Organization accounts seeding completed!');
     }
 }
-
