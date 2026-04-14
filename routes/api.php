@@ -243,6 +243,7 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         Route::put('/courses/{id}/pricing', [App\Http\Controllers\API\ACC\CourseController::class, 'updatePricing']);
 
         // Certificate Templates
+        Route::get('/certificate-templates/placeholders', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'templatePlaceholders']);
         Route::post('/certificate-templates/{id}/upload-background', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'uploadBackgroundImage']);
         Route::put('/certificate-templates/{id}/config', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'updateConfig']);
         // Card template routes (must be before the apiResource wildcard)

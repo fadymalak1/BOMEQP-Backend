@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\CertificateTemplate;
+use App\Models\TrainingCenter;
+use App\Models\TrainingClass;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -950,6 +952,10 @@ class CertificateGenerationService
 
     public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null): array
     {
+        if (!$instructor->relationLoaded('trainingCenter')) {
+            $instructor->load('trainingCenter');
+        }
+
         $data = [
             'instructor_name'         => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
             'instructor_first_name'   => $instructor->first_name ?? '',
@@ -980,12 +986,56 @@ class CertificateGenerationService
             $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
         }
 
+        $trainingCenter = $instructor->trainingCenter;
+        if ($trainingCenter) {
+            $data = $this->appendCourseCertificateDynamicFields($trainingCenter, null, $data);
+        } else {
+            $data = array_merge($data, [
+                'training_provider_name' => '',
+                'training_provider_phone' => '',
+                'delivery_method' => '',
+                'training_center_same_as_training_provider' => '',
+            ]);
+        }
+
         return $this->generate($template, $data, 'pdf');
     }
 
     public function generatePdf(CertificateTemplate $template, array $data): array
     {
         return $this->generate($template, $data, 'pdf');
+    }
+
+    /**
+     * Merge dynamic fields: training provider name/phone, delivery method, TC vs provider flag.
+     * Used for course completion PDFs (with optional training class for delivery) and for
+     * instructor authorization PDFs (delivery usually empty; pass null training class).
+     */
+    public function appendCourseCertificateDynamicFields(
+        TrainingCenter $trainingCenter,
+        ?TrainingClass $trainingClass,
+        array $data
+    ): array {
+        $providerName = trim((string) ($trainingCenter->name ?? ''));
+        $tcNameInData = trim((string) ($data['training_center_name'] ?? $providerName));
+
+        $delivery = '';
+        if ($trainingClass !== null) {
+            $parts = array_filter([
+                $trainingClass->location ? trim((string) $trainingClass->location) : null,
+                $trainingClass->location_details ? trim((string) $trainingClass->location_details) : null,
+            ]);
+            $delivery = implode(' — ', $parts);
+        }
+
+        $same = strcasecmp($providerName, $tcNameInData) === 0 ? 'Yes' : 'No';
+
+        return array_merge($data, [
+            'training_provider_name' => $providerName,
+            'training_provider_phone' => trim((string) ($trainingCenter->phone ?? '')),
+            'delivery_method' => $delivery,
+            'training_center_same_as_training_provider' => $same,
+        ]);
     }
 
     // -------------------------------------------------------------------------
@@ -1011,6 +1061,13 @@ class CertificateGenerationService
         // So card can use trainee_photo when provided as trainee_image_url
         if (!isset($data['trainee_photo']) && isset($data['trainee_image_url'])) {
             $data['trainee_photo'] = $data['trainee_image_url'];
+        }
+        // Training provider mirrors training center when only one is supplied
+        if (!isset($data['training_provider_name']) && isset($data['training_center_name'])) {
+            $data['training_provider_name'] = $data['training_center_name'];
+        }
+        if (!isset($data['training_provider_phone']) && isset($data['training_center_phone'])) {
+            $data['training_provider_phone'] = $data['training_center_phone'];
         }
         return $data;
     }

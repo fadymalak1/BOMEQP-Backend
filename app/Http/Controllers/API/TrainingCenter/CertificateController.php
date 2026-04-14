@@ -802,6 +802,12 @@ class CertificateController extends Controller
                 'qr_code' => $qrCodeUrl,
             ];
 
+            $certificateData = $this->certificateGenerationService->appendCourseCertificateDynamicFields(
+                $trainingCenter,
+                $trainingClass,
+                $certificateData
+            );
+
             // Create certificate record first (with temporary URL or placeholder)
             // Use the training_class_id from request if provided, otherwise use the found class
             $certificateTrainingClassId = $request->training_class_id ?? ($trainingClass ? $trainingClass->id : null);
@@ -1133,6 +1139,12 @@ class CertificateController extends Controller
                         : null,
                     'qr_code' => $qrCodeUrl,
                 ];
+
+                $certificateData = $this->certificateGenerationService->appendCourseCertificateDynamicFields(
+                    $trainingCenter,
+                    $class,
+                    $certificateData
+                );
 
                 $certificate = Certificate::create([
                     'certificate_number' => $certificateNumber,

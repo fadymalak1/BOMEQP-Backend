@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ACC;
 use App\Models\CertificateTemplate;
 use App\Services\FileUploadService;
+use App\Support\CertificateCoursePlaceholders;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -330,10 +331,95 @@ class CertificateTemplateController extends Controller
             new OA\Response(response: 404, description: "Template not found")
         ]
     )]
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $template = CertificateTemplate::with(['category', 'course', 'courses'])->findOrFail($id);
-        return response()->json(['template' => $template]);
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $template = CertificateTemplate::where('acc_id', $acc->id)
+            ->with(['category', 'course', 'courses'])
+            ->findOrFail($id);
+
+        $payload = ['template' => $template];
+        if ($template->template_type === 'course') {
+            $payload['available_placeholders'] = CertificateCoursePlaceholders::definitions();
+        } elseif ($template->template_type === 'instructor') {
+            $payload['available_placeholders'] = CertificateCoursePlaceholders::instructorDefinitions();
+        }
+
+        return response()->json($payload);
+    }
+
+    #[OA\Get(
+        path: "/acc/certificate-templates/placeholders",
+        summary: "List certificate template placeholders",
+        description: "Returns dynamic field keys and labels for course or instructor certificate HTML/designer (includes training_provider_name, delivery_method, etc.).",
+        tags: ["ACC"],
+        security: [["sanctum" => []]],
+        parameters: [
+            new OA\Parameter(
+                name: "template_type",
+                in: "query",
+                required: false,
+                schema: new OA\Schema(type: "string", enum: ["course", "instructor"], default: "course"),
+                description: "course — trainee certificates; instructor — instructor authorization certificates."
+            ),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: "Placeholder definitions for designing certificates",
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: "template_type", type: "string", example: "course"),
+                        new OA\Property(
+                            property: "placeholders",
+                            type: "array",
+                            items: new OA\Items(
+                                properties: [
+                                    new OA\Property(property: "key", type: "string", example: "training_provider_name"),
+                                    new OA\Property(property: "label", type: "string", example: "Training provider name"),
+                                    new OA\Property(property: "description", type: "string"),
+                                ],
+                                type: "object"
+                            )
+                        ),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: "Unauthenticated"),
+            new OA\Response(response: 404, description: "ACC not found"),
+        ]
+    )]
+    public function templatePlaceholders(Request $request)
+    {
+        $user = $request->user();
+        $acc = ACC::where('email', $user->email)->first();
+
+        if (!$acc) {
+            return response()->json(['message' => 'ACC not found'], 404);
+        }
+
+        $type = $request->get('template_type', 'course');
+        if (! in_array($type, ['course', 'instructor'], true)) {
+            return response()->json([
+                'message' => 'Unsupported template_type',
+                'template_type' => $type,
+            ], 422);
+        }
+
+        $placeholders = $type === 'instructor'
+            ? CertificateCoursePlaceholders::instructorDefinitions()
+            : CertificateCoursePlaceholders::definitions();
+
+        return response()->json([
+            'template_type' => $type,
+            'placeholders' => $placeholders,
+        ]);
     }
 
     #[OA\Put(
