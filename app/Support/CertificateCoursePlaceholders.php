@@ -9,7 +9,7 @@ namespace App\Support;
 class CertificateCoursePlaceholders
 {
     /**
-     * Shared by course and instructor templates: training provider / delivery / TC vs provider.
+     * Shared by course and instructor templates: training provider, instructor name, delivery.
      *
      * @return list<array{key: string, label: string, description: string}>
      */
@@ -27,14 +27,19 @@ class CertificateCoursePlaceholders
                 'description' => 'Phone number of the training provider (training center phone).',
             ],
             [
+                'key' => 'training_provider_id_number',
+                'label' => 'Training provider ID number',
+                'description' => 'Government / company registry ID from the training center profile (`company_gov_registry_number`).',
+            ],
+            [
+                'key' => 'instructor_name',
+                'label' => 'Instructor name',
+                'description' => 'Course certificates: instructor selected at issue. Instructor certificates: the authorized instructor\'s full name.',
+            ],
+            [
                 'key' => 'delivery_method',
                 'label' => 'Delivery method',
                 'description' => 'For course certificates: from class location when linked. For instructor certificates: usually empty unless you add class context later.',
-            ],
-            [
-                'key' => 'training_center_same_as_training_provider',
-                'label' => 'Training center same as training provider',
-                'description' => 'Yes or No — whether the listed training center matches the training provider name.',
             ],
         ];
     }
@@ -114,11 +119,6 @@ class CertificateCoursePlaceholders
                     'label' => 'QR code',
                     'description' => 'QR image URL for verification.',
                 ],
-                [
-                    'key' => 'instructor_name',
-                    'label' => 'Instructor name',
-                    'description' => 'Instructor full name when provided on issue.',
-                ],
             ]
         );
     }
@@ -133,11 +133,6 @@ class CertificateCoursePlaceholders
         return array_merge(
             self::sharedTrainingProviderPlaceholders(),
             [
-                [
-                    'key' => 'instructor_name',
-                    'label' => 'Instructor name',
-                    'description' => 'Instructor full name.',
-                ],
                 [
                     'key' => 'instructor_first_name',
                     'label' => 'Instructor first name',

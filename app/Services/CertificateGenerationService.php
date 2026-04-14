@@ -993,8 +993,8 @@ class CertificateGenerationService
             $data = array_merge($data, [
                 'training_provider_name' => '',
                 'training_provider_phone' => '',
+                'training_provider_id_number' => '',
                 'delivery_method' => '',
-                'training_center_same_as_training_provider' => '',
             ]);
         }
 
@@ -1007,7 +1007,7 @@ class CertificateGenerationService
     }
 
     /**
-     * Merge dynamic fields: training provider name/phone, delivery method, TC vs provider flag.
+     * Merge dynamic fields: training provider name, phone, government ID, delivery method.
      * Used for course completion PDFs (with optional training class for delivery) and for
      * instructor authorization PDFs (delivery usually empty; pass null training class).
      */
@@ -1017,7 +1017,6 @@ class CertificateGenerationService
         array $data
     ): array {
         $providerName = trim((string) ($trainingCenter->name ?? ''));
-        $tcNameInData = trim((string) ($data['training_center_name'] ?? $providerName));
 
         $delivery = '';
         if ($trainingClass !== null) {
@@ -1028,13 +1027,11 @@ class CertificateGenerationService
             $delivery = implode(' — ', $parts);
         }
 
-        $same = strcasecmp($providerName, $tcNameInData) === 0 ? 'Yes' : 'No';
-
         return array_merge($data, [
             'training_provider_name' => $providerName,
             'training_provider_phone' => trim((string) ($trainingCenter->phone ?? '')),
+            'training_provider_id_number' => trim((string) ($trainingCenter->company_gov_registry_number ?? '')),
             'delivery_method' => $delivery,
-            'training_center_same_as_training_provider' => $same,
         ]);
     }
 
@@ -1068,6 +1065,9 @@ class CertificateGenerationService
         }
         if (!isset($data['training_provider_phone']) && isset($data['training_center_phone'])) {
             $data['training_provider_phone'] = $data['training_center_phone'];
+        }
+        if (!isset($data['training_provider_id_number']) && isset($data['company_gov_registry_number'])) {
+            $data['training_provider_id_number'] = $data['company_gov_registry_number'];
         }
         return $data;
     }
