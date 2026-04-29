@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,6 +16,26 @@ use Illuminate\Support\Facades\Route;
 */
 
 // Public routes
+Route::get('/health', function () {
+    $databaseStatus = 'ok';
+
+    try {
+        DB::connection()->getPdo();
+    } catch (\Throwable $exception) {
+        $databaseStatus = 'failed';
+    }
+
+    $httpStatus = $databaseStatus === 'ok' ? 200 : 500;
+
+    return response()->json([
+        'status' => $databaseStatus === 'ok' ? 'ok' : 'degraded',
+        'service' => 'api',
+        'database' => $databaseStatus,
+        'environment' => config('app.env'),
+        'timestamp' => now()->toIso8601String(),
+    ], $httpStatus);
+});
+
 Route::post('/auth/register', [App\Http\Controllers\API\AuthController::class, 'register']);
 Route::post('/auth/login', [App\Http\Controllers\API\AuthController::class, 'login']);
 Route::post('/auth/forgot-password', [App\Http\Controllers\API\AuthController::class, 'forgotPassword']);
