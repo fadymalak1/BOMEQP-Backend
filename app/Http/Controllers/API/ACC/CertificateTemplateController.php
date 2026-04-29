@@ -295,7 +295,10 @@ class CertificateTemplateController extends Controller
                 ->where(function ($q) {
                     $q->whereNotNull('card_template_html')
                       ->orWhereNotNull('card_background_image_url')
-                      ->orWhereNotNull('card_config_json');
+                      ->orWhereNotNull('card_config_json')
+                      ->orWhereNotNull('card_back_template_html')
+                      ->orWhereNotNull('card_back_background_image_url')
+                      ->orWhereNotNull('card_back_config_json');
                 })
                 ->orderBy('updated_at', 'desc')
                 ->first();
@@ -305,6 +308,9 @@ class CertificateTemplateController extends Controller
                     'card_template_html'        => $existingCardTemplate->card_template_html,
                     'card_background_image_url' => $existingCardTemplate->card_background_image_url,
                     'card_config_json'          => $existingCardTemplate->card_config_json,
+                    'card_back_template_html'        => $existingCardTemplate->card_back_template_html,
+                    'card_back_background_image_url' => $existingCardTemplate->card_back_background_image_url,
+                    'card_back_config_json'          => $existingCardTemplate->card_back_config_json,
                 ]);
             }
         }
@@ -891,6 +897,21 @@ new OA\Property(
                 'card_template_html'         => $designTemplate->card_template_html,
                 'card_background_image_url'  => $designTemplate->card_background_image_url,
                 'card_config_json'           => $designTemplate->card_config_json,
+                'card_back_template_html'         => $designTemplate->card_back_template_html,
+                'card_back_background_image_url'  => $designTemplate->card_back_background_image_url,
+                'card_back_config_json'           => $designTemplate->card_back_config_json,
+                'sides' => [
+                    'front' => [
+                        'template_html' => $designTemplate->card_template_html,
+                        'background_image_url' => $designTemplate->card_background_image_url,
+                        'config_json' => $designTemplate->card_config_json,
+                    ],
+                    'back' => [
+                        'template_html' => $designTemplate->card_back_template_html,
+                        'background_image_url' => $designTemplate->card_back_background_image_url,
+                        'config_json' => $designTemplate->card_back_config_json,
+                    ],
+                ],
             ];
         }
 
@@ -946,22 +967,25 @@ new OA\Property(
 
         $request->validate([
             'include_card'       => 'sometimes|boolean',
+            'side'               => 'sometimes|in:front,back',
             'card_template_html' => 'nullable|string',
             'card_config_json'   => 'nullable',
             'name'               => 'sometimes|string|max:255',
         ]);
 
+        $side = $request->get('side', 'front');
+
         // Global card design (shared across all templates for this ACC)
         $designUpdate = [];
         if ($request->has('card_template_html')) {
-            $designUpdate['card_template_html'] = $request->card_template_html;
+            $designUpdate[$side === 'back' ? 'card_back_template_html' : 'card_template_html'] = $request->card_template_html;
         }
         if ($request->has('card_config_json')) {
             $val = $request->card_config_json;
             if (is_string($val)) {
                 $val = json_decode($val, true) ?: null;
             }
-            $designUpdate['card_config_json'] = $val;
+            $designUpdate[$side === 'back' ? 'card_back_config_json' : 'card_config_json'] = $val;
         }
         if (!empty($designUpdate)) {
             CertificateTemplate::where('acc_id', $acc->id)->update($designUpdate);
@@ -1027,14 +1051,17 @@ new OA\Property(
 
         $request->validate([
             'card_background_image' => 'required|image|mimetypes:image/jpeg,image/png|max:10240',
+            'side' => 'sometimes|in:front,back',
         ]);
 
         try {
             $file = $request->file('card_background_image');
+            $side = $request->get('side', 'front');
+            $backgroundColumn = $side === 'back' ? 'card_back_background_image_url' : 'card_background_image_url';
 
             // Delete old card background if exists
-            if ($template->card_background_image_url) {
-                $this->deleteBackgroundImage($template->card_background_image_url);
+            if ($template->{$backgroundColumn}) {
+                $this->deleteBackgroundImage($template->{$backgroundColumn});
             }
 
             $directory = 'certificate-templates/' . $template->id . '/card';
@@ -1048,7 +1075,7 @@ new OA\Property(
 
             // Global card background – same image for all templates of this ACC
             CertificateTemplate::where('acc_id', $acc->id)->update([
-                'card_background_image_url' => $fileUrl,
+                $backgroundColumn => $fileUrl,
             ]);
 
             // Per-template toggle: include_card is still controlled per certificate template
@@ -1058,6 +1085,7 @@ new OA\Property(
 
             return response()->json([
                 'message'                    => 'Card background image uploaded successfully',
+                'side'                       => $side,
                 'card_background_image_url'  => $fileUrl,
                 'template'                   => $template->fresh(),
             ]);
@@ -1112,8 +1140,12 @@ new OA\Property(
         }
 
         $template = CertificateTemplate::where('acc_id', $acc->id)->findOrFail($id);
+        $request->validate([
+            'side' => 'sometimes|in:front,back',
+        ]);
 
         $configJson = $request->card_config_json;
+        $side = $request->get('side', 'front');
         if (is_string($configJson)) {
             $configJson = json_decode($configJson, true);
         }
@@ -1160,13 +1192,14 @@ new OA\Property(
 
         // Global card config – designer configuration shared by all templates for this ACC
         CertificateTemplate::where('acc_id', $acc->id)->update([
-            'card_config_json' => ['elements' => $elements],
+            ($side === 'back' ? 'card_back_config_json' : 'card_config_json') => ['elements' => $elements],
         ]);
 
         $template->refresh();
 
         return response()->json([
             'message'  => 'Card configuration updated successfully',
+            'side'     => $side,
             'template' => $template->fresh(),
         ]);
     }

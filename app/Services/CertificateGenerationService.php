@@ -185,12 +185,14 @@ class CertificateGenerationService
                 $cardDims = $this->getCardDimensionsInPt($template);
                 $cardWidthPt  = $cardDims['width_pt'];
                 $cardHeightPt = $cardDims['height_pt'];
-                $cardDiv = $this->buildCardDiv($template, $data, $cardWidthPt, $cardHeightPt);
-                if ($cardDiv !== null) {
+                $frontCardDiv = $this->buildCardDiv($template, $data, $cardWidthPt, $cardHeightPt, 'front');
+                $backCardDiv = $this->buildCardDiv($template, $data, $cardWidthPt, $cardHeightPt, 'back');
+                $cardDivs = array_values(array_filter([$frontCardDiv, $backCardDiv]));
+                if (!empty($cardDivs)) {
                     $result = $this->generateCertificateAndCardAsSeparatePdfs(
                         $template,
                         $html,
-                        $cardDiv,
+                        $cardDivs,
                         $widthPt,
                         $heightPt,
                         $cardWidthPt,
@@ -210,6 +212,7 @@ class CertificateGenerationService
                         round($cardHeightPt, 2)
                     );
                     $html = $this->injectCss($html, $cardPageCss);
+                    $cardDiv = implode('', $cardDivs);
                     if (stripos($html, '</body>') !== false) {
                         $html = str_ireplace('</body>', $cardDiv . '</body>', $html);
                     } else {
@@ -261,10 +264,7 @@ class CertificateGenerationService
      */
     private function getCardDimensionsInPt(CertificateTemplate $template): ?array
     {
-        $html = $template->card_template_html ?? '';
-        if ($html === '') {
-            $html = ''; // will use defaults
-        }
+        $html = $template->card_template_html ?: ($template->card_back_template_html ?? '');
         $widthPx  = 856;
         $heightPx = 540;
         if (preg_match('/width\s*:\s*(\d+)\s*px/i', $html, $mw)) {
@@ -292,11 +292,16 @@ class CertificateGenerationService
      *
      * Returns null when no card content is configured.
      */
-    private function buildCardDiv(CertificateTemplate $template, array $data, float $widthPt, float $heightPt): ?string
+    private function buildCardDiv(CertificateTemplate $template, array $data, float $widthPt, float $heightPt, string $side = 'front'): ?string
     {
+        $isBack = $side === 'back';
+        $templateHtml = $isBack ? $template->card_back_template_html : $template->card_template_html;
+        $backgroundImageUrl = $isBack ? $template->card_back_background_image_url : $template->card_background_image_url;
+        $configJson = $isBack ? $template->card_back_config_json : $template->card_config_json;
+
         // ── Path 1: custom HTML – extract body content and wrap in card div ───
-        if (!empty($template->card_template_html)) {
-            $html = $this->replaceTemplateVariables($template->card_template_html, $data);
+        if (!empty($templateHtml)) {
+            $html = $this->replaceTemplateVariables($templateHtml, $data);
             $html = $this->embedRemainingRemoteImages($html);
             // Extract body content so we don't nest full documents
             if (preg_match('/<body[^>]*>(.*)<\/body>/is', $html, $m)) {
@@ -313,15 +318,15 @@ class CertificateGenerationService
         }
 
         // ── Path 2 & 3: background image (+ optional config overlay) ─────────
-        if (empty($template->card_background_image_url)) {
+        if (empty($backgroundImageUrl)) {
             return null;
         }
 
-        $bgUri = $this->toDataUri($template->card_background_image_url) ?? '';
+        $bgUri = $this->toDataUri($backgroundImageUrl) ?? '';
 
         // Build overlay elements from card_config_json
         $overlayHtml = '';
-        $config   = $template->card_config_json;
+        $config   = $configJson;
         $elements = is_array($config) && isset($config['elements'])
             ? $config['elements']
             : (is_array($config) ? $config : []);
@@ -420,7 +425,7 @@ class CertificateGenerationService
     private function generateCertificateAndCardAsSeparatePdfs(
         CertificateTemplate $template,
         string $certificateHtml,
-        string $cardDiv,
+        array $cardDivs,
         float $certWidthPt,
         float $certHeightPt,
         float $cardWidthPt,
@@ -447,7 +452,14 @@ class CertificateGenerationService
                 round($cardWidthPt, 2),
                 round($cardHeightPt, 2)
             );
-            $cardHtml = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' . $cardPageCss . '</style></head><body>' . $cardDiv . '</body></html>';
+            $cardBody = '';
+            foreach ($cardDivs as $index => $cardDiv) {
+                if ($index > 0) {
+                    $cardBody .= '<div style="page-break-before:always;"></div>';
+                }
+                $cardBody .= $cardDiv;
+            }
+            $cardHtml = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' . $cardPageCss . '</style></head><body>' . $cardBody . '</body></html>';
             $cardPdf = Pdf::loadHTML($cardHtml)
                 ->setPaper([0, 0, $cardWidthPt, $cardHeightPt], 'portrait')
                 ->setOption('isHtml5ParserEnabled', true)

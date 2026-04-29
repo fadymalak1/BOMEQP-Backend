@@ -6,6 +6,16 @@ The card visually resembles a wallet-sized ID card (see reference image) and dis
 
 ---
 
+## Recent update (new)
+
+> **Recently added:** Card templates now support **two sides** (`front` and `back`).
+>
+> You can choose which side to edit by sending `side: "front"` or `side: "back"` in card update endpoints.
+> - If `side` is omitted, the API defaults to `front` (backward-compatible behavior).
+> - Card PDF output can now contain **2 pages**: page 1 = front side, page 2 = back side (when both sides are configured).
+
+---
+
 ## Overview
 
 - **Single card design per ACC**: all certificate templates for an ACC share the same card design (HTML / background / config).
@@ -13,8 +23,11 @@ The card visually resembles a wallet-sized ID card (see reference image) and dis
   - `card_template_html` — full custom HTML for the card page (highest priority).
   - `card_background_image_url` — background image; overlaid with elements from `card_config_json`.
   - `card_config_json` — designer configuration (elements with coordinates and styling).
+- **Recently added:** each card design can now be edited per-side:
+  - **Front side fields:** `card_template_html`, `card_background_image_url`, `card_config_json`
+  - **Back side fields:** `card_back_template_html`, `card_back_background_image_url`, `card_back_config_json`
 - The **`include_card`** boolean field on a certificate template acts as the **per-template switch**:
-  - `true` → the generated PDF for that template will have **2 pages** (page 1: certificate, page 2: card).
+  - `true` → the generated output includes card pages.
   - `false` (default) → single-page PDF, card is ignored even if a card design exists.
 - `include_card` can be toggled on `store`, `update`, and `PUT /card` endpoints. Changing `card_template_html`, `card_background_image_url`, or `card_config_json` via the ACC endpoints updates the design for **all** templates of that ACC.
 
@@ -52,6 +65,7 @@ Returns:
 
 - The **single shared card design** for the ACC (from the most recently updated certificate template).
 - The list of certificate templates that currently have `include_card = true`.
+- **Recently added:** response includes a `sides` object with `front` and `back` design payloads.
 
 #### Response `200 OK`
 
@@ -69,6 +83,23 @@ Returns:
         { "type": "image", "variable": "{{instructor_photo}}", "x": 0.04, "y": 0.12, "width": 0.27, "height": 0.55 },
         { "type": "image", "variable": "{{trainee_photo}}", "x": 0.70, "y": 0.12, "width": 0.25, "height": 0.55 }
       ]
+    },
+    "card_back_template_html": null,
+    "card_back_background_image_url": "https://app.bomeqp.com/.../card_background_back.jpg",
+    "card_back_config_json": {
+      "elements": []
+    },
+    "sides": {
+      "front": {
+        "template_html": null,
+        "background_image_url": "https://app.bomeqp.com/.../card_background.jpg",
+        "config_json": { "elements": [] }
+      },
+      "back": {
+        "template_html": null,
+        "background_image_url": "https://app.bomeqp.com/.../card_background_back.jpg",
+        "config_json": { "elements": [] }
+      }
     }
   },
   "certificate_templates": [
@@ -123,6 +154,7 @@ This endpoint has **two behaviors**:
 | Field                | Type    | Required | Description |
 |----------------------|---------|----------|-------------|
 | `include_card`       | boolean | No       | Toggle the card page in PDF generation (`true` = 2-page PDF) |
+| `side`               | string  | No       | **Recently added.** Which side to edit: `"front"` or `"back"`. Default: `"front"` |
 | `card_template_html` | string  | No       | Full custom HTML for the card page. Supports the same `{{variable}}` placeholders as certificate templates. Takes priority over `card_config_json`. **Global:** updates shared card HTML for all templates of this ACC. |
 | `card_config_json`   | object  | No       | Designer config — see [Card Config JSON Schema](#card-config-json-schema) below. **Global:** updates shared card config for all templates of this ACC. |
 | `name`               | string  | No       | Optionally update the template name at the same time |
@@ -132,6 +164,7 @@ This endpoint has **two behaviors**:
 ```json
 {
   "include_card": true,
+  "side": "back",
   "card_config_json": {
     "elements": [
       {
@@ -198,6 +231,8 @@ Uploads a background image for the card page. Accepted formats: JPEG, PNG. Max s
 
 Uploading a card background automatically sets `include_card = true` on the template.
 
+**Recently added:** send `side` to upload front or back background.
+
 #### Path Parameters
 
 | Parameter | Type    | Required | Description                              |
@@ -209,12 +244,14 @@ Uploading a card background automatically sets `include_card = true` on the temp
 | Field                    | Type   | Required | Description                         |
 |--------------------------|--------|----------|-------------------------------------|
 | `card_background_image`  | file   | Yes      | JPG or PNG image, max 10 MB         |
+| `side`                   | string | No       | `"front"` or `"back"` (default `"front"`) |
 
 #### Response `200 OK`
 
 ```json
 {
   "message": "Card background image uploaded successfully",
+  "side": "back",
   "card_background_image_url": "https://app.bomeqp.com/storage/certificate-templates/5/card/1740571234_5_card_background.jpg",
   "template": {
     "id": 5,
@@ -243,6 +280,8 @@ PUT /api/acc/certificate-templates/{id}/card-config
 
 Updates only the `card_config_json` of the card page. This is equivalent to saving the card designer canvas state.
 
+**Recently added:** send `side` to update front or back config.
+
 #### Path Parameters
 
 | Parameter | Type    | Required | Description                              |
@@ -254,12 +293,14 @@ Updates only the `card_config_json` of the card page. This is equivalent to savi
 | Field             | Type          | Required | Description |
 |-------------------|---------------|----------|-------------|
 | `card_config_json`| object\|array | Yes      | Object with `elements` array, or a direct array of elements |
+| `side`            | string        | No       | `"front"` or `"back"` (default `"front"`) |
 
 #### Response `200 OK`
 
 ```json
 {
   "message": "Card configuration updated successfully",
+  "side": "back",
   "template": {
     "id": 5,
     "card_config_json": {
@@ -379,11 +420,18 @@ The card shares the same variable pool as the certificate template. Common varia
 
 When a certificate is generated for a template with `include_card = true`:
 
-- **Page 1** — The certificate, rendered exactly as before.
-- **Page 2** — The card page, built from:
-  1. `card_template_html` (if set) — full HTML, variables substituted, remote images embedded.
-  2. Otherwise `card_background_image_url` + `card_config_json` — background image with text/image overlays positioned using the `x`/`y` fractions.
-  3. If only `card_background_image_url` is set (no config) — a full-bleed background image page with no overlays.
+- Main certificate PDF remains generated as before.
+- Card PDF rendering now supports both sides:
+  - **Card page 1 (front)** uses:
+    1. `card_template_html` (if set), else
+    2. `card_background_image_url` + `card_config_json`, else
+    3. `card_background_image_url` only.
+  - **Card page 2 (back)** uses:
+    1. `card_back_template_html` (if set), else
+    2. `card_back_background_image_url` + `card_back_config_json`, else
+    3. `card_back_background_image_url` only.
+- If only one side is configured, card output contains a single card page.
+- If both sides are configured, card output contains **2 card pages** (front then back).
 
 If `include_card = false` or no card content is configured, a standard single-page PDF is produced.
 

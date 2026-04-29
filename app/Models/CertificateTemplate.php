@@ -31,6 +31,9 @@ class CertificateTemplate extends Model
         'card_template_html',
         'card_background_image_url',
         'card_config_json',
+        'card_back_template_html',
+        'card_back_background_image_url',
+        'card_back_config_json',
     ];
 
     protected function casts(): array
@@ -40,6 +43,7 @@ class CertificateTemplate extends Model
             'signature_positions' => 'array',
             'config_json' => 'array',
             'card_config_json' => 'array',
+            'card_back_config_json' => 'array',
             'is_group_admin_template' => 'boolean',
             'include_card' => 'boolean',
         ];
