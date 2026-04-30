@@ -24,7 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         // Handle validation exceptions for API routes - return localized validation errors
         $exceptions->render(function (\Illuminate\Validation\ValidationException $e, \Illuminate\Http\Request $request) {
-            if ($request->is('api/*') || $request->expectsJson()) {
+            if ($request->is('api/*') || $request->is('dev/api/*') || $request->expectsJson()) {
                 return response()->json([
                     'message' => trans('messages.validation_failed'),
                     'errors' => $e->errors(),
@@ -35,7 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Handle authentication exceptions for API routes - return JSON instead of redirecting
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
-            if ($request->is('api/*') || $request->expectsJson()) {
+            if ($request->is('api/*') || $request->is('dev/api/*') || $request->expectsJson()) {
                 return response()->json([
                     'message' => 'Unauthenticated.'
                 ], 401);
@@ -44,7 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Handle route not found exceptions for API routes
         $exceptions->render(function (\Symfony\Component\Routing\Exception\RouteNotFoundException $e, \Illuminate\Http\Request $request) {
-            if ($request->is('api/*') || $request->expectsJson()) {
+            if ($request->is('api/*') || $request->is('dev/api/*') || $request->expectsJson()) {
                 return response()->json([
                     'message' => 'Route not found.'
                 ], 404);
@@ -53,7 +53,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Handle PostTooLargeException for API routes
         $exceptions->render(function (\Illuminate\Http\Exceptions\PostTooLargeException $e, \Illuminate\Http\Request $request) {
-            if ($request->is('api/*') || $request->expectsJson()) {
+            if ($request->is('api/*') || $request->is('dev/api/*') || $request->expectsJson()) {
                 return response()->json([
                     'message' => 'File size exceeds server limits. Maximum size is 10MB.',
                     'error' => 'File too large',
@@ -66,7 +66,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Configure unauthenticated responses for API routes
         $middleware->redirectGuestsTo(function ($request) {
             // For API routes, return null to prevent redirect (exception handler will catch it)
-            if ($request->is('api/*') || $request->expectsJson()) {
+            if ($request->is('api/*') || $request->is('dev/api/*') || $request->expectsJson()) {
                 return null;
             }
             // For web routes, you can return a login route if it exists

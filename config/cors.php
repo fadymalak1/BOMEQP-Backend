@@ -4,6 +4,7 @@ return [
 
     'paths' => [
         'api/*',
+        'dev/api/*',
     ],
 
     'allowed_methods' => ['*'],
