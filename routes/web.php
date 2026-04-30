@@ -35,4 +35,7 @@ Route::get('/api/test-swagger-url', function () {
 
 // Production compatibility alias:
 // allows frontend calls to /dev/api/* to hit the same API routes as /api/*
-Route::prefix('dev/api')->middleware('api')->group(base_path('routes/api.php'));
+Route::prefix('dev/api')
+    ->as('dev.')
+    ->middleware('api')
+    ->group(base_path('routes/api.php'));
