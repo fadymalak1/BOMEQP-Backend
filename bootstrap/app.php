@@ -20,6 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
         
         // Set user locale for API routes - prepend to run early
         $middleware->prepend(\App\Http\Middleware\SetUserLocale::class);
+        // URLs match current host/path (dev vs prod); prepended last so it runs first
+        $middleware->prepend(\App\Http\Middleware\UseRequestApplicationUrl::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Handle validation exceptions for API routes - return localized validation errors
