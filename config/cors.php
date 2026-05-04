@@ -17,6 +17,7 @@ return [
         'http://127.0.0.1:3000',
         'http://127.0.0.1:8080',
         'https://app.bomeqp.com',
+        'http://dev.bomeqp.com',
     ],
 
     // Allow any localhost port for local frontend development.
