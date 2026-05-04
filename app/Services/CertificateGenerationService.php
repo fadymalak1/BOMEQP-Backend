@@ -70,7 +70,7 @@ class CertificateGenerationService
 
             return ['success' => false, 'message' => 'Failed to save certificate'];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Certificate generation error', [
                 'template_id' => $template->id,
                 'error'       => $e->getMessage(),
@@ -100,6 +100,13 @@ class CertificateGenerationService
         try {
             if (!$template->template_html) {
                 return ['success' => false, 'message' => 'Template HTML is missing'];
+            }
+
+            // DomPDF + large base64 images can exceed default php memory (often 128M on hosts).
+            @ini_set('memory_limit', '512M');
+            $fontsDir = storage_path('fonts');
+            if (! is_dir($fontsDir)) {
+                @mkdir($fontsDir, 0755, true);
             }
 
             // ------------------------------------------------------------------
@@ -243,7 +250,7 @@ class CertificateGenerationService
                 'file_url'  => $this->getCertificateApiUrl($filePath),
             ];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('PDF generation error', [
                 'template_id' => $template->id,
                 'error'       => $e->getMessage(),
@@ -477,9 +484,10 @@ class CertificateGenerationService
                 'card_file_url'  => $this->getCertificateApiUrl($cardFilePath),
             ];
         } catch (\Throwable $e) {
-            Log::warning('Certificate/card separate PDFs failed', [
+            Log::error('Certificate/card separate PDFs failed', [
                 'template_id' => $template->id,
                 'error'       => $e->getMessage(),
+                'trace'       => $e->getTraceAsString(),
             ]);
             return null;
         }
