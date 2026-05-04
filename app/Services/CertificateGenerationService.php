@@ -355,18 +355,22 @@ class CertificateGenerationService
                 $value = $data[$variable] ?? $variable;
             }
 
-            $style = sprintf('position:absolute;left:%s%%;top:%s%%;', $x, $y);
+            $style = sprintf('position:absolute;left:%s%%;top:%s%%;z-index:1;', $x, $y);
 
-            if ($type === 'image') {
+            // Data-URI images must render as <img>, even if the editor saved type as "text" (e.g. qr_code).
+            $valueStr = (string) $value;
+            $isEmbeddedImage = str_starts_with($valueStr, 'data:image/');
+
+            if ($type === 'image' || $isEmbeddedImage) {
                 // Value may already be a data-URI (pre-resolved in Step 1 of generatePdfFromBlade)
-                $imgUri = str_starts_with((string) $value, 'data:')
-                    ? (string) $value
-                    : ($this->toDataUri((string) $value) ?? '');
+                $imgUri = str_starts_with($valueStr, 'data:')
+                    ? $valueStr
+                    : ($this->toDataUri($valueStr) ?? '');
                 if ($imgUri) {
                     $style .= sprintf('width:%s%%;height:%s%%;', $w, $h);
                     $overlayHtml .= sprintf(
-                        '<img src="%s" style="%s object-fit:contain;" />',
-                        $imgUri,
+                        '<img src="%s" alt="" style="%s object-fit:contain;" />',
+                        htmlspecialchars($imgUri, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                         $style
                     );
                 }
@@ -393,15 +397,21 @@ class CertificateGenerationService
             }
         }
 
-        $bgStyle = $bgUri
-            ? sprintf("background-image:url('%s');background-size:cover;background-position:center;", $bgUri)
-            : 'background:#ffffff;';
+        // DomPDF often fails to paint huge data-URI backgrounds via CSS background-image.
+        // Use a full-bleed <img> layer instead (same pattern as reliable PDF generators).
+        $bgLayer = '';
+        if ($bgUri !== '') {
+            $bgLayer = sprintf(
+                '<img alt="" src="%s" style="position:absolute;left:0;top:0;width:100%%;height:100%%;object-fit:cover;z-index:0;" />',
+                htmlspecialchars($bgUri, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            );
+        }
 
         return sprintf(
-            '<div class="card-page" style="width:%spt;height:%spt;position:relative;overflow:hidden;%s">%s</div>',
+            '<div class="card-page" style="width:%spt;height:%spt;position:relative;overflow:hidden;background:#ffffff;">%s<div style="position:relative;z-index:1;width:100%%;height:100%%;">%s</div></div>',
             round($widthPt, 2),
             round($heightPt, 2),
-            $bgStyle,
+            $bgLayer,
             $overlayHtml
         );
     }
