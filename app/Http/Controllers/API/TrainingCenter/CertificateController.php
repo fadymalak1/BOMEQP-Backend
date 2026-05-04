@@ -1212,7 +1212,7 @@ class CertificateController extends Controller
                     'name' => $fullName,
                     'certificate_id' => $certificate->id,
                 ];
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 DB::rollBack();
                 \Illuminate\Support\Facades\Log::error('Bulk certificate generation error', [
                     'class_id' => $class->id,
@@ -1279,7 +1279,7 @@ class CertificateController extends Controller
      */
     private function resolveCertificateTemplateForCourse(int $accId, \App\Models\Course $course): ?CertificateTemplate
     {
-        $categoryId = $course->subCategory->category_id ?? null;
+        $categoryId = $course->subCategory?->category_id ?? null;
 
         if (!$categoryId) {
             return null;
