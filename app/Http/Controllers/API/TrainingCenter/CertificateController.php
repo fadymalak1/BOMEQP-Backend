@@ -34,7 +34,7 @@ class CertificateController extends Controller
             new OA\Parameter(name: "status", in: "query", schema: new OA\Schema(type: "string", enum: ["valid", "expired", "revoked"]), example: "valid"),
             new OA\Parameter(name: "course_id", in: "query", schema: new OA\Schema(type: "integer"), example: 1),
             new OA\Parameter(name: "type", in: "query", schema: new OA\Schema(type: "string", enum: ["instructor", "trainee"]), example: "trainee", description: "Filter by certificate type: instructor or trainee"),
-            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John Doe", description: "Search by trainee name, certificate number, or course name"),
+            new OA\Parameter(name: "search", in: "query", schema: new OA\Schema(type: "string"), example: "John Doe", description: "Search by trainee name, certificate number, course name, or ACC name"),
             new OA\Parameter(name: "per_page", in: "query", schema: new OA\Schema(type: "integer"), example: 15),
             new OA\Parameter(name: "page", in: "query", schema: new OA\Schema(type: "integer"), example: 1)
         ],
@@ -61,6 +61,7 @@ class CertificateController extends Controller
                                     new OA\Property(property: "status", type: "string"),
                                     new OA\Property(property: "course_id", type: "integer"),
                                     new OA\Property(property: "verification_code", type: "string"),
+                                    new OA\Property(property: "acc_name", type: "string", nullable: true, description: "ACC name from course or certificate template"),
                                 ]
                             )
                         ),
@@ -82,7 +83,7 @@ class CertificateController extends Controller
         }
 
         $query = Certificate::where('training_center_id', $trainingCenter->id)
-            ->with(['course.acc', 'instructor', 'template']);
+            ->with(['course.acc', 'instructor', 'template.acc']);
 
         if ($request->has('course_id')) {
             $query->where('course_id', $request->course_id);
@@ -106,6 +107,12 @@ class CertificateController extends Controller
                     ->orWhere('verification_code', 'like', "%{$searchTerm}%")
                     ->orWhereHas('course', function ($courseQuery) use ($searchTerm) {
                         $courseQuery->where('name', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('course.acc', function ($accQuery) use ($searchTerm) {
+                        $accQuery->where('name', 'like', "%{$searchTerm}%");
+                    })
+                    ->orWhereHas('template.acc', function ($accQuery) use ($searchTerm) {
+                        $accQuery->where('name', 'like', "%{$searchTerm}%");
                     });
             });
         }
@@ -119,6 +126,14 @@ class CertificateController extends Controller
         // Transform certificates data
         $transformedCertificates = $certificates->getCollection()->map(function ($certificate) {
             $data = $certificate->toArray();
+
+            $accName = null;
+            if ($certificate->relationLoaded('course') && $certificate->course?->relationLoaded('acc') && $certificate->course->acc) {
+                $accName = $certificate->course->acc->name;
+            } elseif ($certificate->relationLoaded('template') && $certificate->template?->relationLoaded('acc') && $certificate->template->acc) {
+                $accName = $certificate->template->acc->name;
+            }
+            $data['acc_name'] = $accName;
             
             // Change trainee_name to name
             if (isset($data['trainee_name'])) {

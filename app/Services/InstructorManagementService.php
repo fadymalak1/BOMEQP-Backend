@@ -970,16 +970,12 @@ class InstructorManagementService
                 return;
             }
 
-            // ── Send ONE email with all course names listed (or ACC authorization label if no courses) ──
+            // ── Send ONE email (no course list; ACC authorization only) ──
             $instructorFullName = trim($instructor->first_name . ' ' . $instructor->last_name);
-            $courseNames = $authorizedCourses->isEmpty()
-                ? [$coursePlaceholder->name]
-                : $authorizedCourses->map(fn($ca) => $ca->course->name)->values()->all();
 
             try {
-                $mail = new \App\Mail\InstructorCertificateMail(
+                $mail = new InstructorCertificateMail(
                     $instructorFullName,
-                    $courseNames,
                     $acc->name,
                     $pdfPath
                 );
@@ -989,8 +985,7 @@ class InstructorManagementService
                 Log::info('Single instructor certificate email sent', [
                     'instructor_id' => $instructor->id,
                     'email'         => $instructor->email,
-                    'courses_count' => count($courseNames),
-                    'courses'       => $courseNames,
+                    'acc_id'        => $acc->id,
                 ]);
             } catch (\Exception $mailException) {
                 Log::error('Failed to send instructor certificate email', [
@@ -1035,7 +1030,6 @@ class InstructorManagementService
             Log::info('Instructor ACC authorization certificate saved (single record)', [
                 'instructor_id' => $instructor->id,
                 'acc_id'        => $acc->id,
-                'courses_count' => count($courseNames),
             ]);
 
         } catch (\Exception $e) {
