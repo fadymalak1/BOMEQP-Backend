@@ -18,6 +18,7 @@ return [
         'http://127.0.0.1:8080',
         'https://app.bomeqp.com',
         'http://dev.bomeqp.com',
+        'https://dev.bomeqp.com',
     ],
 
     // Allow any localhost port for local frontend development.
@@ -32,6 +33,6 @@ return [
 
     'max_age' => 0,
 
-    // ❌ Bearer Token = NO credentials
+    // Bearer token APIs: keep credentials false unless you use cookies.
     'supports_credentials' => false,
 ];
