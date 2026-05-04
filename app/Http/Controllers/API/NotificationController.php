@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use OpenApi\Attributes as OA;
 
@@ -346,21 +347,38 @@ class NotificationController extends Controller
     private function translateNotifications(array $notifications, $user): array
     {
         $language = $user && $user->language ? $user->language : 'en';
-        
+
         return array_map(function ($notification) use ($language) {
-            // Get translation using the notification type and data
-            $translated = $this->notificationService->getTranslatedNotification(
-                $notification->type,
-                $language,
-                $notification->data ?? []
-            );
-            
-            // Create a copy of the notification with translated title and message
-            $notificationArray = $notification->toArray();
-            $notificationArray['title'] = $translated['title'];
-            $notificationArray['message'] = $translated['message'];
-            
-            return $notificationArray;
+            try {
+                $notificationArray = $notification->toArray();
+
+                $type = $notification->type;
+                if ($type === null || $type === '') {
+                    return $notificationArray;
+                }
+
+                $data = $notification->data;
+                $payload = is_array($data) ? $data : [];
+
+                $translated = $this->notificationService->getTranslatedNotification(
+                    $type,
+                    $language,
+                    $payload
+                );
+
+                $notificationArray['title'] = $translated['title'];
+                $notificationArray['message'] = $translated['message'];
+
+                return $notificationArray;
+            } catch (\Throwable $e) {
+                Log::warning('Notification translation failed', [
+                    'notification_id' => $notification->id ?? null,
+                    'type' => $notification->type ?? null,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return $notification->toArray();
+            }
         }, $notifications);
     }
 }

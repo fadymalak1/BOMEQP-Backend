@@ -11,8 +11,15 @@ class NotificationService
     /**
      * Get translated notification text
      */
-    public function getTranslatedNotification(string $key, string $language, array $replace = []): array
+    public function getTranslatedNotification(?string $key, string $language, array $replace = []): array
     {
+        if ($key === null || $key === '') {
+            return [
+                'title' => '',
+                'message' => '',
+            ];
+        }
+
         // Validate language, fallback to 'en' if invalid
         $validLanguages = ['en', 'hi', 'zh-CN', 'ar', 'es'];
         $language = in_array($language, $validLanguages) ? $language : 'en';
