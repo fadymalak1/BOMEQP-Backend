@@ -429,6 +429,8 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         ->prefix('api/acc')
         ->group(function () {
             Route::get('/card-template', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'getCardTemplate']);
+            Route::get('/certificate-templates/{id}', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'show'])
+                ->where('id', '[0-9]+');
         });
 });
 

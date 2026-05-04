@@ -85,21 +85,33 @@ class CertificateTemplate extends Model
     protected function backgroundImageUrl(): Attribute
     {
         return Attribute::make(
-            get: fn (?string $value) => RequestUrlRewriter::toCurrentRequest($value),
+            get: function (?string $value) {
+                $value = RequestUrlRewriter::stripErroneousApiSegment($value);
+
+                return RequestUrlRewriter::toCurrentRequest($value);
+            },
         );
     }
 
     protected function cardBackgroundImageUrl(): Attribute
     {
         return Attribute::make(
-            get: fn (?string $value) => RequestUrlRewriter::toCurrentRequest($value),
+            get: function (?string $value) {
+                $value = RequestUrlRewriter::stripErroneousApiSegment($value);
+
+                return RequestUrlRewriter::toCurrentRequest($value);
+            },
         );
     }
 
     protected function cardBackBackgroundImageUrl(): Attribute
     {
         return Attribute::make(
-            get: fn (?string $value) => RequestUrlRewriter::toCurrentRequest($value),
+            get: function (?string $value) {
+                $value = RequestUrlRewriter::stripErroneousApiSegment($value);
+
+                return RequestUrlRewriter::toCurrentRequest($value);
+            },
         );
     }
 }

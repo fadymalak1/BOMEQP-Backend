@@ -36,6 +36,11 @@ class RequestUrlRewriter
             return $url;
         }
 
+        // Local/staging stacks often legitimately use /api in public URLs; production serves assets without it.
+        if (! app()->environment('production')) {
+            return $url;
+        }
+
         $out = $url;
         $prev = null;
         while ($prev !== $out) {
@@ -52,6 +57,10 @@ class RequestUrlRewriter
     public static function sanitizeUrlsInHtml(?string $html): ?string
     {
         if ($html === null || $html === '') {
+            return $html;
+        }
+
+        if (! app()->environment('production')) {
             return $html;
         }
 
@@ -104,6 +113,7 @@ class RequestUrlRewriter
             $rewritten .= '#' . $fragment;
         }
 
-        return $rewritten;
+        // Root may still include /api on production (e.g. API-only base URL); strip again for our asset paths only.
+        return self::stripErroneousApiSegment($rewritten) ?? $rewritten;
     }
 }

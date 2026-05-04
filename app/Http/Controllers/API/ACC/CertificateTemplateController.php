@@ -351,6 +351,8 @@ class CertificateTemplateController extends Controller
             ->with(['category', 'course', 'courses'])
             ->findOrFail($id);
 
+        $this->fillSharedCertificateBackgroundIfMissing($template, $acc->id);
+
         $payload = ['template' => $template];
         if ($template->template_type === 'course') {
             $payload['available_placeholders'] = CertificateCoursePlaceholders::definitions();
@@ -1270,6 +1272,30 @@ new OA\Property(
                 'message' => 'Failed to delete certificate template',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
+        }
+    }
+
+    /**
+     * When this template row has no main certificate background URL, reuse another ACC template's
+     * background (same shared asset pattern as card design merge).
+     */
+    private function fillSharedCertificateBackgroundIfMissing(CertificateTemplate $template, int $accId): void
+    {
+        $raw = $template->getRawOriginal('background_image_url');
+        if ($raw !== null && trim((string) $raw) !== '') {
+            return;
+        }
+
+        $donorUrl = CertificateTemplate::query()
+            ->where('acc_id', $accId)
+            ->where('id', '!=', $template->id)
+            ->whereNotNull('background_image_url')
+            ->where('background_image_url', '!=', '')
+            ->orderByDesc('updated_at')
+            ->value('background_image_url');
+
+        if ($donorUrl) {
+            $template->setAttribute('background_image_url', $donorUrl);
         }
     }
 
