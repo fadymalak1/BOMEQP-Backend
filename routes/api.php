@@ -423,5 +423,12 @@ Route::get('/storage/{path}', [App\Http\Controllers\API\FileController::class, '
         // Earnings
         Route::get('/earnings', [App\Http\Controllers\API\Instructor\EarningController::class, 'index']);
     });
+
+    // Some API clients use base URL ending with /api and still request paths starting with /api/acc/… (double /api/).
+    Route::middleware(['role:acc_admin,competency_admin', 'acc.active'])
+        ->prefix('api/acc')
+        ->group(function () {
+            Route::get('/card-template', [App\Http\Controllers\API\ACC\CertificateTemplateController::class, 'getCardTemplate']);
+        });
 });
 

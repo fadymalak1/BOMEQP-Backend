@@ -884,35 +884,35 @@ new OA\Property(
             return response()->json(['message' => 'ACC not found'], 404);
         }
 
-        // Single shared card design for this ACC – take the most recently updated template
-        $designTemplate = CertificateTemplate::where('acc_id', $acc->id)
-            ->orderBy('updated_at', 'desc')
-            ->first();
+        // Shared card columns are copied across templates, but updated_at may differ per row.
+        // Merge front/back fields from ALL templates so back-side data is not lost when the
+        // newest row was edited without back fields populated.
+        $templates = CertificateTemplate::where('acc_id', $acc->id)
+            ->orderByDesc('updated_at')
+            ->get();
 
         $cardTemplate = null;
-        if ($designTemplate) {
-            $cardTemplate = [
-                'id'                         => $designTemplate->id,
-                'name'                       => $designTemplate->name,
-                'card_template_html'         => $designTemplate->card_template_html,
-                'card_background_image_url'  => $designTemplate->card_background_image_url,
-                'card_config_json'           => $designTemplate->card_config_json,
-                'card_back_template_html'         => $designTemplate->card_back_template_html,
-                'card_back_background_image_url'  => $designTemplate->card_back_background_image_url,
-                'card_back_config_json'           => $designTemplate->card_back_config_json,
+        if ($templates->isNotEmpty()) {
+            $designTemplate = $templates->first();
+            $merged = $this->mergeAccSharedCardFields($templates);
+
+            $cardTemplate = array_merge([
+                'id'   => $designTemplate->id,
+                'name' => $designTemplate->name,
+            ], $merged, [
                 'sides' => [
                     'front' => [
-                        'template_html' => $designTemplate->card_template_html,
-                        'background_image_url' => $designTemplate->card_background_image_url,
-                        'config_json' => $designTemplate->card_config_json,
+                        'template_html'        => $merged['card_template_html'],
+                        'background_image_url' => $merged['card_background_image_url'],
+                        'config_json'          => $merged['card_config_json'],
                     ],
                     'back' => [
-                        'template_html' => $designTemplate->card_back_template_html,
-                        'background_image_url' => $designTemplate->card_back_background_image_url,
-                        'config_json' => $designTemplate->card_back_config_json,
+                        'template_html'        => $merged['card_back_template_html'],
+                        'background_image_url' => $merged['card_back_background_image_url'],
+                        'config_json'          => $merged['card_back_config_json'],
                     ],
                 ],
-            ];
+            ]);
         }
 
         // All certificate templates that currently have include_card = true
@@ -1270,6 +1270,65 @@ new OA\Property(
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
+    }
+
+    /**
+     * Merge shared card_* columns from every certificate template row for this ACC.
+     * Uses the first non-empty value per field so back-side data is returned even when the
+     * most recently updated template row does not have those columns filled.
+     *
+     * @param  \Illuminate\Support\Collection<int, CertificateTemplate>  $templates
+     * @return array{
+     *     card_template_html: ?string,
+     *     card_background_image_url: ?string,
+     *     card_config_json: mixed,
+     *     card_back_template_html: ?string,
+     *     card_back_background_image_url: ?string,
+     *     card_back_config_json: mixed
+     * }
+     */
+    private function mergeAccSharedCardFields(\Illuminate\Support\Collection $templates): array
+    {
+        $pickString = function (string $attribute) use ($templates): ?string {
+            foreach ($templates as $template) {
+                $value = $template->{$attribute};
+                if (is_string($value) && trim($value) !== '') {
+                    return $value;
+                }
+            }
+
+            return null;
+        };
+
+        $pickJson = function (string $attribute) use ($templates) {
+            foreach ($templates as $template) {
+                $value = $template->{$attribute};
+                if ($value === null) {
+                    continue;
+                }
+                if (is_array($value)) {
+                    if ($value === []) {
+                        continue;
+                    }
+                    if (isset($value['elements']) && is_array($value['elements']) && count($value['elements']) === 0) {
+                        continue;
+                    }
+                }
+
+                return $value;
+            }
+
+            return null;
+        };
+
+        return [
+            'card_template_html'             => $pickString('card_template_html'),
+            'card_background_image_url'      => $pickString('card_background_image_url'),
+            'card_config_json'               => $pickJson('card_config_json'),
+            'card_back_template_html'        => $pickString('card_back_template_html'),
+            'card_back_background_image_url'   => $pickString('card_back_background_image_url'),
+            'card_back_config_json'          => $pickJson('card_back_config_json'),
+        ];
     }
 
     /**
