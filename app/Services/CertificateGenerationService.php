@@ -980,11 +980,19 @@ class CertificateGenerationService
         return $this->generate($template, $data, 'pdf');
     }
 
-    public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null): array
+    /**
+     * @param  object  $course  Stub or Course; merge fields (course_name, …) for instructor ACC authorization PDF.
+     * @param  array<int, string>|null  $authorizedCourseNames  Course titles approved for this authorization (optional merge {{authorized_courses_list}}).
+     */
+    public function generateInstructorCertificate(CertificateTemplate $template, $instructor, $course, $acc, ?string $verificationCode = null, ?array $authorizedCourseNames = null): array
     {
         if (!$instructor->relationLoaded('trainingCenter')) {
             $instructor->load('trainingCenter');
         }
+
+        $authorizedCoursesText = (is_array($authorizedCourseNames) && count($authorizedCourseNames) > 0)
+            ? implode(', ', $authorizedCourseNames)
+            : '';
 
         $data = [
             'instructor_name'         => trim(($instructor->first_name ?? '') . ' ' . ($instructor->last_name ?? '')),
@@ -995,6 +1003,7 @@ class CertificateGenerationService
             'instructor_country'      => $instructor->country ?? '',
             'instructor_city'         => $instructor->city ?? '',
             'instructor_photo'        => $this->resolveLogoUrl($instructor->photo_url ?? $instructor->profile_photo_url ?? null),
+            'authorized_courses_list' => $authorizedCoursesText,
             'course_name'             => $course->name ?? '',
             'course_name_ar'          => $course->name_ar ?? '',
             'course_code'             => $course->code ?? '',

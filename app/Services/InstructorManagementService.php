@@ -857,11 +857,10 @@ class InstructorManagementService
      * Generate and send a single instructor certificate email after authorization + payment.
      *
      * Rules:
-     * - If the instructor already has ANY certificate in the database (for this ACC), the email
-     *   was already sent at some point — do NOT send again.
-     * - Otherwise, generate one PDF certificate (using the first eligible course as the template
-     *   subject) and send ONE email listing all newly-authorized courses, then persist a
-     *   certificate record for every new course so future calls are skipped.
+     * - If the instructor already has ANY certificate in the database for this ACC (template or
+     *   course under this ACC), do NOT send again.
+     * - Otherwise, generate ONE PDF for ACC-level authorization, send ONE email listing all
+     *   authorized courses, and persist a single certificate row (course_id null).
      *
      * @param InstructorAccAuthorization $authorization
      * @param \App\Models\ACC            $acc
@@ -927,11 +926,14 @@ class InstructorManagementService
                 'name_ar' => '',
                 'code'    => 'ACC-AUTH',
             ];
-            $firstCourseAuth = $authorizedCourses->isEmpty()
-                ? (object) ['course' => $coursePlaceholder]
-                : $authorizedCourses->first();
 
-            // ── Generate ONE certificate PDF (using first course or placeholder) ──
+            $authorizedCourseNames = $authorizedCourses
+                ->map(fn ($ca) => $ca->course->name)
+                ->filter()
+                ->values()
+                ->all();
+
+            // ── Generate ONE certificate PDF (ACC authorization; optional course list in template) ──
             $certificateService = new \App\Services\CertificateGenerationService();
 
             $verificationCode = 'VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10));
@@ -942,9 +944,10 @@ class InstructorManagementService
             $result = $certificateService->generateInstructorCertificate(
                 $certificateTemplate,
                 $instructor,
-                $firstCourseAuth->course ?? $coursePlaceholder,
+                $coursePlaceholder,
                 $acc,
-                $verificationCode
+                $verificationCode,
+                $authorizedCourseNames
             );
 
             if (!$result['success'] || !isset($result['file_path'])) {
@@ -999,73 +1002,39 @@ class InstructorManagementService
                 return;
             }
 
-            // ── Persist certificate record(s): one per authorized course, or one with course_id null ──
-            if ($authorizedCourses->isEmpty()) {
-                try {
-                    do {
-                        $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
-                    } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
+            // ── Persist ONE certificate: ACC authorization (not one row per course) ──
+            try {
+                do {
+                    $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
+                } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
 
-                    \App\Models\Certificate::create(array_filter([
-                        'certificate_number'  => $certificateNumber,
-                        'course_id'           => null,
-                        'training_center_id'  => $instructor->training_center_id,
-                        'instructor_id'       => $instructor->id,
-                        'type'                => 'instructor',
-                        'trainee_name'        => $instructorFullName,
-                        'trainee_id_number'   => $instructor->id_number,
-                        'issue_date'          => now()->toDateString(),
-                        'expiry_date'         => null,
-                        'template_id'         => $certificateTemplate->id,
-                        'certificate_pdf_url' => $pdfUrl,
-                        'card_pdf_url'        => $cardPdfUrl,
-                        'verification_code'   => $verificationCode,
-                        'status'              => 'valid',
-                    ]));
-                } catch (\Exception $e) {
-                    Log::error('Failed to save instructor certificate record (no courses)', [
-                        'instructor_id' => $instructor->id,
-                        'acc_id'        => $acc->id,
-                        'error'         => $e->getMessage(),
-                    ]);
-                }
-            } else {
-                foreach ($authorizedCourses as $courseAuth) {
-                    try {
-                        do {
-                            $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
-                        } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
-
-                        \App\Models\Certificate::create(array_filter([
-                            'certificate_number'  => $certificateNumber,
-                            'course_id'           => $courseAuth->course->id,
-                            'training_center_id'  => $instructor->training_center_id,
-                            'instructor_id'       => $instructor->id,
-                            'type'                => 'instructor',
-                            'trainee_name'        => $instructorFullName,
-                            'trainee_id_number'   => $instructor->id_number,
-                            'issue_date'          => now()->toDateString(),
-                            'expiry_date'         => null,
-                            'template_id'         => $certificateTemplate->id,
-                            'certificate_pdf_url' => $pdfUrl,
-                            'card_pdf_url'        => $cardPdfUrl,
-                            'verification_code'   => $courseAuth->course->id === $firstCourseAuth->course->id
-                                                        ? $verificationCode
-                                                        : ('VERIFY-' . strtoupper(\Illuminate\Support\Str::random(10))),
-                            'status'              => 'valid',
-                        ]));
-                    } catch (\Exception $e) {
-                        Log::error('Failed to save certificate record for course', [
-                            'instructor_id' => $instructor->id,
-                            'course_id'     => $courseAuth->course->id,
-                            'error'         => $e->getMessage(),
-                        ]);
-                    }
-                }
+                \App\Models\Certificate::create(array_filter([
+                    'certificate_number'  => $certificateNumber,
+                    'course_id'           => null,
+                    'training_center_id'  => $instructor->training_center_id,
+                    'instructor_id'       => $instructor->id,
+                    'type'                => 'instructor',
+                    'trainee_name'        => $instructorFullName,
+                    'trainee_id_number'   => $instructor->id_number,
+                    'issue_date'          => now()->toDateString(),
+                    'expiry_date'         => null,
+                    'template_id'         => $certificateTemplate->id,
+                    'certificate_pdf_url' => $pdfUrl,
+                    'card_pdf_url'        => $cardPdfUrl,
+                    'verification_code'   => $verificationCode,
+                    'status'              => 'valid',
+                ]));
+            } catch (\Exception $e) {
+                Log::error('Failed to save instructor ACC authorization certificate', [
+                    'instructor_id' => $instructor->id,
+                    'acc_id'        => $acc->id,
+                    'error'         => $e->getMessage(),
+                ]);
             }
 
-            Log::info('Instructor certificates saved to database', [
+            Log::info('Instructor ACC authorization certificate saved (single record)', [
                 'instructor_id' => $instructor->id,
+                'acc_id'        => $acc->id,
                 'courses_count' => count($courseNames),
             ]);
 
