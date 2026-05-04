@@ -26,6 +26,45 @@ class RequestUrlRewriter
             || str_contains($path, '/laravel/storage/');
     }
 
+    /**
+     * Remove a mistaken "/api" segment before "/laravel/" or "/storage/" in absolute URLs
+     * (e.g. when APP_URL or forced root included /api and Storage::url doubled the path).
+     */
+    public static function stripErroneousApiSegment(?string $url): ?string
+    {
+        if ($url === null || $url === '') {
+            return $url;
+        }
+
+        $out = $url;
+        $prev = null;
+        while ($prev !== $out) {
+            $prev = $out;
+            $out = preg_replace('#^(https?://[^/]+)/api(?=/laravel|/storage)#', '$1', $out) ?? $out;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Same as stripErroneousApiSegment but applied to every occurrence inside HTML (e.g. template_html).
+     */
+    public static function sanitizeUrlsInHtml(?string $html): ?string
+    {
+        if ($html === null || $html === '') {
+            return $html;
+        }
+
+        $out = $html;
+        $prev = null;
+        while ($prev !== $out) {
+            $prev = $out;
+            $out = preg_replace('#(https?://[^/\'"\s]+)/api(?=/laravel|/storage)#', '$1', $out) ?? $out;
+        }
+
+        return $out;
+    }
+
     public static function toCurrentRequest(?string $url): ?string
     {
         if ($url === null || $url === '') {

@@ -7,6 +7,7 @@ use App\Models\ACC;
 use App\Models\CertificateTemplate;
 use App\Services\FileUploadService;
 use App\Support\CertificateCoursePlaceholders;
+use App\Support\RequestUrlRewriter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -1322,11 +1323,11 @@ new OA\Property(
         };
 
         return [
-            'card_template_html'             => $pickString('card_template_html'),
-            'card_background_image_url'      => $pickString('card_background_image_url'),
+            'card_template_html'             => RequestUrlRewriter::sanitizeUrlsInHtml($pickString('card_template_html')),
+            'card_background_image_url'      => RequestUrlRewriter::stripErroneousApiSegment($pickString('card_background_image_url')),
             'card_config_json'               => $pickJson('card_config_json'),
-            'card_back_template_html'        => $pickString('card_back_template_html'),
-            'card_back_background_image_url'   => $pickString('card_back_background_image_url'),
+            'card_back_template_html'        => RequestUrlRewriter::sanitizeUrlsInHtml($pickString('card_back_template_html')),
+            'card_back_background_image_url' => RequestUrlRewriter::stripErroneousApiSegment($pickString('card_back_background_image_url')),
             'card_back_config_json'          => $pickJson('card_back_config_json'),
         ];
     }

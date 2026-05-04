@@ -21,10 +21,11 @@ class UseRequestApplicationUrl
     {
         try {
             $rawRoot = rtrim($request->root(), '/');
-            // Strip only a trailing /api path segment (avoid mangling hosts like api.example.com).
-            $root = preg_match('#/api$#', $rawRoot)
-                ? rtrim(substr($rawRoot, 0, -strlen('/api')), '/')
-                : $rawRoot;
+            // Strip trailing /api repeatedly (e.g. request base /api/api/... leaves root ending in .../api/api).
+            $root = $rawRoot;
+            while ($root !== '' && preg_match('#/api$#', $root)) {
+                $root = rtrim(substr($root, 0, -strlen('/api')), '/');
+            }
 
             if ($root !== '') {
                 URL::forceRootUrl($root);
