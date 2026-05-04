@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\RequestUrlRewriter;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -78,6 +80,27 @@ class CertificateTemplate extends Model
     public function certificates(): HasMany
     {
         return $this->hasMany(Certificate::class, 'template_id');
+    }
+
+    protected function backgroundImageUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => RequestUrlRewriter::toCurrentRequest($value),
+        );
+    }
+
+    protected function cardBackgroundImageUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => RequestUrlRewriter::toCurrentRequest($value),
+        );
+    }
+
+    protected function cardBackBackgroundImageUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => RequestUrlRewriter::toCurrentRequest($value),
+        );
     }
 }
 
