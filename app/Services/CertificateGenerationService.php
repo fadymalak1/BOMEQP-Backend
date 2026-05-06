@@ -736,6 +736,9 @@ class CertificateGenerationService
             }
         }
 
+        // Prevent raw placeholders from leaking into rendered PDFs/cards when a key is missing.
+        $html = preg_replace('/\{\{\s*[^}]+\s*\}\}/', '', $html) ?? $html;
+
         $html = preg_replace('/\n\s*\n/', "\n", $html) ?? $html;
         return $html;
     }
