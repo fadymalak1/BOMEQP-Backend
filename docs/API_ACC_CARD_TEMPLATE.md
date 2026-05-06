@@ -405,12 +405,15 @@ The card shares the same variable pool as the certificate template. Common varia
 | `{{course_name}}` | Name of the certified course |
 | `{{course_code}}` | Course code |
 | `{{training_center_name}}` | Name of the training center |
+| `{{training_provider_id_number}}` | Training provider government/company registry ID number |
 | `{{acc_name}}` | Name of the ACC |
 | `{{acc_logo}}` | ACC logo (image element) |
 | `{{training_center_logo}}` | Training center logo (image element) |
 | `{{issue_date}}` | Issue date (`YYYY-MM-DD`) |
 | `{{issue_date_formatted}}` | Issue date (`Month D, YYYY`) |
 | `{{expiry_date}}` | Expiry date (`YYYY-MM-DD`) |
+| `{{expiry_date_formatted}}` | Expiry date (`Month D, YYYY`) |
+| `{{certificate_number}}` | Certificate number |
 | `{{serial_number}}` | Certificate serial number / verification code |
 | `{{qr_code}}` | QR code image pointing to the verification page (image element) |
 
@@ -486,7 +489,7 @@ Content-Type: application/json
       { "type": "text",   "variable": "{{course_name}}",      "x": 0.34, "y": 0.38, "font_size": 12, "color": "#e0e0e0" },
       { "type": "text",   "variable": "Training center: {{training_center_name}}", "x": 0.06, "y": 0.72, "font_size": 10, "color": "#ffffff" },
       { "type": "text",   "variable": "Issued on {{issue_date_formatted}}", "x": 0.06, "y": 0.82, "font_size": 10, "color": "#ffffff" },
-      { "type": "text",   "variable": "Valid to: {{expiry_date}}", "x": 0.06, "y": 0.90, "font_size": 10, "color": "#ffffff" },
+      { "type": "text",   "variable": "Valid to: {{expiry_date_formatted}}", "x": 0.06, "y": 0.90, "font_size": 10, "color": "#ffffff" },
       { "type": "text",   "variable": "Serial No. {{serial_number}}", "x": 0.55, "y": 0.82, "font_size": 10, "color": "#ffffff" }
     ]
   }

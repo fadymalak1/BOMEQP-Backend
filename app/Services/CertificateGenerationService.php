@@ -974,6 +974,7 @@ class CertificateGenerationService
         if ($verificationCode) {
             $data['verification_code'] = $verificationCode;
             $data['serial_number']     = $verificationCode;
+            $data['certificate_number'] = $verificationCode;
             $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
         }
 
@@ -1108,6 +1109,31 @@ class CertificateGenerationService
         if (!isset($data['training_provider_id_number']) && isset($data['company_gov_registry_number'])) {
             $data['training_provider_id_number'] = $data['company_gov_registry_number'];
         }
+        // Keep common number aliases in sync for templates/cards.
+        if (!isset($data['certificate_number']) && isset($data['serial_number'])) {
+            $data['certificate_number'] = $data['serial_number'];
+        }
+        if (!isset($data['serial_number']) && isset($data['certificate_number'])) {
+            $data['serial_number'] = $data['certificate_number'];
+        }
+
+        // Auto-derive formatted dates for template/card placeholders when possible.
+        if (!isset($data['issue_date_formatted']) && !empty($data['issue_date'])) {
+            try {
+                $data['issue_date_formatted'] = \Carbon\Carbon::parse((string) $data['issue_date'])->format('F j, Y');
+            } catch (\Throwable $e) {
+                // Keep original payload untouched when parsing fails.
+            }
+        }
+
+        if (!isset($data['expiry_date_formatted']) && !empty($data['expiry_date'])) {
+            try {
+                $data['expiry_date_formatted'] = \Carbon\Carbon::parse((string) $data['expiry_date'])->format('F j, Y');
+            } catch (\Throwable $e) {
+                // Keep original payload untouched when parsing fails.
+            }
+        }
+
         return $data;
     }
 

@@ -95,6 +95,16 @@ class CertificateCoursePlaceholders
                     'description' => 'Human-readable issue date.',
                 ],
                 [
+                    'key' => 'expiry_date',
+                    'label' => 'Expiry date',
+                    'description' => 'Certificate expiry date (Y-m-d) when provided.',
+                ],
+                [
+                    'key' => 'expiry_date_formatted',
+                    'label' => 'Expiry date (formatted)',
+                    'description' => 'Human-readable expiry date when provided.',
+                ],
+                [
                     'key' => 'certificate_number',
                     'label' => 'Certificate number',
                     'description' => 'Certificate / serial number.',
@@ -224,6 +234,11 @@ class CertificateCoursePlaceholders
                     'description' => 'Default authorization expiry (e.g. three years from issue).',
                 ],
                 [
+                    'key' => 'expiry_date_formatted',
+                    'label' => 'Expiry date (formatted)',
+                    'description' => 'Human-readable authorization expiry date.',
+                ],
+                [
                     'key' => 'verification_code',
                     'label' => 'Verification code',
                     'description' => 'Verification / serial code.',
@@ -232,6 +247,11 @@ class CertificateCoursePlaceholders
                     'key' => 'serial_number',
                     'label' => 'Serial number',
                     'description' => 'Same as verification code when issued.',
+                ],
+                [
+                    'key' => 'certificate_number',
+                    'label' => 'Certificate number',
+                    'description' => 'Certificate number alias (mapped from serial number when not provided).',
                 ],
                 [
                     'key' => 'training_center_logo',
