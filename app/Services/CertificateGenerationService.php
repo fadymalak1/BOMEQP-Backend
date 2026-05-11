@@ -957,6 +957,8 @@ class CertificateGenerationService
 
     public function generateTrainingCenterCertificate(CertificateTemplate $template, $trainingCenter, $acc, ?string $verificationCode = null): array
     {
+        $issueDate = \Carbon\Carbon::now();
+
         $data = [
             'training_center_name'                => $trainingCenter->name ?? '',
             'training_center_legal_name'          => $trainingCenter->legal_name ?? '',
@@ -968,8 +970,9 @@ class CertificateGenerationService
             'acc_legal_name'                      => $acc->legal_name ?? '',
             'acc_registration_number'             => $acc->registration_number ?? '',
             'acc_country'                         => $acc->country ?? '',
-            'issue_date'                          => now()->format('Y-m-d'),
-            'issue_date_formatted'                => now()->format('F j, Y'),
+            'issue_date'                          => $issueDate->format('Y-m-d'),
+            'issue_date_formatted'                => $issueDate->format('F j, Y'),
+            'expiry_date'                         => $issueDate->copy()->addYears(3)->format('Y-m-d'),
             'training_center_logo'                => $this->resolveLogoUrl($trainingCenter->logo_url ?? null),
             'acc_logo'                            => $this->resolveLogoUrl($acc->logo_url ?? null),
         ];
@@ -993,6 +996,7 @@ class CertificateGenerationService
         if (!$instructor->relationLoaded('trainingCenter')) {
             $instructor->load('trainingCenter');
         }
+        $issueDate = \Carbon\Carbon::now();
 
         $authorizedCoursesText = (is_array($authorizedCourseNames) && count($authorizedCourseNames) > 0)
             ? implode(', ', $authorizedCourseNames)
@@ -1016,9 +1020,9 @@ class CertificateGenerationService
             'acc_legal_name'          => $acc->legal_name ?? '',
             'acc_registration_number' => $acc->registration_number ?? '',
             'acc_country'             => $acc->country ?? '',
-            'issue_date'              => now()->format('Y-m-d'),
-            'issue_date_formatted'    => now()->format('F j, Y'),
-            'expiry_date'             => now()->addYears(3)->format('Y-m-d'),
+            'issue_date'              => $issueDate->format('Y-m-d'),
+            'issue_date_formatted'    => $issueDate->format('F j, Y'),
+            'expiry_date'             => $issueDate->copy()->addYears(3)->format('Y-m-d'),
             'training_center_logo'    => $this->resolveLogoUrl($instructor->trainingCenter?->logo_url ?? null),
             'acc_logo'                => $this->resolveLogoUrl($acc->logo_url ?? null),
         ];

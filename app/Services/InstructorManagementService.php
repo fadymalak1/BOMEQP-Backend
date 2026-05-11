@@ -1002,6 +1002,7 @@ class InstructorManagementService
                 do {
                     $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
                 } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
+                $issueDate = \Carbon\Carbon::now();
 
                 \App\Models\Certificate::create(array_filter([
                     'certificate_number'  => $certificateNumber,
@@ -1011,8 +1012,8 @@ class InstructorManagementService
                     'type'                => 'instructor',
                     'trainee_name'        => $instructorFullName,
                     'trainee_id_number'   => $instructor->id_number,
-                    'issue_date'          => now()->toDateString(),
-                    'expiry_date'         => null,
+                    'issue_date'          => $issueDate->toDateString(),
+                    'expiry_date'         => $issueDate->copy()->addYears(3)->toDateString(),
                     'template_id'         => $certificateTemplate->id,
                     'certificate_pdf_url' => $pdfUrl,
                     'card_pdf_url'        => $cardPdfUrl,
@@ -1181,6 +1182,7 @@ class InstructorManagementService
             do {
                 $certificateNumber = 'CERT-' . date('Y') . '-' . strtoupper(Str::random(8));
             } while (\App\Models\Certificate::where('certificate_number', $certificateNumber)->exists());
+            $issueDate = \Carbon\Carbon::now();
 
             \App\Models\Certificate::create(array_filter([
                 'certificate_number'  => $certificateNumber,
@@ -1190,8 +1192,8 @@ class InstructorManagementService
                 'type'                => 'instructor',
                 'trainee_name'        => $instructorFullName,
                 'trainee_id_number'   => $instructor->id_number,
-                'issue_date'          => now()->toDateString(),
-                'expiry_date'         => null,
+                'issue_date'          => $issueDate->toDateString(),
+                'expiry_date'         => $issueDate->copy()->addYears(3)->toDateString(),
                 'template_id'         => $template->id,
                 'certificate_pdf_url' => $pdfUrl,
                 'card_pdf_url'        => $cardPdfUrl,

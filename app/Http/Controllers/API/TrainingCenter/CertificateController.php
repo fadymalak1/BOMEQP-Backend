@@ -760,9 +760,9 @@ class CertificateController extends Controller
                 'format' => 'png',
             ]);
 
-            $issueDateFormatted = $request->issue_date
-                ? Carbon::parse($request->issue_date)->format('F j, Y')
-                : '';
+            $issueDate = Carbon::parse($request->issue_date)->toDateString();
+            $expiryDate = Carbon::parse($issueDate)->addYears(2)->toDateString();
+            $issueDateFormatted = Carbon::parse($issueDate)->format('F j, Y');
 
             $instructorPhotoUrl = null;
             if ($instructor && ($instructor->photo_url ?? null)) {
@@ -792,13 +792,13 @@ class CertificateController extends Controller
                 'trainee_name'       => $request->trainee_name,
                 'course_name'        => $course->name,
                 'course_code'        => $course->code ?? '',
-                'date'               => $request->issue_date,
+                'date'               => $issueDate,
                 'cert_id'            => $certificateNumber,
                 'certificate_number' => $certificateNumber,
                 'serial_number'      => $certificateNumber,
-                'issue_date'         => $request->issue_date,
+                'issue_date'         => $issueDate,
                 'issue_date_formatted' => $issueDateFormatted,
-                'expiry_date'        => $request->expiry_date ?? null,
+                'expiry_date'        => $expiryDate,
                 'verification_code'  => $verificationCode,
                 'training_center_name' => $trainingCenter->name ?? '',
                 'acc_name'           => $acc?->name ?? '',
@@ -836,8 +836,8 @@ class CertificateController extends Controller
                 'type' => Certificate::determineType($request->instructor_id, $request->trainee_name),
                 'trainee_name' => $request->trainee_name,
                 'trainee_id_number' => $request->trainee_id_number,
-                'issue_date' => $request->issue_date,
-                'expiry_date' => $request->expiry_date,
+                'issue_date' => $issueDate,
+                'expiry_date' => $expiryDate,
                 'template_id' => $template->id,
                 'certificate_pdf_url' => '', // Will be updated immediately
                 'verification_code' => $verificationCode,
@@ -1021,8 +1021,8 @@ class CertificateController extends Controller
             'expiry_date' => 'nullable|date|after:issue_date',
         ]);
 
-        $issueDate = $request->issue_date ?? now()->toDateString();
-        $expiryDate = $request->expiry_date;
+        $issueDate = Carbon::parse($request->issue_date ?? now()->toDateString())->toDateString();
+        $expiryDate = Carbon::parse($issueDate)->addYears(2)->toDateString();
 
         // Determine which trainees to include: passing only, optionally filtered by trainee_ids
         $trainees = $class->trainees;
