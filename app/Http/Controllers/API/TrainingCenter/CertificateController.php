@@ -980,6 +980,10 @@ class CertificateController extends Controller
     public function generateForClass(Request $request, $id)
     {
         try {
+            // Bulk certificate generation can legitimately exceed default PHP execution time.
+            @set_time_limit(0);
+            @ini_set('max_execution_time', '0');
+
             $user = $request->user();
             if (!$user) {
                 return response()->json(['message' => 'Unauthenticated'], 401);

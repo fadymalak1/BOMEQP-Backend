@@ -123,10 +123,14 @@ class CertificateGenerationService
             }
 
             // DomPDF + large base64 images can exceed default php memory (often 128M on hosts).
-            @ini_set('memory_limit', '512M');
+            @ini_set('memory_limit', '1024M');
             $fontsDir = storage_path('fonts');
             if (! is_dir($fontsDir)) {
                 @mkdir($fontsDir, 0755, true);
+            }
+            $dompdfTempDir = storage_path('app/dompdf-temp');
+            if (! is_dir($dompdfTempDir)) {
+                @mkdir($dompdfTempDir, 0755, true);
             }
 
             // ------------------------------------------------------------------
@@ -136,10 +140,16 @@ class CertificateGenerationService
             $imageKeys = ['training_center_logo', 'acc_logo', 'qr_code',
                           'training_center_logo_url', 'acc_logo_url', 'qr_code_url',
                           'instructor_photo', 'trainee_photo'];
+            $resolvedImageCache = [];
 
             foreach ($imageKeys as $key) {
                 if (!empty($data[$key])) {
-                    $uri = $this->toDataUri($data[$key]);
+                    $source = (string) $data[$key];
+                    $cacheKey = md5($source);
+                    if (!array_key_exists($cacheKey, $resolvedImageCache)) {
+                        $resolvedImageCache[$cacheKey] = $this->toDataUri($source);
+                    }
+                    $uri = $resolvedImageCache[$cacheKey];
                     if ($uri) {
                         $data[$key] = $uri;
                     } else {
@@ -257,6 +267,8 @@ class CertificateGenerationService
                 ->setOption('isRemoteEnabled', true)
                 ->setOption('fontDir', storage_path('fonts'))
                 ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('tempDir', storage_path('app/dompdf-temp'))
+                ->setOption('dpi', 96)
                 ->setOption('defaultFont', 'serif');
 
             // ------------------------------------------------------------------
@@ -484,6 +496,8 @@ class CertificateGenerationService
                 ->setOption('isRemoteEnabled', true)
                 ->setOption('fontDir', storage_path('fonts'))
                 ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('tempDir', storage_path('app/dompdf-temp'))
+                ->setOption('dpi', 96)
                 ->setOption('defaultFont', 'serif');
             $certPdf->save($certFullPath);
 
@@ -510,6 +524,8 @@ class CertificateGenerationService
                 ->setOption('isRemoteEnabled', true)
                 ->setOption('fontDir', storage_path('fonts'))
                 ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('tempDir', storage_path('app/dompdf-temp'))
+                ->setOption('dpi', 96)
                 ->setOption('defaultFont', 'serif');
             $cardPdf->save($cardFullPath);
 
@@ -984,6 +1000,8 @@ class CertificateGenerationService
                 ->setOption('isRemoteEnabled', false)
                 ->setOption('fontDir', storage_path('fonts'))
                 ->setOption('fontCache', storage_path('fonts'))
+                ->setOption('tempDir', storage_path('app/dompdf-temp'))
+                ->setOption('dpi', 96)
                 ->setOption('defaultFont', 'serif');
 
             $fileName = Str::random(40) . '.pdf';
