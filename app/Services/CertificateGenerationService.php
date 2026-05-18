@@ -1140,7 +1140,8 @@ class CertificateGenerationService
             'issue_date_formatted'                => $issueDate->format('F j, Y'),
             'expiry_date'                         => $issueDate->copy()->addYears(3)->format('Y-m-d'),
             'training_center_logo'                => $this->resolveLogoUrl($trainingCenter->logo_url ?? null),
-            'acc_logo'                            => $this->resolveLogoUrl($acc->logo_url ?? null),
+            // Training provider certificate requirement: rotate ACC logo 90deg to the right.
+            'acc_logo'                            => $this->rotateImageSource90Right($this->resolveLogoUrl($acc->logo_url ?? null)),
             'verification_code'                   => $effectiveVerificationCode,
             'serial_number'                       => $effectiveVerificationCode,
             'certificate_number'                  => $effectiveVerificationCode,
@@ -1349,6 +1350,52 @@ class CertificateGenerationService
             return $url;
         }
         return url($url);
+    }
+
+    private function rotateImageSource90Right(?string $source): ?string
+    {
+        if (empty($source)) {
+            return $source;
+        }
+
+        $dataUri = $this->toDataUri((string) $source);
+        if (!$dataUri || !preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/', $dataUri, $matches)) {
+            return $source;
+        }
+
+        $mime = strtolower($matches[1]);
+        $bytes = base64_decode($matches[2], true);
+        if ($bytes === false) {
+            return $dataUri;
+        }
+
+        $image = @imagecreatefromstring($bytes);
+        if (!$image) {
+            return $dataUri;
+        }
+
+        // GD rotates counter-clockwise for positive angles; use -90 for clockwise.
+        $rotated = @imagerotate($image, -90, 0);
+        imagedestroy($image);
+
+        if (!$rotated) {
+            return $dataUri;
+        }
+
+        ob_start();
+        $outputMime = match ($mime) {
+            'image/jpeg', 'image/jpg' => (imagejpeg($rotated, null, 95) ? 'image/jpeg' : ''),
+            'image/gif'               => (imagegif($rotated) ? 'image/gif' : ''),
+            default                   => (imagepng($rotated) ? 'image/png' : ''),
+        };
+        $output = ob_get_clean();
+        imagedestroy($rotated);
+
+        if (empty($outputMime) || $output === false || $output === '') {
+            return $dataUri;
+        }
+
+        return 'data:' . $outputMime . ';base64,' . base64_encode($output);
     }
 
     private function getQrCodeUrl(string $verificationCode): string
