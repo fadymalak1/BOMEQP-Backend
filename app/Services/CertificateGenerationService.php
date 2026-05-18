@@ -386,13 +386,19 @@ class CertificateGenerationService
 
             // Resolve {{variable}} placeholder from $data
             $variable = $el['variable'] ?? '';
+            $resolvedVariableKey = null;
             if (preg_match('/\{\{([^}]+)\}\}/', $variable, $matches)) {
                 $key   = trim($matches[1]);
+                $resolvedVariableKey = $key;
                 $value = $data[$key] ?? '';
             } else {
                 // No braces — treat as literal key name
+                $resolvedVariableKey = is_string($variable) ? trim($variable) : null;
                 $value = $data[$variable] ?? $variable;
             }
+
+            $shouldRotateAccLogo = !empty($data['rotate_acc_logo_90_right'])
+                && in_array(strtolower((string) $resolvedVariableKey), ['acc_logo', 'acc_logo_url'], true);
 
             $style = sprintf('position:absolute;left:%s%%;top:%s%%;z-index:1;', $x, $y);
 
@@ -407,6 +413,9 @@ class CertificateGenerationService
                     : ($this->toDataUri($valueStr) ?? '');
                 if ($imgUri) {
                     $style .= sprintf('width:%s%%;height:%s%%;', $w, $h);
+                    if ($shouldRotateAccLogo) {
+                        $style .= 'transform:rotate(90deg);transform-origin:center center;';
+                    }
                     $overlayHtml .= sprintf(
                         '<img src="%s" alt="" style="%s object-fit:contain;" />',
                         htmlspecialchars($imgUri, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
@@ -869,6 +878,30 @@ class CertificateGenerationService
      */
     private function replaceTemplateVariables(string $html, array $data): string
     {
+        if (!empty($data['rotate_acc_logo_90_right'])) {
+            $html = preg_replace_callback(
+                '/<img[^>]*\bsrc\s*=\s*["\']\s*\{\{\s*(acc_logo|acc_logo_url)\s*\}\}\s*["\'][^>]*>/i',
+                function ($matches) {
+                    $imgTag = $matches[0];
+                    $rotateStyle = 'transform:rotate(90deg);transform-origin:center center;';
+
+                    if (preg_match('/\bstyle\s*=\s*(["\'])(.*?)\1/i', $imgTag, $styleMatch)) {
+                        $existingStyle = rtrim(trim($styleMatch[2]), ';');
+                        $mergedStyle = $existingStyle === '' ? $rotateStyle : $existingStyle . ';' . $rotateStyle;
+                        return preg_replace(
+                            '/\bstyle\s*=\s*(["\'])(.*?)\1/i',
+                            'style="' . $mergedStyle . '"',
+                            $imgTag,
+                            1
+                        ) ?? $imgTag;
+                    }
+
+                    return preg_replace('/<img/i', '<img style="' . $rotateStyle . '"', $imgTag, 1) ?? $imgTag;
+                },
+                $html
+            ) ?? $html;
+        }
+
         foreach ($data as $key => $value) {
             if (is_string($value) && str_starts_with($value, 'data:')) {
                 $safeValue = $value;
@@ -1145,6 +1178,7 @@ class CertificateGenerationService
             'serial_number'                       => $effectiveVerificationCode,
             'certificate_number'                  => $effectiveVerificationCode,
             'qr_code'                             => $this->getQrCodeUrl($effectiveVerificationCode),
+            'rotate_acc_logo_90_right'            => true,
         ];
 
         return $this->generate($template, $data, 'pdf');
