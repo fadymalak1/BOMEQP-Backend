@@ -856,6 +856,20 @@ class CertificateController extends Controller
             $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'pdf');
 
             if (!$generationResult['success']) {
+                $failureContext = [
+                    'template_id' => $template->id,
+                    'certificate_id' => $certificate->id,
+                    'training_center_id' => $trainingCenter->id,
+                    'course_id' => $request->course_id,
+                    'instructor_id' => $request->instructor_id,
+                    'trainee_name' => $request->trainee_name,
+                    'verification_code' => $verificationCode,
+                    'service_message' => $generationResult['message'] ?? null,
+                    'app_env' => app()->environment(),
+                ];
+                \Illuminate\Support\Facades\Log::error('Certificate issuance failed during PDF generation', $failureContext);
+                @error_log('[TrainingCenterCertificateController] Certificate issuance failed during PDF generation ' . json_encode($failureContext, JSON_UNESCAPED_SLASHES));
+
                 // Update certificate status on failure
                 $certificate->update([
                     'status' => 'revoked',
@@ -893,10 +907,15 @@ class CertificateController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Certificate issuance error', [
+            $failureContext = [
                 'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'app_env' => app()->environment(),
                 'trace' => $e->getTraceAsString(),
-            ]);
+            ];
+            \Illuminate\Support\Facades\Log::error('Certificate issuance error', $failureContext);
+            @error_log('[TrainingCenterCertificateController] Certificate issuance error ' . json_encode($failureContext, JSON_UNESCAPED_SLASHES));
 
             return response()->json([
                 'message' => 'Failed to issue certificate',
@@ -1188,6 +1207,18 @@ class CertificateController extends Controller
                 $generationResult = $this->certificateGenerationService->generate($template, $certificateData, 'pdf');
 
                 if (!$generationResult['success']) {
+                    $failureContext = [
+                        'class_id' => $class->id,
+                        'template_id' => $template->id,
+                        'trainee_id' => $trainee->id,
+                        'certificate_id' => $certificate->id,
+                        'verification_code' => $verificationCode,
+                        'service_message' => $generationResult['message'] ?? null,
+                        'app_env' => app()->environment(),
+                    ];
+                    \Illuminate\Support\Facades\Log::error('Bulk certificate generation failed during PDF generation', $failureContext);
+                    @error_log('[TrainingCenterCertificateController] Bulk certificate generation failed during PDF generation ' . json_encode($failureContext, JSON_UNESCAPED_SLASHES));
+
                     $certificate->update([
                         'status' => 'revoked',
                     ]);
@@ -1229,11 +1260,16 @@ class CertificateController extends Controller
                 ];
             } catch (\Throwable $e) {
                 DB::rollBack();
-                \Illuminate\Support\Facades\Log::error('Bulk certificate generation error', [
+                $failureContext = [
                     'class_id' => $class->id,
                     'trainee_id' => $trainee->id,
                     'error' => $e->getMessage(),
-                ]);
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'app_env' => app()->environment(),
+                ];
+                \Illuminate\Support\Facades\Log::error('Bulk certificate generation error', $failureContext);
+                @error_log('[TrainingCenterCertificateController] Bulk certificate generation error ' . json_encode($failureContext, JSON_UNESCAPED_SLASHES));
 
                 $skipped++;
                 $details[] = [

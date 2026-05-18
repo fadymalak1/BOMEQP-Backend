@@ -13,6 +13,20 @@ use Barryvdh\DomPDF\Facade\Pdf;
 class CertificateGenerationService
 {
     /**
+     * Log to Laravel and fallback to PHP error_log (useful when LOG_CHANNEL is not file based).
+     */
+    private function logErrorWithFallback(string $message, array $context = []): void
+    {
+        Log::error($message, $context);
+
+        try {
+            @error_log('[CertificateGenerationService] ' . $message . ' ' . json_encode($context, JSON_UNESCAPED_SLASHES));
+        } catch (\Throwable $ignored) {
+            // Keep certificate generation flow alive even if fallback logging fails.
+        }
+    }
+
+    /**
      * Generate a certificate image/PDF from a template
      */
     public function generate(CertificateTemplate $template, array $data, string $outputFormat = 'png'): array
@@ -71,9 +85,15 @@ class CertificateGenerationService
             return ['success' => false, 'message' => 'Failed to save certificate'];
 
         } catch (\Throwable $e) {
-            Log::error('Certificate generation error', [
+            $this->logErrorWithFallback('Certificate generation error', [
                 'template_id' => $template->id,
                 'error'       => $e->getMessage(),
+                'file'        => $e->getFile(),
+                'line'        => $e->getLine(),
+                'app_env'     => app()->environment(),
+                'app_url'     => config('app.url'),
+                'php_version' => PHP_VERSION,
+                'memory_limit' => ini_get('memory_limit'),
                 'trace'       => $e->getTraceAsString(),
             ]);
             return ['success' => false, 'message' => 'Certificate generation failed: ' . $e->getMessage()];
@@ -251,9 +271,16 @@ class CertificateGenerationService
             ];
 
         } catch (\Throwable $e) {
-            Log::error('PDF generation error', [
+            $this->logErrorWithFallback('PDF generation error', [
                 'template_id' => $template->id,
                 'error'       => $e->getMessage(),
+                'file'        => $e->getFile(),
+                'line'        => $e->getLine(),
+                'app_env'     => app()->environment(),
+                'storage_public_root' => Storage::disk('public')->path(''),
+                'storage_public_writable' => is_writable(Storage::disk('public')->path('')),
+                'fonts_dir'   => storage_path('fonts'),
+                'fonts_dir_writable' => is_writable(storage_path('fonts')),
                 'trace'       => $e->getTraceAsString(),
             ]);
             return ['success' => false, 'message' => 'PDF generation failed: ' . $e->getMessage()];
@@ -494,9 +521,12 @@ class CertificateGenerationService
                 'card_file_url'  => $this->getCertificateApiUrl($cardFilePath),
             ];
         } catch (\Throwable $e) {
-            Log::error('Certificate/card separate PDFs failed', [
+            $this->logErrorWithFallback('Certificate/card separate PDFs failed', [
                 'template_id' => $template->id,
                 'error'       => $e->getMessage(),
+                'file'        => $e->getFile(),
+                'line'        => $e->getLine(),
+                'app_env'     => app()->environment(),
                 'trace'       => $e->getTraceAsString(),
             ]);
             return null;
@@ -731,6 +761,12 @@ class CertificateGenerationService
 
             if ($key === 'verification_code') {
                 foreach (['verificationCode', 'VerificationCode', 'VERIFICATION_CODE', 'verification-code'] as $alt) {
+                    $html = preg_replace('/\{\{\s*' . preg_quote($alt, '/') . '\s*\}\}/i', $safeValue, $html) ?? $html;
+                }
+            }
+
+            if ($key === 'qr_code') {
+                foreach (['qr_code_url', 'qrCode', 'QRCode', 'qrcode', 'QR_CODE'] as $alt) {
                     $html = preg_replace('/\{\{\s*' . preg_quote($alt, '/') . '\s*\}\}/i', $safeValue, $html) ?? $html;
                 }
             }
@@ -1096,6 +1132,10 @@ class CertificateGenerationService
         foreach ($mapping as $apiKey => $templateKey) {
             if (isset($data[$apiKey]) && !isset($data[$templateKey])) {
                 $data[$templateKey] = $data[$apiKey];
+            }
+            // Keep legacy *_url aliases populated for older templates/cards.
+            if (isset($data[$templateKey]) && !isset($data[$apiKey])) {
+                $data[$apiKey] = $data[$templateKey];
             }
         }
         // So {{student_name}} works when caller only sends trainee_name
