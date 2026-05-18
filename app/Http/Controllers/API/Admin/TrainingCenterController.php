@@ -565,6 +565,13 @@ class TrainingCenterController extends Controller
     {
         $trainingCenter = TrainingCenter::findOrFail($id);
 
+        if ($request->filled('training_provider_type')) {
+            $normalizedProviderType = $this->normalizeTrainingProviderType((string) $request->input('training_provider_type'));
+            if ($normalizedProviderType !== null) {
+                $request->merge(['training_provider_type' => $normalizedProviderType]);
+            }
+        }
+
         $request->validate([
             // Company Information
             'name' => 'sometimes|string|max:255',
@@ -572,7 +579,7 @@ class TrainingCenterController extends Controller
             'email' => 'sometimes|email|max:255|unique:training_centers,email,' . $id,
             'phone' => 'sometimes|string|max:255',
             'fax' => 'nullable|string|max:255',
-            'training_provider_type' => 'sometimes|in:Training Center,Institute,University',
+            'training_provider_type' => 'sometimes|in:Training Provider,Institute,University',
             // Physical Address
             'address' => 'sometimes|string',
             'city' => 'sometimes|string|max:255',
@@ -840,6 +847,19 @@ class TrainingCenterController extends Controller
             'message' => 'Training center application rejected',
             'training_center' => $trainingCenter->fresh(),
         ]);
+    }
+
+    private function normalizeTrainingProviderType(string $value): ?string
+    {
+        $normalized = strtolower(trim($value));
+        $normalized = preg_replace('/[\s_-]+/', ' ', $normalized);
+
+        return match ($normalized) {
+            'training center', 'training provider' => 'Training Provider',
+            'institute' => 'Institute',
+            'university' => 'University',
+            default => null,
+        };
     }
 }
 

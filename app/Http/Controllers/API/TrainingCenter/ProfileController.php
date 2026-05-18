@@ -183,7 +183,7 @@ class ProfileController extends Controller
                 'email' => 'sometimes|email|max:255|unique:training_centers,email,' . $trainingCenter->id,
                 'phone' => 'sometimes|string|max:255',
                 'fax' => 'nullable|string|max:255',
-                'training_provider_type' => 'sometimes|in:Training Center,Institute,University',
+                'training_provider_type' => 'sometimes|in:Training Provider,Institute,University',
                 // Physical Address
                 'address' => 'sometimes|string',
                 'city' => 'sometimes|string|max:255',
@@ -382,7 +382,7 @@ class ProfileController extends Controller
         $normalized = preg_replace('/[\s_-]+/', ' ', $normalized);
 
         return match ($normalized) {
-            'training center' => 'Training Center',
+            'training center', 'training provider' => 'Training Provider',
             'institute' => 'Institute',
             'university' => 'University',
             default => null,

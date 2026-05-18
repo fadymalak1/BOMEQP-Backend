@@ -43,7 +43,7 @@ class AuthController extends Controller
                         new OA\Property(property: "company_name", type: "string", example: "ABC Training Center", description: "Company name (required for training_center_admin)"),
                         new OA\Property(property: "legal_name", type: "string", example: "ABC Training Center LLC", description: "Legal/registered company name (optional for training_center_admin, falls back to company_name if not provided)"),
                         new OA\Property(property: "company_email", type: "string", format: "email", example: "info@abctraining.com", description: "Company email address (required for training_center_admin)"),
-                        new OA\Property(property: "training_provider_type", type: "string", enum: ["Training Center", "Institute", "University"], example: "Training Center", description: "Type of training provider (required for training_center_admin)"),
+                        new OA\Property(property: "training_provider_type", type: "string", enum: ["Training Provider", "Institute", "University"], example: "Training Provider", description: "Type of training provider (required for training_center_admin)"),
                         new OA\Property(property: "facility_floorplan", type: "string", format: "binary", description: "Facility floorplan file (PDF, JPG, PNG, max 10MB, optional, only for training_center_admin)"),
                         new OA\Property(property: "interested_fields", type: "array", items: new OA\Items(type: "string", enum: ["QHSE", "Food Safety", "Management"]), example: ["QHSE", "Food Safety"], description: "Interested fields (optional, only for training_center_admin)"),
                         new OA\Property(property: "has_secondary_contact", type: "boolean", example: false, description: "Whether to add secondary contact (optional for training_center_admin, always required for acc_admin)"),
@@ -117,6 +117,13 @@ class AuthController extends Controller
     )]
     public function register(Request $request)
     {
+        if ($request->filled('training_provider_type')) {
+            $normalizedProviderType = $this->normalizeTrainingProviderType((string) $request->input('training_provider_type'));
+            if ($normalizedProviderType !== null) {
+                $request->merge(['training_provider_type' => $normalizedProviderType]);
+            }
+        }
+
         // Base validation rules for all users
         $rules = [
             'name' => 'required|string|max:255',
@@ -134,7 +141,7 @@ class AuthController extends Controller
                 'company_email' => 'required|email|max:255',
                 'telephone_number' => 'required|string|max:255',
                 'fax' => 'nullable|string|max:255',
-                'training_provider_type' => 'required|in:Training Center,Institute,University',
+                'training_provider_type' => 'required|in:Training Provider,Institute,University',
                 
                 // Physical Address
                 'address' => 'required|string|max:500',
@@ -611,6 +618,19 @@ class AuthController extends Controller
     {
         // Implementation for email verification
         return response()->json(['message' => 'Email verified successfully']);
+    }
+
+    private function normalizeTrainingProviderType(string $value): ?string
+    {
+        $normalized = strtolower(trim($value));
+        $normalized = preg_replace('/[\s_-]+/', ' ', $normalized);
+
+        return match ($normalized) {
+            'training center', 'training provider' => 'Training Provider',
+            'institute' => 'Institute',
+            'university' => 'University',
+            default => null,
+        };
     }
 }
 
