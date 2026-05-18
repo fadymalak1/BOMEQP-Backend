@@ -1117,6 +1117,13 @@ class CertificateGenerationService
     public function generateTrainingCenterCertificate(CertificateTemplate $template, $trainingCenter, $acc, ?string $verificationCode = null): array
     {
         $issueDate = \Carbon\Carbon::now();
+        $effectiveVerificationCode = $verificationCode;
+
+        if (empty($effectiveVerificationCode)) {
+            // Keep QR rendering reliable for training provider certificates that are
+            // generated outside the regular certificate record flow.
+            $effectiveVerificationCode = 'TP-' . strtoupper(Str::random(10));
+        }
 
         $data = [
             'training_center_name'                => $trainingCenter->name ?? '',
@@ -1134,14 +1141,11 @@ class CertificateGenerationService
             'expiry_date'                         => $issueDate->copy()->addYears(3)->format('Y-m-d'),
             'training_center_logo'                => $this->resolveLogoUrl($trainingCenter->logo_url ?? null),
             'acc_logo'                            => $this->resolveLogoUrl($acc->logo_url ?? null),
+            'verification_code'                   => $effectiveVerificationCode,
+            'serial_number'                       => $effectiveVerificationCode,
+            'certificate_number'                  => $effectiveVerificationCode,
+            'qr_code'                             => $this->getQrCodeUrl($effectiveVerificationCode),
         ];
-
-        if ($verificationCode) {
-            $data['verification_code'] = $verificationCode;
-            $data['serial_number']     = $verificationCode;
-            $data['certificate_number'] = $verificationCode;
-            $data['qr_code']           = $this->getQrCodeUrl($verificationCode);
-        }
 
         return $this->generate($template, $data, 'pdf');
     }
