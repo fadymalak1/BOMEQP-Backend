@@ -983,93 +983,104 @@ class CertificateController extends Controller
     )]
     public function generateForClass(Request $request, $id)
     {
-        $user = $request->user();
-        $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
-
-        if (!$trainingCenter) {
-            return response()->json(['message' => 'Training center not found'], 404);
-        }
-
-        $class = TrainingClass::where('training_center_id', $trainingCenter->id)
-            ->with(['course.acc', 'trainees'])
-            ->findOrFail($id);
-
-        if ($class->status !== 'completed') {
-            return response()->json([
-                'message' => 'Certificates can only be generated for completed classes',
-                'class_status' => $class->status,
-            ], 422);
-        }
-
-        if ($class->exam_score === null || $class->success_grade === null) {
-            return response()->json([
-                'message' => 'Exam configuration is missing for this class. Please set exam_score and success_grade first.',
-            ], 422);
-        }
-
-        $course = $class->course;
-        $acc = $course->acc;
-
-        if (!$acc) {
-            return response()->json(['message' => 'ACC not found for this course'], 404);
-        }
-
-        // Verify ACC is authorized
-        $isAuthorized = DB::table('training_center_acc_authorization')
-            ->where('training_center_id', $trainingCenter->id)
-            ->where('acc_id', $acc->id)
-            ->where('status', 'approved')
-            ->exists();
-
-        if (!$isAuthorized) {
-            return response()->json(['message' => 'ACC is not authorized for this training center'], 403);
-        }
-
-        // Resolve template once for this ACC/course
-        $template = $this->resolveCertificateTemplateForCourse($acc->id, $course);
-        if (!$template) {
-            return response()->json([
-                'message' => 'No certificate template found for this ACC and course. Please ensure the ACC has created a certificate template for this course or its category.',
-            ], 404);
-        }
-
-        $request->validate([
-            'trainee_ids' => 'nullable|array',
-            'trainee_ids.*' => 'integer',
-            'issue_date' => 'nullable|date',
-            'expiry_date' => 'nullable|date|after:issue_date',
-        ]);
-
-        $issueDate = Carbon::parse($request->issue_date ?? now()->toDateString())->toDateString();
-        $expiryDate = Carbon::parse($issueDate)->addYears(2)->toDateString();
-
-        // Determine which trainees to include: passing only, optionally filtered by trainee_ids
-        $trainees = $class->trainees;
-        if ($request->has('trainee_ids') && is_array($request->trainee_ids) && !empty($request->trainee_ids)) {
-            $idsFilter = $request->trainee_ids;
-            $trainees = $trainees->whereIn('id', $idsFilter)->values();
-        }
-
-        $passingTrainees = $trainees->filter(function ($trainee) use ($class) {
-            $score = $trainee->pivot->exam_score;
-            if ($score === null) {
-                return false;
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthenticated'], 401);
             }
-            return (float) $score >= (float) $class->success_grade;
-        })->values();
 
-        if ($passingTrainees->isEmpty()) {
-            return response()->json([
-                'message' => 'No trainees found with exam_score greater than or equal to success_grade.',
-                'generated_count' => 0,
-                'skipped_count' => $trainees->count(),
-                'details' => [],
-            ], 201);
-        }
+            $trainingCenter = \App\Models\TrainingCenter::where('email', $user->email)->first();
 
-        $generated = 0;
-        $skipped = 0;
-        $details = [];
+            if (!$trainingCenter) {
+                return response()->json(['message' => 'Training center not found'], 404);
+            }
+
+            $class = TrainingClass::where('training_center_id', $trainingCenter->id)
+                ->with(['course.acc', 'trainees'])
+                ->findOrFail($id);
+
+            if ($class->status !== 'completed') {
+                return response()->json([
+                    'message' => 'Certificates can only be generated for completed classes',
+                    'class_status' => $class->status,
+                ], 422);
+            }
+
+            if ($class->exam_score === null || $class->success_grade === null) {
+                return response()->json([
+                    'message' => 'Exam configuration is missing for this class. Please set exam_score and success_grade first.',
+                ], 422);
+            }
+
+            $course = $class->course;
+            if (!$course) {
+                return response()->json([
+                    'message' => 'No course is linked to this class. Please assign a course before generating certificates.',
+                ], 422);
+            }
+
+            $acc = $course->acc;
+
+            if (!$acc) {
+                return response()->json(['message' => 'ACC not found for this course'], 404);
+            }
+
+            // Verify ACC is authorized
+            $isAuthorized = DB::table('training_center_acc_authorization')
+                ->where('training_center_id', $trainingCenter->id)
+                ->where('acc_id', $acc->id)
+                ->where('status', 'approved')
+                ->exists();
+
+            if (!$isAuthorized) {
+                return response()->json(['message' => 'ACC is not authorized for this training center'], 403);
+            }
+
+            // Resolve template once for this ACC/course
+            $template = $this->resolveCertificateTemplateForCourse($acc->id, $course);
+            if (!$template) {
+                return response()->json([
+                    'message' => 'No certificate template found for this ACC and course. Please ensure the ACC has created a certificate template for this course or its category.',
+                ], 404);
+            }
+
+            $request->validate([
+                'trainee_ids' => 'nullable|array',
+                'trainee_ids.*' => 'integer',
+                'issue_date' => 'nullable|date',
+                'expiry_date' => 'nullable|date|after:issue_date',
+            ]);
+
+            $issueDate = Carbon::parse($request->issue_date ?? now()->toDateString())->toDateString();
+            $expiryDate = Carbon::parse($issueDate)->addYears(2)->toDateString();
+
+            // Determine which trainees to include: passing only, optionally filtered by trainee_ids
+            $trainees = $class->trainees;
+            if ($request->has('trainee_ids') && is_array($request->trainee_ids) && !empty($request->trainee_ids)) {
+                $idsFilter = $request->trainee_ids;
+                $trainees = $trainees->whereIn('id', $idsFilter)->values();
+            }
+
+            $passingTrainees = $trainees->filter(function ($trainee) use ($class) {
+                $score = $trainee->pivot->exam_score ?? null;
+                if ($score === null) {
+                    return false;
+                }
+                return (float) $score >= (float) $class->success_grade;
+            })->values();
+
+            if ($passingTrainees->isEmpty()) {
+                return response()->json([
+                    'message' => 'No trainees found with exam_score greater than or equal to success_grade.',
+                    'generated_count' => 0,
+                    'skipped_count' => $trainees->count(),
+                    'details' => [],
+                ], 201);
+            }
+
+            $generated = 0;
+            $skipped = 0;
+            $details = [];
 
         foreach ($passingTrainees as $trainee) {
             $fullName = trim(($trainee->first_name ?? '') . ' ' . ($trainee->last_name ?? ''));
@@ -1292,12 +1303,27 @@ class CertificateController extends Controller
             $message = 'No certificates were generated.';
         }
 
-        return response()->json([
-            'message' => $message,
-            'generated_count' => $generated,
-            'skipped_count' => $skipped,
-            'details' => $details,
-        ], 201);
+            return response()->json([
+                'message' => $message,
+                'generated_count' => $generated,
+                'skipped_count' => $skipped,
+                'details' => $details,
+            ], 201);
+        } catch (\Throwable $e) {
+            $failureContext = [
+                'class_id' => $id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'app_env' => app()->environment(),
+            ];
+            \Illuminate\Support\Facades\Log::error('Class certificate generation fatal error', $failureContext);
+            @error_log('[TrainingCenterCertificateController] Class certificate generation fatal error ' . json_encode($failureContext, JSON_UNESCAPED_SLASHES));
+
+            return response()->json([
+                'message' => 'Certificate generation failed unexpectedly. Please verify class/course setup and try again.',
+            ], 500);
+        }
     }
 
     /**
