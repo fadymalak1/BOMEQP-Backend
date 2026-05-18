@@ -582,6 +582,7 @@ class CertificateGenerationService
                     ]);
                     return null;
                 }
+                $bytes = $this->normalizeImageOrientation($bytes, $mime, $localPath);
                 Log::debug('toDataUri: embedded from local path', ['source' => $source, 'path' => $localPath, 'mime' => $mime, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
@@ -612,6 +613,7 @@ class CertificateGenerationService
                     ]);
                     continue;
                 }
+                $bytes = $this->normalizeImageOrientation($bytes, $mime);
                 Log::debug('toDataUri: embedded from HTTP fetch', ['source' => $source, 'fetch_url' => $fetchUrl, 'mime' => $mime, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
@@ -665,6 +667,88 @@ class CertificateGenerationService
     private function isImageMime(?string $mime): bool
     {
         return is_string($mime) && str_starts_with(strtolower($mime), 'image/');
+    }
+
+    /**
+     * Normalize JPEG orientation using EXIF metadata so logos/photos don't appear rotated.
+     */
+    private function normalizeImageOrientation(string $bytes, string $mime, ?string $path = null): string
+    {
+        if (strtolower($mime) !== 'image/jpeg') {
+            return $bytes;
+        }
+
+        if (!function_exists('exif_read_data') || !function_exists('imagecreatefromstring') || !function_exists('imagerotate')) {
+            return $bytes;
+        }
+
+        $orientation = null;
+        $tempPath = null;
+
+        try {
+            $readPath = null;
+            if ($path && file_exists($path)) {
+                $readPath = $path;
+            } else {
+                $tempPath = tempnam(sys_get_temp_dir(), 'img_orient_');
+                if ($tempPath && @file_put_contents($tempPath, $bytes) !== false) {
+                    $readPath = $tempPath;
+                }
+            }
+
+            if ($readPath) {
+                $exif = @exif_read_data($readPath);
+                $orientation = isset($exif['Orientation']) ? (int) $exif['Orientation'] : null;
+            }
+
+            if (!$orientation || $orientation === 1) {
+                return $bytes;
+            }
+
+            $image = @imagecreatefromstring($bytes);
+            if (!$image) {
+                return $bytes;
+            }
+
+            $rotated = $image;
+            switch ($orientation) {
+                case 3:
+                    $rotated = @imagerotate($image, 180, 0);
+                    break;
+                case 6:
+                    $rotated = @imagerotate($image, -90, 0);
+                    break;
+                case 8:
+                    $rotated = @imagerotate($image, 90, 0);
+                    break;
+                default:
+                    // Other EXIF orientation modes are uncommon for uploaded logos.
+                    $rotated = $image;
+                    break;
+            }
+
+            if (!$rotated) {
+                @imagedestroy($image);
+                return $bytes;
+            }
+
+            ob_start();
+            imagejpeg($rotated, null, 92);
+            $normalized = ob_get_clean();
+
+            @imagedestroy($image);
+            if ($rotated !== $image) {
+                @imagedestroy($rotated);
+            }
+
+            return ($normalized !== false && strlen($normalized) > 50) ? $normalized : $bytes;
+        } catch (\Throwable $e) {
+            return $bytes;
+        } finally {
+            if ($tempPath && file_exists($tempPath)) {
+                @unlink($tempPath);
+            }
+        }
     }
 
     /**
