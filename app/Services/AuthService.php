@@ -65,7 +65,7 @@ class AuthService
                 $trainingCenter = \App\Models\TrainingCenter::create([
                     'name' => $request->company_name,
                     'legal_name' => $request->legal_name ?? $request->company_name,
-                    'registration_number' => 'TC-' . strtoupper(Str::random(8)),
+                    'registration_number' => $this->generateTrainingProviderRegistrationNumber(),
                     'country' => $request->country,
                     'city' => $request->city,
                     'address' => $request->address,
@@ -464,6 +464,18 @@ class AuthService
             'success' => true,
             'message' => 'Password reset successfully'
         ];
+    }
+
+    /**
+     * Generate a unique training provider registration number in ATP-<digits> format.
+     */
+    private function generateTrainingProviderRegistrationNumber(): string
+    {
+        do {
+            $registrationNumber = 'ATP-' . str_pad((string) random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+        } while (\App\Models\TrainingCenter::where('registration_number', $registrationNumber)->exists());
+
+        return $registrationNumber;
     }
 }
 

@@ -608,7 +608,7 @@ class TrainingCenterController extends Controller
             'how_did_you_hear_about_us' => 'nullable|string',
             // Legacy fields
             'legal_name' => 'sometimes|string|max:255',
-            'registration_number' => 'sometimes|string|max:255|unique:training_centers,registration_number,' . $id,
+            'registration_number' => 'sometimes|string|max:255|regex:/^ATP-\d+$/|unique:training_centers,registration_number,' . $id,
             'logo_url' => 'nullable|string|url|max:500',
             'referred_by_group' => 'sometimes|boolean',
             'status' => 'sometimes|in:pending,active,suspended,inactive',

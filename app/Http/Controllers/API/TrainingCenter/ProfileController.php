@@ -67,7 +67,7 @@ class ProfileController extends Controller
                         properties: [
                             new OA\Property(property: "name", type: "string", example: "Training Center Name", nullable: true),
                             new OA\Property(property: "legal_name", type: "string", example: "Training Center Legal Name Inc.", nullable: true),
-                            new OA\Property(property: "registration_number", type: "string", example: "REG123456", nullable: true),
+                            new OA\Property(property: "registration_number", type: "string", example: "ATP-123456", nullable: true),
                             new OA\Property(property: "country", type: "string", example: "Egypt", nullable: true),
                             new OA\Property(property: "city", type: "string", example: "Cairo", nullable: true),
                             new OA\Property(property: "address", type: "string", example: "123 Main Street", nullable: true),
@@ -211,7 +211,7 @@ class ProfileController extends Controller
                 'how_did_you_hear_about_us' => 'nullable|string',
                 // Legacy fields
                 'legal_name' => 'sometimes|string|max:255',
-                'registration_number' => 'sometimes|string|max:255|unique:training_centers,registration_number,' . $trainingCenter->id,
+                'registration_number' => 'sometimes|string|max:255|regex:/^ATP-\d+$/|unique:training_centers,registration_number,' . $trainingCenter->id,
                 'logo_url' => 'nullable|string|url|max:500',
                 'logo' => 'sometimes|nullable|image|mimetypes:image/jpeg,image/png|max:5120', // Max 5MB
             ]);
