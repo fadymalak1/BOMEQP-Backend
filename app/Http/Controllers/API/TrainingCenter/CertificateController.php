@@ -773,16 +773,12 @@ class CertificateController extends Controller
 
             $traineePhotoUrl = null;
             if (!empty($request->trainee_photo)) {
-                $traineePhotoUrl = str_starts_with($request->trainee_photo, 'http')
-                    ? $request->trainee_photo
-                    : url($request->trainee_photo);
+                $traineePhotoUrl = $this->resolveImageUrl($request->trainee_photo);
             } elseif (!empty($request->trainee_id)) {
                 $trainee = Trainee::where('training_center_id', $trainingCenter->id)->find($request->trainee_id);
                 if ($trainee) {
-                    $photoUrl = $trainee->card_image_url ?? $trainee->id_image_url ?? null;
-                    if ($photoUrl) {
-                        $traineePhotoUrl = str_starts_with($photoUrl, 'http') ? $photoUrl : url($photoUrl);
-                    }
+                    $traineePhotoUrl = $this->resolveImageUrl($trainee->card_image_url)
+                        ?? $this->resolveImageUrl($trainee->id_image_url);
                 }
             }
 
@@ -1151,10 +1147,8 @@ class CertificateController extends Controller
                 }
 
                 $traineePhotoUrl = null;
-                $traineePhoto = $trainee->card_image_url ?? $trainee->id_image_url ?? null;
-                if ($traineePhoto) {
-                    $traineePhotoUrl = str_starts_with($traineePhoto, 'http') ? $traineePhoto : url($traineePhoto);
-                }
+                $traineePhotoUrl = $this->resolveImageUrl($trainee->card_image_url)
+                    ?? $this->resolveImageUrl($trainee->id_image_url);
 
                 $certificateData = [
                     'student_name'       => $fullName,
@@ -1391,5 +1385,23 @@ class CertificateController extends Controller
         }
 
         return $template;
+    }
+
+    private function resolveImageUrl(?string $value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        $url = str_starts_with($value, 'http') ? $value : url($value);
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        // Block known non-image assets (e.g., uploaded PDFs).
+        if (in_array($extension, ['pdf', 'doc', 'docx'], true)) {
+            return null;
+        }
+
+        return $url;
     }
 }

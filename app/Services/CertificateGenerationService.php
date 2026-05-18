@@ -558,6 +558,14 @@ class CertificateGenerationService
             $bytes = @file_get_contents($localPath);
             if ($bytes && strlen($bytes) > 50) {
                 $mime = $this->detectMime($localPath, $bytes);
+                if (!$this->isImageMime($mime)) {
+                    Log::warning('toDataUri: local file is not an image, skipping', [
+                        'source' => $source,
+                        'path' => $localPath,
+                        'mime' => $mime,
+                    ]);
+                    return null;
+                }
                 Log::debug('toDataUri: embedded from local path', ['source' => $source, 'path' => $localPath, 'mime' => $mime, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
@@ -580,6 +588,14 @@ class CertificateGenerationService
             $bytes = $this->httpFetch($fetchUrl);
             if ($bytes && strlen($bytes) > 50) {
                 $mime = $this->detectMimeFromBytes($bytes);
+                if (!$this->isImageMime($mime)) {
+                    Log::warning('toDataUri: HTTP response is not an image, skipping', [
+                        'source' => $source,
+                        'fetch_url' => $fetchUrl,
+                        'mime' => $mime,
+                    ]);
+                    continue;
+                }
                 Log::debug('toDataUri: embedded from HTTP fetch', ['source' => $source, 'fetch_url' => $fetchUrl, 'mime' => $mime, 'bytes' => strlen($bytes)]);
                 return 'data:' . $mime . ';base64,' . base64_encode($bytes);
             }
@@ -627,7 +643,12 @@ class CertificateGenerationService
         if (substr($bytes, 0, 3) === "\xFF\xD8\xFF")      return 'image/jpeg';
         if (substr($bytes, 0, 6) === 'GIF87a' || substr($bytes, 0, 6) === 'GIF89a') return 'image/gif';
         if (substr($bytes, 0, 4) === 'RIFF' && substr($bytes, 8, 4) === 'WEBP') return 'image/webp';
-        return 'image/png'; // safe default
+        return 'application/octet-stream';
+    }
+
+    private function isImageMime(?string $mime): bool
+    {
+        return is_string($mime) && str_starts_with(strtolower($mime), 'image/');
     }
 
     /**
