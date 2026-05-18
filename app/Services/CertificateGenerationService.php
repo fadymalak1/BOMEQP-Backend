@@ -1358,41 +1358,62 @@ class CertificateGenerationService
             return $source;
         }
 
+        $originalSource = $source;
+        // Some production hosts miss GD/image rotation functions. Keep logo visible by
+        // falling back to the original image source instead of failing generation.
+        if (
+            !function_exists('imagecreatefromstring') ||
+            !function_exists('imagerotate') ||
+            !function_exists('imagedestroy') ||
+            !function_exists('imagecolorallocatealpha') ||
+            !function_exists('imagepng')
+        ) {
+            return $originalSource;
+        }
+
         $dataUri = $this->toDataUri((string) $source);
         if (!$dataUri || !preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/', $dataUri, $matches)) {
-            return $source;
+            return $originalSource;
         }
 
         $mime = strtolower($matches[1]);
         $bytes = base64_decode($matches[2], true);
         if ($bytes === false) {
-            return $dataUri;
+            return $originalSource;
         }
 
         $image = @imagecreatefromstring($bytes);
         if (!$image) {
-            return $dataUri;
+            return $originalSource;
         }
 
+        // Preserve transparency for PNG/WebP logos.
+        @imagealphablending($image, false);
+        @imagesavealpha($image, true);
+        $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
+
         // GD rotates counter-clockwise for positive angles; use -90 for clockwise.
-        $rotated = @imagerotate($image, -90, 0);
+        $rotated = @imagerotate($image, -90, $transparent);
         imagedestroy($image);
 
         if (!$rotated) {
-            return $dataUri;
+            return $originalSource;
         }
+        @imagealphablending($rotated, false);
+        @imagesavealpha($rotated, true);
 
         ob_start();
         $outputMime = match ($mime) {
             'image/jpeg', 'image/jpg' => (imagejpeg($rotated, null, 95) ? 'image/jpeg' : ''),
             'image/gif'               => (imagegif($rotated) ? 'image/gif' : ''),
+            'image/webp'              => (function_exists('imagewebp') && imagewebp($rotated) ? 'image/webp' : ''),
             default                   => (imagepng($rotated) ? 'image/png' : ''),
         };
         $output = ob_get_clean();
         imagedestroy($rotated);
 
-        if (empty($outputMime) || $output === false || $output === '') {
-            return $dataUri;
+        if (empty($outputMime) || $output === false || $output === '' || @getimagesizefromstring($output) === false) {
+            return $originalSource;
         }
 
         return 'data:' . $outputMime . ';base64,' . base64_encode($output);
