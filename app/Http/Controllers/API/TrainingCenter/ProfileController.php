@@ -129,6 +129,14 @@ class ProfileController extends Controller
             return response()->json(['message' => 'Training center not found'], 404);
         }
 
+        // Normalize provider type input to accepted values (e.g. training_center, training-center, training center).
+        if ($request->filled('training_provider_type')) {
+            $normalizedProviderType = $this->normalizeTrainingProviderType((string) $request->input('training_provider_type'));
+            if ($normalizedProviderType !== null) {
+                $request->merge(['training_provider_type' => $normalizedProviderType]);
+            }
+        }
+
         // Validate file uploads (if any)
         if ($request->hasFile('logo')) {
             $logoFile = $request->file('logo');
@@ -366,6 +374,19 @@ class ProfileController extends Controller
                 'error_code' => 'update_failed'
             ], 500);
         }
+    }
+
+    private function normalizeTrainingProviderType(string $value): ?string
+    {
+        $normalized = strtolower(trim($value));
+        $normalized = preg_replace('/[\s_-]+/', ' ', $normalized);
+
+        return match ($normalized) {
+            'training center' => 'Training Center',
+            'institute' => 'Institute',
+            'university' => 'University',
+            default => null,
+        };
     }
 }
 
