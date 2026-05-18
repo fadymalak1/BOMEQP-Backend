@@ -272,7 +272,7 @@ class TrainingCenterController extends Controller
                                     'email' => $trainingCenter->email,
                                     'pdf_path' => $pdfPath,
                                 ]);
-                            } catch (\Throwable $mailException) {
+                            } catch (\Exception $mailException) {
                                 \Illuminate\Support\Facades\Log::error('Failed to send training center certificate email', [
                                     'training_center_id' => $trainingCenter->id,
                                     'acc_id' => $acc->id,
@@ -296,11 +296,10 @@ class TrainingCenterController extends Controller
                             'error' => $result['message'] ?? 'Unknown error',
                         ]);
                     }
-                } catch (\Throwable $e) {
+                } catch (\Exception $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate/send training center certificate', [
                         'authorization_id' => $authorization->id,
                         'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
                     ]);
                 }
             }
